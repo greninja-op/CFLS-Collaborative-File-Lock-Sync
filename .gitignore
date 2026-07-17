@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+out/
+*.tsbuildinfo
+
+# Env & secrets
+.env
+.env.*
+*.pem
+*.key
+*.crt
+
+# Logs & caches
+*.log
+.cache/
+coverage/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+
+# Local coordination data / sqlite
+*.sqlite
+*.sqlite3
+*.db
