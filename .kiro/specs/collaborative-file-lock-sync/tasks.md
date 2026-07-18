@@ -105,7 +105,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
 - [ ] 4. `packages/core-state` — pure in-memory coordination engine
   - **Goal:** Implement the deterministic, dependency-free authority logic (revisions, locks,
     presence, intents, risk, sync, expiry, coalescing, data-minimization) that both host and agent embed.
-  - [ ] 4.1 Implement session identity, canonical repo ID, and path normalization
+  - [x] 4.1 Implement session identity, canonical repo ID, and path normalization
     - Derive canonical `repoId` from SSH/HTTPS/`.git` remotes; normalize repository-relative paths
       (separators, `.`/`..`, `./`, platform-aware case key); build `session_key` hashing.
     - _Requirements: 10.1, 10.2, 10.3, 10.4; Design §9.1, §9.3_
@@ -205,7 +205,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
       override missing reason (`OVERRIDE_REASON_REQUIRED`), and rename/move/delete path tracking.
     - _Requirements: 12.7, 12.8, 13.4, 21.3, 30.1–30.7_
 
-- [ ] 5. `packages/dependency-analyzer` — metadata-only TS/JS analyzer
+- [x] 5. `packages/dependency-analyzer` — metadata-only TS/JS analyzer
   - **Goal:** Build the pluggable, metadata-only dependency analysis that feeds indirect-risk detection.
   - [x] 5.1 Define `LanguageAnalyzer` interface and the TS/JS import analyzer
     - Implement the `LanguageAnalyzer` interface and a TS/JS analyzer that extracts directed
@@ -216,7 +216,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Extract `Package_Dependency_Metadata` and `Public_Contract_Fingerprint`s (hashes only); apply
       the always-excluded list (`node_modules`, build outputs, caches, `.git`, vendor, venv, secrets).
     - _Requirements: 19.2, 19.7, 29.2; Design §7.1, §7.6_
-  - [ ] 5.3 Implement snapshot vs delta computation and graph serialize/deserialize
+  - [x] 5.3 Implement snapshot vs delta computation and graph serialize/deserialize
     - Build a full graph on first authorization, emit `dep.delta` on subsequent changes, avoid
       re-uploading a graph the host already holds at the same branch/base revision, and serialize/
       deserialize the graph preserving all five metadata categories.

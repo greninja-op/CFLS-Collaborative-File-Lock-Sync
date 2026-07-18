@@ -6,7 +6,10 @@
  * first-party TypeScript/JavaScript import-graph analyzer (design §7.5).
  * Task 5.2 adds manifest metadata (`Package_Dependency_Metadata`), public
  * contract fingerprints (hashes only), and the always-excluded list
- * (design §7.1, §7.6). Snapshot/delta computation follows in task 5.3.
+ * (design §7.1, §7.6). Task 5.3 adds full-graph build, snapshot-vs-delta
+ * computation, the upload decision that avoids re-uploading a graph the host
+ * already holds, and canonical graph/delta serialize/deserialize
+ * (design §7.3, §7.4).
  */
 
 export const PACKAGE_NAME = "@cfls/dependency-analyzer";
@@ -39,3 +42,29 @@ export {
   extractTsJsContracts,
   extractExportedNames,
 } from "./contracts";
+
+// ---- Full-graph build + canonical serialize/deserialize (design §7.1, §7.3) ----
+export {
+  INITIAL_GRAPH_VERSION,
+  buildDependencyGraph,
+  normalizeGraph,
+  serializeGraph,
+  deserializeGraph,
+  serializeDelta,
+  deserializeDelta,
+} from "./graph";
+export type { BuildGraphOptions } from "./graph";
+
+// ---- Category 5 — snapshot-vs-delta decision + delta computation (design §7.3, §7.4) ----
+export {
+  snapshotIdentityKey,
+  sameSnapshotIdentity,
+  computeDelta,
+  isEmptyDelta,
+  decideUpload,
+} from "./delta";
+export type {
+  HostGraphView,
+  UploadDecision,
+  UploadDecisionInput,
+} from "./delta";

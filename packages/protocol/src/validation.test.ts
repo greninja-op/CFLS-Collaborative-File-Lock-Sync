@@ -216,7 +216,7 @@ describe("validateEnvelope — rejected envelopes", () => {
   });
 
   it("rejects an envelope missing a required top-level field", () => {
-    const env = validLockAcquireEnvelope() as Record<string, unknown>;
+    const env = validLockAcquireEnvelope() as unknown as Record<string, unknown>;
     delete env.deviceId;
     const result = validateEnvelope(env);
     expect(result.ok).toBe(false);
