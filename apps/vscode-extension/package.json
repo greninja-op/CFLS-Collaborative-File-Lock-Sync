@@ -1,0 +1,13 @@
+{
+  "name": "@cfls/vscode-extension",
+  "version": "0.0.0",
+  "private": true,
+  "main": "./dist/index.cjs",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@cfls/protocol": "workspace:*"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "name": "@cfls/host",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -b"
+  },
+  "dependencies": {
+    "@cfls/core-state": "workspace:*",
+    "@cfls/dependency-analyzer": "workspace:*",
+    "@cfls/protocol": "workspace:*",
+    "@cfls/security": "workspace:*"
+  }
+}

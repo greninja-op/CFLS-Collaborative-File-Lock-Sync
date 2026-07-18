@@ -26,7 +26,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
 - [ ] 1. Monorepo scaffolding, build tooling, and documentation
   - **Goal:** Stand up the pnpm-workspace monorepo, shared TypeScript/build/lint config, the
     fast-check-enabled test runner, and the seeded `docs/` set so every later package has a home.
-  - [ ] 1.1 Initialize workspace, TypeScript, and build/lint tooling
+  - [x] 1.1 Initialize workspace, TypeScript, and build/lint tooling
     - Create root `package.json` (workspaces), `pnpm-workspace.yaml`, and `tsconfig.base.json`
       with TypeScript project references; create empty `apps/{host,agent,vscode-extension}` and
       `packages/{protocol,core-state,dependency-analyzer,mcp-server,security}` package skeletons.

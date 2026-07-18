@@ -1,0 +1,13 @@
+{
+  "files": [],
+  "references": [
+    { "path": "./packages/protocol" },
+    { "path": "./packages/security" },
+    { "path": "./packages/core-state" },
+    { "path": "./packages/dependency-analyzer" },
+    { "path": "./packages/mcp-server" },
+    { "path": "./apps/host" },
+    { "path": "./apps/agent" },
+    { "path": "./apps/vscode-extension" }
+  ]
+}

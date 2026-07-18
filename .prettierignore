@@ -1,0 +1,11 @@
+dist/
+build/
+out/
+node_modules/
+coverage/
+*.tsbuildinfo
+pnpm-lock.yaml
+
+# Spec artifacts and IDE metadata are managed outside the formatter.
+.kiro/
+.git/
