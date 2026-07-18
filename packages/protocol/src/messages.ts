@@ -162,10 +162,29 @@ export type MessageTypeName =
   | (typeof BroadcastMessageType)[keyof typeof BroadcastMessageType]
   | (typeof ErrorMessageType)[keyof typeof ErrorMessageType];
 
-/** Runtime list of every message-type name. */
-export const MESSAGE_TYPES: readonly MessageTypeName[] = Object.values(
-  MessageType,
-) as MessageTypeName[];
+/**
+ * Runtime list of every message-type name.
+ *
+ * Built from the union of every group's values rather than from
+ * {@link MessageType}: the flattened {@link MessageType} object is a lossy,
+ * last-wins convenience map (several groups share key names — e.g. `UPDATE`
+ * appears in presence/lock/intent/path/broadcast and `ERROR` in auth/error), so
+ * deriving the catalog from `Object.values(MessageType)` would silently drop
+ * wire types like `auth.error` and `presence.update`. Every wire *string* is
+ * distinct, so this list is the complete, de-duplicated §4.3 catalog.
+ */
+export const MESSAGE_TYPES: readonly MessageTypeName[] = [
+  ...Object.values(AuthMessageType),
+  ...Object.values(PresenceMessageType),
+  ...Object.values(LockMessageType),
+  ...Object.values(IntentMessageType),
+  ...Object.values(DependencyMessageType),
+  ...Object.values(PathMessageType),
+  ...Object.values(HeartbeatMessageType),
+  ...Object.values(SyncMessageType),
+  ...Object.values(BroadcastMessageType),
+  ...Object.values(ErrorMessageType),
+] as MessageTypeName[];
 
 const MESSAGE_TYPE_SET: ReadonlySet<string> = new Set(MESSAGE_TYPES);
 

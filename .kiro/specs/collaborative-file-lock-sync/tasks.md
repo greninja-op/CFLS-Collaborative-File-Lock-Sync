@@ -65,21 +65,21 @@ for a faster MVP); core implementation sub-tasks are never optional.
       malformed or unsupported-version messages with `FORMAT_ERROR`; provide canonicalization used
       for signing.
     - _Requirements: 7.6, 7.7; Design §4.4, §4.7_
-  - [ ]* 2.4 Write unit tests for schema and version validation
+  - [x]* 2.4 Write unit tests for schema and version validation
     - Cover accepted/rejected payloads per message type, unsupported version → `FORMAT_ERROR`,
       and canonicalization stability.
     - _Requirements: 7.6, 7.7_
-  - [ ]* 2.5 Write unit tests for the error-code catalog and envelope construction
+  - [x]* 2.5 Write unit tests for the error-code catalog and envelope construction
     - Assert each `ErrorCode` maps to the requirement it represents and envelopes round-trip through construct/parse.
     - _Requirements: 7.1, 11.1_
 
 - [ ] 3. `packages/security` — identity, invitations, replay, credential store
   - **Goal:** Provide Ed25519 identity and the authenticity/replay gates that the host and agent rely on.
-  - [ ] 3.1 Implement Ed25519 key generation, signing, and verification
+  - [x] 3.1 Implement Ed25519 key generation, signing, and verification
     - Generate Device_Key pairs, sign the canonical envelope, and verify signatures against a
       Device_Public_Key.
     - _Requirements: 5.1, 7.1, 7.2; Design §8.2, §8.3_
-  - [ ] 3.2 Implement signed invitations, revocation, and key rotation checks
+  - [x] 3.2 Implement signed invitations, revocation, and key rotation checks
     - Issue a `Signed_Invitation` from an admin device; validate that an invitation signature
       chains to an authorized admin before admission; implement revocation and rotation predicates
       against a `Membership_Registry` view.
@@ -88,7 +88,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Track the highest accepted per-device monotonic counter and used nonces; expose an
       `acceptReplay(deviceId, counter, nonce)` predicate that rejects `counter <= last` or a reused nonce.
     - _Requirements: 7.5; Design §4.4_
-  - [ ] 3.4 Implement the OS credential store adapter with encrypted-file fallback
+  - [x] 3.4 Implement the OS credential store adapter with encrypted-file fallback
     - Wrap Windows Credential Manager (`keytar`) with an encrypted-file fallback for storing the
       Device_Private_Key; surface a `SECURE_STORAGE_UNAVAILABLE` error when neither is usable.
     - _Requirements: 5.8, 5.9; Design §8.2_
