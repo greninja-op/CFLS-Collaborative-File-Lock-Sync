@@ -118,6 +118,15 @@ export type {
 export { serializeSessionState, restoreSessionState } from "./snapshot";
 export type { SessionRegistries } from "./snapshot";
 
+// ---- Reconnect sync-from-revision convergence (task 4.18; Req 9, 33.4, 33.5; §4.6) ----
+export {
+  CoordinationEventLog,
+  AgentSyncCache,
+  projectSnapshot,
+  coordinationEntryKey,
+} from "./sync";
+export type { SyncResponse } from "./sync";
+
 // ---- Heartbeat tracking & stale lock/intent expiry sweep (task 4.20; Req 26; §5.2, §13.4) ----
 export {
   ExpiryEngine,

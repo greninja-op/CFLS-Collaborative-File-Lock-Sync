@@ -65,11 +65,11 @@ for a faster MVP); core implementation sub-tasks are never optional.
       malformed or unsupported-version messages with `FORMAT_ERROR`; provide canonicalization used
       for signing.
     - _Requirements: 7.6, 7.7; Design §4.4, §4.7_
-  - [x]* 2.4 Write unit tests for schema and version validation
+  - [x] 2.4 Write unit tests for schema and version validation
     - Cover accepted/rejected payloads per message type, unsupported version → `FORMAT_ERROR`,
       and canonicalization stability.
     - _Requirements: 7.6, 7.7_
-  - [x]* 2.5 Write unit tests for the error-code catalog and envelope construction
+  - [x] 2.5 Write unit tests for the error-code catalog and envelope construction
     - Assert each `ErrorCode` maps to the requirement it represents and envelopes round-trip through construct/parse.
     - _Requirements: 7.1, 11.1_
 
@@ -92,13 +92,13 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Wrap Windows Credential Manager (`keytar`) with an encrypted-file fallback for storing the
       Device_Private_Key; surface a `SECURE_STORAGE_UNAVAILABLE` error when neither is usable.
     - _Requirements: 5.8, 5.9; Design §8.2_
-  - [x]* 3.5 Write property test — replay rejection leaves state unchanged
+  - [x] 3.5 Write property test — replay rejection leaves state unchanged
     - **Property 4: Replay rejection leaves state unchanged**
     - **Validates: Requirements 7.5**
-  - [x]* 3.6 Write property test — only authentically signed, admitted events mutate state
+  - [x] 3.6 Write property test — only authentically signed, admitted events mutate state
     - **Property 5: Only authentically signed, admitted events mutate state**
     - **Validates: Requirements 7.2, 7.3, 5.4, 5.6**
-  - [x]* 3.7 Write unit tests for keygen/sign/verify, invitation validation, and rotation
+  - [x] 3.7 Write unit tests for keygen/sign/verify, invitation validation, and rotation
     - Cover tampered signatures, non-admin invitation issuer rejection, revoked-key rejection, and rotation retiring the old key.
     - _Requirements: 5.1, 5.2, 5.5, 5.6, 5.7_
 
@@ -109,17 +109,17 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Derive canonical `repoId` from SSH/HTTPS/`.git` remotes; normalize repository-relative paths
       (separators, `.`/`..`, `./`, platform-aware case key); build `session_key` hashing.
     - _Requirements: 10.1, 10.2, 10.3, 10.4; Design §9.1, §9.3_
-  - [x]* 4.2 Write property test — canonical repository ID is transport-independent
+  - [x] 4.2 Write property test — canonical repository ID is transport-independent
     - **Property 12: Canonical repository ID is transport-independent**
     - **Validates: Requirements 10.1**
-  - [x]* 4.3 Write property test — path normalization maps equivalents to one key
+  - [x] 4.3 Write property test — path normalization maps equivalents to one key
     - **Property 11: Path normalization maps equivalents to one key**
     - **Validates: Requirements 10.3, 10.4**
   - [x] 4.4 Implement monotonic Event_Revision assignment with restart resume
     - Per-session `++counter` assignment guaranteeing uniqueness/strict order; resume above the
       max persisted revision on restore.
     - _Requirements: 8.1, 1.6; Design §4.5_
-  - [x]* 4.5 Write property test — Event_Revision monotonicity and total order
+  - [x] 4.5 Write property test — Event_Revision monotonicity and total order
     - **Property 1: Event_Revision monotonicity and total order**
     - **Validates: Requirements 8.1, 1.6**
   - [x] 4.6 Implement the ingest gate: idempotency, replay, and schema/permission checks
@@ -127,7 +127,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
       replays via the security counter/nonce logic, and validate schema + sender permission before
       any state change.
     - _Requirements: 7.4, 7.5, 7.7; Design §4.4_
-  - [x]* 4.7 Write property test — idempotency of duplicate Event_IDs
+  - [x] 4.7 Write property test — idempotency of duplicate Event_IDs
     - **Property 3: Idempotency of duplicate Event_IDs**
     - **Validates: Requirements 7.4**
   - [x] 4.8 Implement the lock registry and presence registry
@@ -139,7 +139,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
       record every other claim as a concurrent claim with the winning member + revision; never use raw
       timestamps as the sole resolver.
     - _Requirements: 8.2, 8.3, 8.4, 12.4, 14.5, 18.1, 18.3; Design §10.2_
-  - [ ]* 4.10 Write property test — conflict resolution is deterministic and order-independent
+  - [x] 4.10 Write property test — conflict resolution is deterministic and order-independent
     - **Property 2: Conflict resolution is deterministic and order-independent**
     - **Validates: Requirements 8.2, 8.3, 8.4, 12.4, 14.5, 18.1, 18.3**
   - [x] 4.11 Implement declared-intent lifecycle and planned-file-creation collision detection
@@ -152,7 +152,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
       (`hard > coordination-required > soft`), default unmatched paths to soft, and fall back to
       all-soft on malformed config (never silently escalate).
     - _Requirements: 15.1–15.5; Design "Repository Rules Config Format", §6_
-  - [x]* 4.13 Write property test — rules precedence is most-restrictive-wins
+  - [x] 4.13 Write property test — rules precedence is most-restrictive-wins
     - **Property 10: Rules precedence is most-restrictive-wins**
     - **Validates: Requirements 15.3, 15.4**
   - [x] 4.14 Implement risk classification, Risk_Map projection, and own-activity exclusion
@@ -160,36 +160,36 @@ for a faster MVP); core implementation sub-tasks are never optional.
       Risk_Map with contributor identities and direct/indirect explanation paths; exclude the
       requesting member's own locks/intents; flag `acknowledgementRequired` for coordination-required.
     - _Requirements: 21.1–21.3, 22.1–22.5, 24.1–24.7, 31.5; Design §7.8, §10.1_
-  - [ ]* 4.15 Write property test — a member's own activity is excluded from its own Risk_Map
+  - [x] 4.15 Write property test — a member's own activity is excluded from its own Risk_Map
     - **Property 13: A member's own activity is excluded from its own Risk_Map**
     - **Validates: Requirements 31.5**
   - [x] 4.16 Implement registry serialize/deserialize and revision-counter restore
     - Serialize/deserialize Lock_Registry, Intent_Registry, and presence to an authoritative state
       snapshot; on restore resume the revision counter above the max persisted revision.
     - _Requirements: 1.5, 1.6, 9.5, 35.1; Design §5.2_
-  - [ ]* 4.17 Write property test — registry persistence round-trip
+  - [x] 4.17 Write property test — registry persistence round-trip
     - **Property 7: Registry persistence round-trip**
     - **Validates: Requirements 1.5, 1.6, 9.5, 35.1**
-  - [ ] 4.18 Implement reconnect sync-from-revision convergence
+  - [x] 4.18 Implement reconnect sync-from-revision convergence
     - Produce incremental `sync.events` for `> fromRevision` and a full snapshot fallback; apply
       them on the agent side so cached state converges to authoritative state with no missed or
       re-applied events; clear staleness on completion.
     - _Requirements: 9.1–9.6, 33.4, 33.5; Design §4.6_
-  - [ ]* 4.19 Write property test — reconnect synchronization converges
+  - [ ] 4.19 Write property test — reconnect synchronization converges
     - **Property 8: Reconnect synchronization converges**
     - **Validates: Requirements 9.2, 9.3, 9.4, 9.5, 33.4**
   - [x] 4.20 Implement heartbeat tracking and stale lock/intent expiry sweep
     - Track last-seen heartbeat per device; the expiry sweep releases exactly the locks/intents whose
       holder's heartbeat is older than `Lock_Expiry_Interval`, leaving others intact, emitting removals.
     - _Requirements: 26.1–26.6; Design §5.2, §13.4_
-  - [ ]* 4.21 Write property test — stale locks and intents expire deterministically
+  - [x] 4.21 Write property test — stale locks and intents expire deterministically
     - **Property 14: Stale locks and intents expire deterministically**
     - **Validates: Requirements 26.3**
   - [x] 4.22 Implement coalescing and deduplication within the burst window
     - Coalesce a burst of presence/lock changes to at most one event per path equal to its final
       state and discard identical duplicate events per path/member; bound the outbound event rate.
     - _Requirements: 34.1, 34.2, 34.3, 34.4; Design §8.5_
-  - [ ]* 4.23 Write property test — coalescing and deduplication preserve final per-path state
+  - [x] 4.23 Write property test — coalescing and deduplication preserve final per-path state
     - **Property 15: Coalescing and deduplication preserve final per-path state**
     - **Validates: Requirements 34.1, 34.2, 34.3**
   - [x] 4.24 Implement the data-minimization filter and host-side rejection
@@ -197,10 +197,10 @@ for a faster MVP); core implementation sub-tasks are never optional.
       (metadata + normalized repo-relative paths only); reject inbound messages that violate this
       with `FORMAT_ERROR`.
     - _Requirements: 29.1–29.5; Design §7.2, §8.3_
-  - [ ]* 4.25 Write property test — data-minimization invariant
+  - [ ] 4.25 Write property test — data-minimization invariant
     - **Property 9: Data-minimization invariant**
     - **Validates: Requirements 29.1, 29.2, 29.3, 29.4, 29.5**
-  - [ ]* 4.26 Write unit tests for lock/intent/presence edge cases and error codes
+  - [ ] 4.26 Write unit tests for lock/intent/presence edge cases and error codes
     - Cover release-by-non-holder, release-with-no-lock, cross-branch non-conflict, coordination-required
       override missing reason (`OVERRIDE_REASON_REQUIRED`), and rename/move/delete path tracking.
     - _Requirements: 12.7, 12.8, 13.4, 21.3, 30.1–30.7_
@@ -221,10 +221,10 @@ for a faster MVP); core implementation sub-tasks are never optional.
       re-uploading a graph the host already holds at the same branch/base revision, and serialize/
       deserialize the graph preserving all five metadata categories.
     - _Requirements: 19.3, 19.4, 19.5, 20.1, 20.2, 20.3, 20.4; Design §7.3, §7.4_
-  - [x]* 5.4 Write property test — Dependency_Graph serialization round-trip
+  - [x] 5.4 Write property test — Dependency_Graph serialization round-trip
     - **Property 6: Dependency_Graph serialization round-trip**
     - **Validates: Requirements 20.4**
-  - [x]* 5.5 Write unit tests for confidence levels, exclusion list, and delta computation
+  - [x] 5.5 Write unit tests for confidence levels, exclusion list, and delta computation
     - Cover static→high / aliased→medium / dynamic→low|unknown, excluded folders never analyzed, and add/remove edge deltas.
     - _Requirements: 19.6, 19.7, 19.4_
 
@@ -244,10 +244,10 @@ for a faster MVP); core implementation sub-tasks are never optional.
       `subscribe_to_coordination_updates`, `get_connection_status`, `get_project_session_status`,
       including offline-queued/rejected behavior without falsely reporting host acceptance.
     - _Requirements: 4.2, 4.3, 4.4, 4.5, 4.6, 4.8, 12.1–12.8, 16.1–16.8, 23.1–23.5, 24.1–24.7, 25.1, 31.5, 32.1, 32.4, 33.1; Design §3.4_
-  - [ ]* 7.3 Write integration tests for MCP tool round-trips
+  - [ ] 7.3 Write integration tests for MCP tool round-trips
     - Exercise query tools, a mutating tool, and an offline-queued mutation through the MCP SDK.
     - _Requirements: 4.3, 4.4, 4.5, 4.6, 4.8, 33.1_
-  - [ ]* 7.4 Write unit tests for the envelope, error mapping, and offline behavior
+  - [ ] 7.4 Write unit tests for the envelope, error mapping, and offline behavior
     - Cover `McpEnvelope` connectivity/staleness fields, `ErrorCode` mapping, and `OFFLINE_QUEUED` results.
     - _Requirements: 4.7, 4.8, 33.2_
 
@@ -286,10 +286,10 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Expose health/diagnostics endpoints reporting operational + connectivity metadata only (no
       source/secrets).
     - _Requirements: 27.1–27.5; Design §3.1_
-  - [ ]* 8.9 Write integration tests for the host over real WSS + SQLite
+  - [ ] 8.9 Write integration tests for the host over real WSS + SQLite
     - Cover handshake, ingest→broadcast, sync convergence, restart recovery, and revoked/absent-device rejection.
     - _Requirements: 1.1, 1.5, 1.6, 5.4, 7.4, 8.1, 9.3_
-  - [ ]* 8.10 Write unit tests for the DAO and revision-counter atomicity
+  - [ ] 8.10 Write unit tests for the DAO and revision-counter atomicity
     - Cover atomic `nextRevision`, `hasAppliedEventId`, and typed error codes.
     - _Requirements: 8.1, 1.8, 7.4_
 
@@ -326,11 +326,11 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Build a Windows executable via Node SEA (fallback `pkg`); register per-user login startup via
       the HKCU Run key / Startup folder without requiring administrator privileges.
     - _Requirements: 2.1, 2.2; Design "Project Structure" (Packaging)_
-  - [ ]* 9.8 Write integration tests for connect/offline/reconnect and Local_API
+  - [ ] 9.8 Write integration tests for connect/offline/reconnect and Local_API
     - Cover connect→offline→reconnect convergence, Local_API loopback-only rejection, and
       watcher-driven rename/delete reconciliation.
     - _Requirements: 2.5, 6.4, 6.6, 9.4, 30.1_
-  - [ ]* 9.9 Write unit tests for backoff, cache encryption, and multi-client fan-in
+  - [ ] 9.9 Write unit tests for backoff, cache encryption, and multi-client fan-in
     - Cover backoff schedule, cache encrypt/decrypt with no plaintext source, and own-view consolidation.
     - _Requirements: 6.4, 31.1, 35.1, 35.4_
 
@@ -358,7 +358,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Reject edits to a hard-mode path with a valid winning lock held by another member (cooperative
       enforcement, never OS-level), reporting the holder.
     - _Requirements: 3.5, 14.1, 14.2, 14.3; Design §10.4_
-  - [ ]* 11.5 Write tests for event emission, rendering, hard-stop, and offline indicator
+  - [ ] 11.5 Write tests for event emission, rendering, hard-stop, and offline indicator
     - Cover event emission timing, update rendering, hard-stop decision, and offline banner.
     - _Requirements: 3.2, 3.3, 3.5, 3.6_
 
