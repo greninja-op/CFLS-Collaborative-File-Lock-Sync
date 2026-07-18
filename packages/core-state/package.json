@@ -23,7 +23,8 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@cfls/protocol": "workspace:*"
+    "@cfls/protocol": "workspace:*",
+    "@cfls/security": "workspace:*"
   },
   "devDependencies": {
     "@cfls/test-utils": "workspace:*"

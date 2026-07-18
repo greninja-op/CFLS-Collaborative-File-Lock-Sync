@@ -98,6 +98,9 @@ importers:
       '@cfls/protocol':
         specifier: workspace:*
         version: link:../protocol
+      '@cfls/security':
+        specifier: workspace:*
+        version: link:../security
     devDependencies:
       '@cfls/test-utils':
         specifier: workspace:*

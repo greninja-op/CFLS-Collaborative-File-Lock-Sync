@@ -119,10 +119,10 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Per-session `++counter` assignment guaranteeing uniqueness/strict order; resume above the
       max persisted revision on restore.
     - _Requirements: 8.1, 1.6; Design §4.5_
-  - [ ]* 4.5 Write property test — Event_Revision monotonicity and total order
+  - [x]* 4.5 Write property test — Event_Revision monotonicity and total order
     - **Property 1: Event_Revision monotonicity and total order**
     - **Validates: Requirements 8.1, 1.6**
-  - [ ] 4.6 Implement the ingest gate: idempotency, replay, and schema/permission checks
+  - [x] 4.6 Implement the ingest gate: idempotency, replay, and schema/permission checks
     - Apply an event at most once per `Event_ID` (returning the prior revision on duplicate), reject
       replays via the security counter/nonce logic, and validate schema + sender permission before
       any state change.
@@ -130,7 +130,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
   - [ ]* 4.7 Write property test — idempotency of duplicate Event_IDs
     - **Property 3: Idempotency of duplicate Event_IDs**
     - **Validates: Requirements 7.4**
-  - [ ] 4.8 Implement the lock registry and presence registry
+  - [x] 4.8 Implement the lock registry and presence registry
     - Acquire/release soft, coordination-required, and hard locks with holder checks
       (`NOT_LOCK_HOLDER`, `NO_ACTIVE_LOCK`); track presence started/editing/stopped per member/path.
     - _Requirements: 11.1–11.4, 12.1–12.8, 13.1–13.5, 14.1–14.4; Design §10.3, §10.4_
@@ -147,7 +147,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
       with real saves/creations, reclassify create→modify when a path already exists, and detect
       duplicate Planned_File_Creations; support file/folder/glob `Intent_Scope`.
     - _Requirements: 16.1–16.8, 17.1–17.5, 18.1–18.3, 32.1–32.5; Design §5.1, §10.2_
-  - [ ] 4.12 Implement the rules-precedence resolver
+  - [x] 4.12 Implement the rules-precedence resolver
     - Parse/validate `Repository_Rules_Config`, resolve a path's mode as most-restrictive-wins
       (`hard > coordination-required > soft`), default unmatched paths to soft, and fall back to
       all-soft on malformed config (never silently escalate).
