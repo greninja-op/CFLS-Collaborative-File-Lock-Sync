@@ -88,7 +88,7 @@ function buildTokens(
   for (let i = 0; i <= segments.length; i++) {
     for (const token of noise[i]!) tokens.push(token);
     const detour = detours[i];
-    if (detour !== null) {
+    if (detour != null) {
       tokens.push(detour);
       tokens.push("..");
     }

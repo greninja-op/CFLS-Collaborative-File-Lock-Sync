@@ -694,6 +694,57 @@ export class IntentRegistry {
     return stored === undefined ? [] : [...stored.inProgress];
   }
 
+  /**
+   * Remove every Declared_Intent owned by the given `deviceId`, across the
+   * session — the stale-intent expiry primitive (Req 26.3). Intents owned by any
+   * other device are left untouched. Returns the removed intents so the caller
+   * can emit removal events (Req 26.4); an empty array means the device owned no
+   * intents. Tracked-file state is intentionally preserved (a created file does
+   * not un-exist when its author disconnects).
+   */
+  expireByDevice(session: SessionId, deviceId: string): DeclaredIntent[] {
+    const intents = this.sessions.get(sessionKey(session));
+    if (intents === undefined) {
+      return [];
+    }
+    const removed: DeclaredIntent[] = [];
+    for (const [intentId, stored] of [...intents]) {
+      if (stored.intent.owner.deviceId === deviceId) {
+        removed.push(stored.intent);
+        intents.delete(intentId);
+      }
+    }
+    return removed;
+  }
+
+  /**
+   * Replace a session's entire intent state with a persisted set of intents
+   * (authoritative-state restore after a host restart or a sync-snapshot
+   * replacement — Req 1.5, 1.6, 9.5). Existing intents for the session are
+   * discarded and each intent is reinstalled verbatim (deep-copied so the
+   * registry never aliases the caller's snapshot objects). Planned_File_Creation
+   * collision winners are still recomputed deterministically from Event_Revisions
+   * on demand via {@link creationClaims}, so restoring in any order yields the
+   * same winners. In-progress markers (Req 17.1) are not part of the persisted
+   * snapshot (design §5.2) and reset to empty on restore. Tracked-file state is
+   * left untouched.
+   */
+  restore(session: SessionId, intents: readonly DeclaredIntent[]): void {
+    const map = new Map<string, StoredIntent>();
+    for (const intent of intents) {
+      map.set(intent.intentId, {
+        intent: {
+          ...intent,
+          owner: { ...intent.owner },
+          modifyPaths: [...intent.modifyPaths],
+          createPaths: intent.createPaths.map((creation) => ({ ...creation })),
+        },
+        inProgress: new Set(),
+      });
+    }
+    this.sessions.set(sessionKey(session), map);
+  }
+
   /** All active intents recorded for a session. */
   allIntents(session: SessionId): readonly DeclaredIntent[] {
     const intents = this.sessions.get(sessionKey(session));

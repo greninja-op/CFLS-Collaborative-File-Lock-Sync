@@ -350,6 +350,121 @@ export class LockRegistry {
     ).slice();
   }
 
+  /**
+   * Release every lock (winning and concurrent) whose holder acted from
+   * `deviceId`, across all scope/branch groups in the session — the stale-lock
+   * expiry primitive (Req 26.3). Locks held by any other device are left
+   * untouched, and each group with survivors is re-resolved so the earliest
+   * remaining claim is promoted to winner (Req 8.2). Returns the removed locks
+   * (in stable per-group order) so the caller can emit removal events (Req 26.4);
+   * an empty array means the device held nothing.
+   */
+  expireByDevice(session: SessionId, deviceId: string): Lock[] {
+    const groups = this.sessions.get(sessionKey(session));
+    if (groups === undefined) {
+      return [];
+    }
+
+    const removed: Lock[] = [];
+    for (const [gKey, claims] of [...groups]) {
+      const survivors: Lock[] = [];
+      for (const lock of claims) {
+        if (lock.holder.deviceId === deviceId) {
+          removed.push(lock);
+        } else {
+          survivors.push(lock);
+        }
+      }
+      if (survivors.length === claims.length) {
+        // Nothing removed from this group; leave it (and its winner) intact.
+        continue;
+      }
+      if (survivors.length === 0) {
+        groups.delete(gKey);
+      } else {
+        // Re-resolve so the earliest remaining claim is promoted (Req 8.2).
+        this.resolveGroup(survivors);
+        groups.set(gKey, survivors);
+      }
+    }
+    return removed;
+  }
+
+  /**
+   * Replace a session's entire lock state with a persisted set of locks
+   * (authoritative-state restore after a host restart or a sync-snapshot
+   * replacement — Req 1.5, 1.6, 9.5). Existing state for the session is
+   * discarded, each lock is re-grouped by its `(scope, branch)`, and every group
+   * is re-resolved so the earliest-Event_Revision claim is the winner (Req 8.2)
+   * — the restored winners match what the live registry would have computed,
+   * independent of the order locks appear in the snapshot. Locks are deep-copied
+   * so the registry never aliases the caller's snapshot objects.
+   */
+  restore(session: SessionId, locks: readonly Lock[]): void {
+    const groups = new Map<string, Lock[]>();
+    this.sessions.set(sessionKey(session), groups);
+    for (const lock of locks) {
+      const gKey = groupKey(
+        lock.scope,
+        lock.scopeKind,
+        lock.branch,
+        this.sensitivity,
+      );
+      const claims = groups.get(gKey) ?? [];
+      claims.push({ ...lock, holder: { ...lock.holder } });
+      groups.set(gKey, claims);
+    }
+    for (const claims of groups.values()) {
+      this.resolveGroup(claims);
+    }
+  }
+
+  /**
+   * Release every **soft-mode** lock whose acquisition time is strictly older
+   * than `cutoffMs` (epoch ms), across all scope/branch groups in the session —
+   * the Soft_Lock maximum-age expiry primitive (Req 26.5). Coordination-required
+   * and hard locks are never removed here, and soft locks with an unparseable
+   * `acquiredAt` are left intact. Each group with survivors is re-resolved so the
+   * earliest remaining claim is promoted to winner (Req 8.2). Returns the removed
+   * locks (in stable per-group order) so the caller can emit removal events; an
+   * empty array means nothing aged out.
+   */
+  expireSoftLocksAcquiredBefore(session: SessionId, cutoffMs: number): Lock[] {
+    const groups = this.sessions.get(sessionKey(session));
+    if (groups === undefined) {
+      return [];
+    }
+
+    const removed: Lock[] = [];
+    for (const [gKey, claims] of [...groups]) {
+      const survivors: Lock[] = [];
+      for (const lock of claims) {
+        const acquiredMs = Date.parse(lock.acquiredAt);
+        if (
+          lock.mode === "soft" &&
+          Number.isFinite(acquiredMs) &&
+          acquiredMs < cutoffMs
+        ) {
+          removed.push(lock);
+        } else {
+          survivors.push(lock);
+        }
+      }
+      if (survivors.length === claims.length) {
+        // Nothing removed from this group; leave it (and its winner) intact.
+        continue;
+      }
+      if (survivors.length === 0) {
+        groups.delete(gKey);
+      } else {
+        // Re-resolve so the earliest remaining claim is promoted (Req 8.2).
+        this.resolveGroup(survivors);
+        groups.set(gKey, survivors);
+      }
+    }
+    return removed;
+  }
+
   /** Every lock recorded for a session (winning and concurrent). */
   allLocks(session: SessionId): readonly Lock[] {
     const groups = this.sessions.get(sessionKey(session));

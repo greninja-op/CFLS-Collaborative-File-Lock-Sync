@@ -149,7 +149,7 @@ describe("parseRulesConfig", () => {
     const result = parseRulesConfig({ version: 2, rules: [] });
     expect(result.malformed).toBe(true);
     expect(result.config).toBe(ALL_SOFT_CONFIG);
-    expect(result.errors[0].location).toBe("version");
+    expect(result.errors[0]?.location).toBe("version");
   });
 
   it("rejects an invalid mode value and never escalates (Req 15.5)", () => {

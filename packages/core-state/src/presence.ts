@@ -118,6 +118,33 @@ export class PresenceRegistry {
     );
   }
 
+  /**
+   * Replace a session's entire presence state with a persisted set of entries
+   * (authoritative-state restore after a host restart or a sync-snapshot
+   * replacement — Req 1.5, 1.6, 9.5). Existing entries for the session are
+   * discarded and each entry is reinstalled under its member/path key, preserving
+   * `stopped` records. If a snapshot somehow carries duplicate entries for the
+   * same member/path, the highest-Event_Revision entry wins, matching the
+   * monotonic ordering enforced by {@link report}. Entries are deep-copied so the
+   * registry never aliases the caller's snapshot objects.
+   */
+  restore(session: SessionId, presence: readonly Presence[]): void {
+    const entries = new Map<string, Presence>();
+    for (const item of presence) {
+      const key = entryKey(item.member, item.path, this.sensitivity);
+      const existing = entries.get(key);
+      if (existing !== undefined && item.eventRevision < existing.eventRevision) {
+        continue;
+      }
+      entries.set(key, {
+        ...item,
+        member: { ...item.member },
+        path: normalizePath(item.path),
+      });
+    }
+    this.sessions.set(sessionKey(session), entries);
+  }
+
   /** The latest presence for a specific member/path, or `undefined`. */
   forMemberPath(
     session: SessionId,

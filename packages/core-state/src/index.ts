@@ -92,3 +92,59 @@ export type {
   RulesConfigError,
   RulesConfigParseResult,
 } from "./rules";
+
+// ---- Risk classification & Risk_Map projection (task 4.14; Req 21, 22, 24, 31.5; §7.8, §10.1) ----
+export { buildRiskMap, ContentionKind } from "./risk";
+export type { RiskMapContext } from "./risk";
+
+// ---- Data-minimization filter & host-side rejection (task 4.24; Req 29; §7.2, §8.3) ----
+export {
+  minimizeOutbound,
+  findMinimizationViolations,
+  checkInboundMinimization,
+  isAbsolutePath,
+  containsSecretMaterial,
+  SOURCE_CONTENT_FIELD_NAMES,
+  SECRET_FIELD_NAMES,
+  OPAQUE_FIELD_NAMES,
+} from "./minimize";
+export type {
+  MinimizationViolation,
+  MinimizationViolationKind,
+  MinimizationCheckResult,
+} from "./minimize";
+
+// ---- Authoritative-state snapshot serialize/deserialize & restart resume (task 4.16; §5.2, §4.6) ----
+export { serializeSessionState, restoreSessionState } from "./snapshot";
+export type { SessionRegistries } from "./snapshot";
+
+// ---- Heartbeat tracking & stale lock/intent expiry sweep (task 4.20; Req 26; §5.2, §13.4) ----
+export {
+  ExpiryEngine,
+  resolveExpiryConfig,
+  DEFAULT_HEARTBEAT_INTERVAL_MS,
+  MIN_HEARTBEAT_INTERVAL_MS,
+  MAX_HEARTBEAT_INTERVAL_MS,
+  DEFAULT_LOCK_EXPIRY_INTERVAL_MS,
+  MIN_LOCK_EXPIRY_INTERVAL_MULTIPLE,
+  DEFAULT_SOFT_LOCK_MAX_AGE_MS,
+} from "./expiry";
+export type {
+  ExpiryConfig,
+  ExpiryConfigInput,
+  ExpirySweepResult,
+} from "./expiry";
+
+// ---- Coalescing & deduplication within the burst window (task 4.22; Req 34; §8.5) ----
+export {
+  Coalescer,
+  DEFAULT_WINDOW_MS,
+  MIN_WINDOW_MS,
+  MAX_WINDOW_MS,
+  DEFAULT_MAX_EVENTS_PER_WINDOW,
+} from "./coalesce";
+export type {
+  CoalescableKind,
+  OutboundEvent,
+  CoalescerOptions,
+} from "./coalesce";

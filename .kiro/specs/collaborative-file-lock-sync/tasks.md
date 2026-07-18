@@ -155,7 +155,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
   - [x]* 4.13 Write property test — rules precedence is most-restrictive-wins
     - **Property 10: Rules precedence is most-restrictive-wins**
     - **Validates: Requirements 15.3, 15.4**
-  - [ ] 4.14 Implement risk classification, Risk_Map projection, and own-activity exclusion
+  - [x] 4.14 Implement risk classification, Risk_Map projection, and own-activity exclusion
     - Derive per-path `RiskLevel` from `resolveMode` + contention + dependency risk; build the
       Risk_Map with contributor identities and direct/indirect explanation paths; exclude the
       requesting member's own locks/intents; flag `acknowledgementRequired` for coordination-required.
@@ -163,7 +163,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
   - [ ]* 4.15 Write property test — a member's own activity is excluded from its own Risk_Map
     - **Property 13: A member's own activity is excluded from its own Risk_Map**
     - **Validates: Requirements 31.5**
-  - [ ] 4.16 Implement registry serialize/deserialize and revision-counter restore
+  - [x] 4.16 Implement registry serialize/deserialize and revision-counter restore
     - Serialize/deserialize Lock_Registry, Intent_Registry, and presence to an authoritative state
       snapshot; on restore resume the revision counter above the max persisted revision.
     - _Requirements: 1.5, 1.6, 9.5, 35.1; Design §5.2_
@@ -178,21 +178,21 @@ for a faster MVP); core implementation sub-tasks are never optional.
   - [ ]* 4.19 Write property test — reconnect synchronization converges
     - **Property 8: Reconnect synchronization converges**
     - **Validates: Requirements 9.2, 9.3, 9.4, 9.5, 33.4**
-  - [ ] 4.20 Implement heartbeat tracking and stale lock/intent expiry sweep
+  - [x] 4.20 Implement heartbeat tracking and stale lock/intent expiry sweep
     - Track last-seen heartbeat per device; the expiry sweep releases exactly the locks/intents whose
       holder's heartbeat is older than `Lock_Expiry_Interval`, leaving others intact, emitting removals.
     - _Requirements: 26.1–26.6; Design §5.2, §13.4_
   - [ ]* 4.21 Write property test — stale locks and intents expire deterministically
     - **Property 14: Stale locks and intents expire deterministically**
     - **Validates: Requirements 26.3**
-  - [ ] 4.22 Implement coalescing and deduplication within the burst window
+  - [x] 4.22 Implement coalescing and deduplication within the burst window
     - Coalesce a burst of presence/lock changes to at most one event per path equal to its final
       state and discard identical duplicate events per path/member; bound the outbound event rate.
     - _Requirements: 34.1, 34.2, 34.3, 34.4; Design §8.5_
   - [ ]* 4.23 Write property test — coalescing and deduplication preserve final per-path state
     - **Property 15: Coalescing and deduplication preserve final per-path state**
     - **Validates: Requirements 34.1, 34.2, 34.3**
-  - [ ] 4.24 Implement the data-minimization filter and host-side rejection
+  - [x] 4.24 Implement the data-minimization filter and host-side rejection
     - Strip source contents, secrets, `.env` data, and absolute paths from any outbound message
       (metadata + normalized repo-relative paths only); reject inbound messages that violate this
       with `FORMAT_ERROR`.
