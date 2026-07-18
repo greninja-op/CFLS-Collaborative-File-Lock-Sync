@@ -60,6 +60,10 @@ export type {
 export { PresenceRegistry } from "./presence";
 export type { PresenceReport } from "./presence";
 
+// ---- Coordination-required override validation & audit (task 4.26; Req 13.2–13.4; §10.3) ----
+export { validateOverride } from "./override";
+export type { OverrideError, OverrideRequest, OverrideResult } from "./override";
+
 // ---- Declared-intent lifecycle & planned-file-creation collisions (task 4.11; Req 16–18, 32; §5.1, §10.2) ----
 export { IntentRegistry } from "./intents";
 export type {

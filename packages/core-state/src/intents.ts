@@ -745,6 +745,117 @@ export class IntentRegistry {
     this.sessions.set(sessionKey(session), map);
   }
 
+  /**
+   * Update every active Declared_Intent that references `fromPath` so it
+   * references `toPath` following a confirmed rename/move (Req 30.3). Both a
+   * planned modification and a Planned_File_Creation of the old path are
+   * rewritten (path-normalized, de-duplicated); the change is treated as
+   * affecting both the old and new paths. The tracked-file set is updated so the
+   * old path key is dropped and the new one recorded when the old path existed
+   * (Req 30.3, 30.7). Returns the intents that were updated (empty when no intent
+   * referenced the old path — Req 30.7).
+   */
+  renamePath(session: SessionId, fromPath: string, toPath: string): DeclaredIntent[] {
+    const fromKey = this.pathKey(fromPath);
+    const normalizedTo = normalizePath(toPath);
+    const updated: DeclaredIntent[] = [];
+
+    const intents = this.sessions.get(sessionKey(session));
+    if (intents !== undefined) {
+      for (const stored of intents.values()) {
+        let changed = false;
+
+        const modifyPaths = stored.intent.modifyPaths.map((p) => {
+          if (this.pathKey(p) === fromKey) {
+            changed = true;
+            return normalizedTo;
+          }
+          return p;
+        });
+        const dedupedModify = [...new Set(modifyPaths)];
+
+        const createPaths = stored.intent.createPaths.map((creation) => {
+          if (this.pathKey(creation.path) === fromKey) {
+            changed = true;
+            return { ...creation, path: normalizedTo };
+          }
+          return creation;
+        });
+        const seenCreate = new Set<string>();
+        const dedupedCreate = createPaths.filter((creation) => {
+          const key = this.pathKey(creation.path);
+          if (seenCreate.has(key)) {
+            return false;
+          }
+          seenCreate.add(key);
+          return true;
+        });
+
+        if (changed) {
+          stored.intent = {
+            ...stored.intent,
+            modifyPaths: dedupedModify,
+            createPaths: dedupedCreate,
+          };
+          updated.push(stored.intent);
+        }
+      }
+    }
+
+    // Follow the file in the tracked-file set as well (Req 30.3).
+    const files = this.tracked.get(sessionKey(session));
+    if (files !== undefined && files.delete(fromKey)) {
+      files.add(this.pathKey(toPath));
+    }
+
+    return updated;
+  }
+
+  /**
+   * Remove references to `path` from the deleting Team_Member's active
+   * Declared_Intents following a confirmed deletion (Req 30.5). Only intents
+   * owned by `member` are touched; other members' intents are left intact. Both
+   * planned modifications and Planned_File_Creations of the path are removed, and
+   * the path is dropped from the tracked-file set. Returns the member's intents
+   * that were updated (empty when the member referenced no such path — Req 30.7).
+   */
+  deletePathForMember(
+    session: SessionId,
+    path: string,
+    member: MemberRef,
+  ): DeclaredIntent[] {
+    const key = this.pathKey(path);
+    const updated: DeclaredIntent[] = [];
+
+    const intents = this.sessions.get(sessionKey(session));
+    if (intents !== undefined) {
+      for (const stored of intents.values()) {
+        if (stored.intent.owner.memberId !== member.memberId) {
+          continue;
+        }
+        const modifyPaths = stored.intent.modifyPaths.filter(
+          (p) => this.pathKey(p) !== key,
+        );
+        const createPaths = stored.intent.createPaths.filter(
+          (creation) => this.pathKey(creation.path) !== key,
+        );
+        if (
+          modifyPaths.length !== stored.intent.modifyPaths.length ||
+          createPaths.length !== stored.intent.createPaths.length
+        ) {
+          stored.intent = { ...stored.intent, modifyPaths, createPaths };
+          stored.inProgress.delete(normalizePath(path));
+          updated.push(stored.intent);
+        }
+      }
+    }
+
+    // A deleted file is no longer a tracked (existing) file (Req 30.7).
+    this.tracked.get(sessionKey(session))?.delete(key);
+
+    return updated;
+  }
+
   /** All active intents recorded for a session. */
   allIntents(session: SessionId): readonly DeclaredIntent[] {
     const intents = this.sessions.get(sessionKey(session));

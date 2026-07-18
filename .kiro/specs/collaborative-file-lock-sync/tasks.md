@@ -175,7 +175,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
       them on the agent side so cached state converges to authoritative state with no missed or
       re-applied events; clear staleness on completion.
     - _Requirements: 9.1–9.6, 33.4, 33.5; Design §4.6_
-  - [ ] 4.19 Write property test — reconnect synchronization converges
+  - [x] 4.19 Write property test — reconnect synchronization converges
     - **Property 8: Reconnect synchronization converges**
     - **Validates: Requirements 9.2, 9.3, 9.4, 9.5, 33.4**
   - [x] 4.20 Implement heartbeat tracking and stale lock/intent expiry sweep
@@ -197,10 +197,10 @@ for a faster MVP); core implementation sub-tasks are never optional.
       (metadata + normalized repo-relative paths only); reject inbound messages that violate this
       with `FORMAT_ERROR`.
     - _Requirements: 29.1–29.5; Design §7.2, §8.3_
-  - [ ] 4.25 Write property test — data-minimization invariant
+  - [x] 4.25 Write property test — data-minimization invariant
     - **Property 9: Data-minimization invariant**
     - **Validates: Requirements 29.1, 29.2, 29.3, 29.4, 29.5**
-  - [ ] 4.26 Write unit tests for lock/intent/presence edge cases and error codes
+  - [x] 4.26 Write unit tests for lock/intent/presence edge cases and error codes
     - Cover release-by-non-holder, release-with-no-lock, cross-branch non-conflict, coordination-required
       override missing reason (`OVERRIDE_REASON_REQUIRED`), and rename/move/delete path tracking.
     - _Requirements: 12.7, 12.8, 13.4, 21.3, 30.1–30.7_

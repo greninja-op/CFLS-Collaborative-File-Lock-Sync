@@ -334,6 +334,110 @@ export class LockRegistry {
     return claims?.find((lock) => !lock.concurrent);
   }
 
+  /**
+   * Transfer a member's active lock from `fromScope` to `toScope` under the same
+   * Branch_Context following a confirmed rename/move (Req 30.2). Only a lock held
+   * by `member` (winning or concurrent) is moved; the holding Team_Member
+   * identity is retained and the change is stamped with the caller-assigned
+   * `eventRevision`. The `(scope, branch)` grouping is recomputed on both the
+   * source and destination groups so winners stay correct (Req 8.2). Returns the
+   * transferred lock, or `undefined` when the member held no lock on `fromScope`
+   * (Req 30.7 — the caller then only updates its tracked path set).
+   */
+  transferPath(request: {
+    session: SessionId;
+    member: MemberRef;
+    fromScope: string;
+    toScope: string;
+    scopeKind: ScopeKind;
+    branch: string;
+    eventRevision: number;
+  }): Lock | undefined {
+    const groups = this.groupsFor(request.session);
+    const fromKey = groupKey(
+      request.fromScope,
+      request.scopeKind,
+      request.branch,
+      this.sensitivity,
+    );
+    const claims = groups.get(fromKey);
+    if (claims === undefined) {
+      return undefined;
+    }
+    const heldIndex = claims.findIndex(
+      (lock) => lock.holder.memberId === request.member.memberId,
+    );
+    if (heldIndex === -1) {
+      return undefined;
+    }
+
+    // Remove the member's claim from the source group and re-resolve it.
+    const [held] = claims.splice(heldIndex, 1);
+    if (claims.length === 0) {
+      groups.delete(fromKey);
+    } else {
+      this.resolveGroup(claims);
+      groups.set(fromKey, claims);
+    }
+
+    // Record the transferred lock under the destination scope with the new
+    // revision, retaining the holder identity and acquisition time (Req 30.2).
+    const moved: Lock = {
+      ...(held as Lock),
+      scope: request.toScope,
+      eventRevision: request.eventRevision,
+      concurrent: false,
+    };
+    const toKey = groupKey(
+      request.toScope,
+      request.scopeKind,
+      request.branch,
+      this.sensitivity,
+    );
+    const destClaims = groups.get(toKey) ?? [];
+    destClaims.push(moved);
+    this.resolveGroup(destClaims);
+    groups.set(toKey, destClaims);
+
+    return moved;
+  }
+
+  /**
+   * Release a member's active lock on `scope` following a confirmed deletion
+   * (Req 30.5). Only a lock held by `member` is removed; other members' claims on
+   * the same scope are left intact and the group is re-resolved so the earliest
+   * remaining claim is promoted (Req 8.2). Returns the removed lock, or
+   * `undefined` when the member held no lock on the path (Req 30.7).
+   */
+  releaseOnDelete(
+    session: SessionId,
+    scope: string,
+    scopeKind: ScopeKind,
+    branch: string,
+    member: MemberRef,
+  ): Lock | undefined {
+    const groups = this.groupsFor(session);
+    const gKey = groupKey(scope, scopeKind, branch, this.sensitivity);
+    const claims = groups.get(gKey);
+    if (claims === undefined) {
+      return undefined;
+    }
+    const heldIndex = claims.findIndex(
+      (lock) => lock.holder.memberId === member.memberId,
+    );
+    if (heldIndex === -1) {
+      return undefined;
+    }
+    const [removed] = claims.splice(heldIndex, 1);
+    if (claims.length === 0) {
+      groups.delete(gKey);
+    } else {
+      this.resolveGroup(claims);
+      groups.set(gKey, claims);
+    }
+    return removed as Lock;
+  }
+
   /** All claims (winning and concurrent) recorded for a scope/branch. */
   claimsForScope(
     session: SessionId,
