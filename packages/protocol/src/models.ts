@@ -1,0 +1,239 @@
+/**
+ * Core DTOs and shared wire types for Collaborative File Lock Sync.
+ *
+ * These are the single source of truth for the data models exchanged between
+ * host, agent, mcp-server, and extension. They are type-only (no runtime logic);
+ * the versioned envelope catalog, error codes, and JSON-schema validation land in
+ * tasks 2.2 and 2.3.
+ *
+ * Definitions mirror design.md §5.1 "Core TypeScript interfaces".
+ */
+
+// ---- Shared unions ----
+
+/** Coordination strictness of a lock/path (Req 15). */
+export type RiskLevel = "soft" | "coordination-required" | "hard";
+
+/** How a lock/intent scope is expressed. */
+export type ScopeKind = "file" | "folder" | "glob";
+
+/** Directed dependency-edge classification (Req 19). */
+export type EdgeKind =
+  | "runtime_import"
+  | "type_only_import"
+  | "test_dependency"
+  | "build_dependency"
+  | "generated_dependency"
+  | "dynamic_unknown";
+
+/** Confidence level attached to an inferred dependency edge (Req 19.6). */
+export type Confidence = "high" | "medium" | "low" | "unknown";
+
+// ---- Identity & session ----
+
+/** Canonical, transport-independent session identity (Req 10.1). */
+export interface SessionId {
+  /** Canonical repository ID (normalized remote). */
+  repoId: string;
+  teamId: string;
+  /** Branch_Context. */
+  branch: string;
+  /** Base_Revision where available. */
+  baseRevision: string | null;
+}
+
+/** A member and the specific device it is acting from. */
+export interface MemberRef {
+  memberId: string;
+  deviceId: string;
+}
+
+/** An active coordination session for a repository (Req 10). */
+export interface RepositorySession {
+  id: SessionId;
+  /** True when derived from the Req 10.6 manual-configuration fallback. */
+  manualConfig: boolean;
+  /** Highest assigned Event_Revision for the session (Req 1.6, 8.1). */
+  highestRevision: number;
+}
+
+// ---- Wire envelope ----
+
+/** The canonical, versioned wire envelope (§4.2, Req 7.1). */
+export interface EventEnvelope {
+  type: string;
+  version: number;
+  eventId: string;
+  session: SessionId;
+  deviceId: string;
+  replay: { counter: number; nonce: string };
+  sentAt: string;
+  payload: unknown;
+}
+
+/** An EventEnvelope with its detached Ed25519 signature (Req 7.1). */
+export interface SignedEvent {
+  envelope: EventEnvelope;
+  /** base64 Ed25519 signature. */
+  signature: string;
+}
+
+// ---- Coordination primitives ----
+
+/** A coordination lock over a path/folder/glob (Req 12.3, 32). */
+export interface Lock {
+  lockId: string;
+  /** path/folder/glob, <=4096 chars. */
+  scope: string;
+  scopeKind: ScopeKind;
+  mode: RiskLevel;
+  holder: MemberRef;
+  /** Branch_Context. */
+  branch: string;
+  eventRevision: number;
+  acquiredAt: string;
+  /** A losing / concurrent claim (Req 8.4, 12.4, 18). */
+  concurrent: boolean;
+}
+
+/** A member's presence on a specific path (Req 11). */
+export interface Presence {
+  member: MemberRef;
+  path: string;
+  state: "started" | "editing" | "stopped";
+  eventRevision: number;
+}
+
+/** A not-yet-existing path a member plans to create (Req 16, 18). */
+export interface PlannedFileCreation {
+  /** <=4096 chars, not yet existing. */
+  path: string;
+}
+
+/** A declared intent describing planned modifications/creations (Req 16.2, 32). */
+export interface DeclaredIntent {
+  intentId: string;
+  owner: MemberRef;
+  /** AI_Agent identifier. */
+  agentId: string;
+  modifyPaths: string[];
+  createPaths: PlannedFileCreation[];
+  /** file/folder/glob. */
+  scopeKind: ScopeKind;
+  branch: string;
+  description: string;
+  eventRevision: number;
+}
+
+// ---- Dependency Graph: five metadata categories only (Req 19.2) ----
+
+/** Category 1 — repository snapshot metadata. */
+export interface RepositorySnapshotMetadata {
+  sessionId: SessionId;
+  graphVersion: number;
+  analyzerVersion: string;
+}
+
+/** Category 2 — package/manifest dependency metadata. */
+export interface PackageDependencyMetadata {
+  manifestPath: string;
+  packageManager: string;
+  directDependencyNames: string[];
+  declaredVersionRanges: Record<string, string>;
+  scope: "prod" | "dev" | "peer" | "optional";
+  lockfileHash: string;
+}
+
+/** Category 3 — a single directed dependency edge. */
+export interface DependencyEdge {
+  from: string;
+  to: string;
+  kind: EdgeKind;
+  confidence: Confidence;
+}
+
+/** Category 3 — per-source-file dependency edges. */
+export interface ModuleDependencyMetadata {
+  sourceFile: string;
+  edges: DependencyEdge[];
+}
+
+/** Category 4 — a hashed public-contract fingerprint (no contents). */
+export interface PublicContractFingerprint {
+  id: string;
+  kind:
+    | "public_api"
+    | "exported_interface"
+    | "db_schema"
+    | "api_schema"
+    | "migration"
+    | "build_config";
+  /** hash only, no contents. */
+  fingerprint: string;
+}
+
+/** Category 5 — a change delta between graph revisions. */
+export interface ChangeDeltaMetadata {
+  changedEdges: (DependencyEdge & { op: "add" | "remove" })[];
+  changedManifests: string[];
+  changedLockfileHash?: string;
+  changedContracts: PublicContractFingerprint[];
+}
+
+/** The full metadata-only dependency graph. */
+export interface DependencyGraph {
+  snapshot: RepositorySnapshotMetadata;
+  packages: PackageDependencyMetadata[];
+  modules: ModuleDependencyMetadata[];
+  contracts: PublicContractFingerprint[];
+}
+
+// ---- Projections & records ----
+
+/** A per-path risk-map entry projected for a requesting member (Req 24.7). */
+export interface RiskMapEntry {
+  path: string;
+  riskLevel: RiskLevel;
+  contributors: { member: MemberRef; kind: string }[];
+  explanation: {
+    type: "direct" | "indirect";
+    edges?: DependencyEdge[];
+    sharedContracts?: string[];
+  };
+  /** Req 13.5 — true when the member must acknowledge before proceeding. */
+  acknowledgementRequired: boolean;
+}
+
+/** A durable audit record with no source content (Req 28). */
+export interface AuditRecord {
+  member: MemberRef;
+  action: "create" | "update" | "withdraw" | "expire" | "override";
+  targetScope: string;
+  eventRevision: number;
+  time: string;
+  /** Req 13.3, 28.2 — no source content. */
+  overrideReason?: string;
+}
+
+/** A membership-registry entry for a device public key (Req 5.2). */
+export interface MembershipRegistryEntry {
+  devicePublicKey: string;
+  memberId: string;
+  invitationValid: boolean;
+  revoked: boolean;
+  rotatedFrom?: string;
+}
+
+/** An incremental coordination update broadcast to authorized agents (Req 25.3). */
+export interface CoordinationUpdate {
+  entryType:
+    | "soft_lock"
+    | "presence"
+    | "intent"
+    | "planned_file_creation"
+    | "dependency_risk";
+  op: "added" | "removed";
+  path?: string;
+  member: MemberRef;
+  eventRevision: number;
+}

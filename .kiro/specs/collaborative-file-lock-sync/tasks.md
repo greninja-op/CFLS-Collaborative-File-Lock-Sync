@@ -46,7 +46,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
 - [ ] 2. `packages/protocol` — versioned envelope, catalog, DTOs, schemas
   - **Goal:** Establish the single source of truth for wire compatibility used by host, agent,
     mcp-server, and extension.
-  - [ ] 2.1 Define core DTOs and shared types
+  - [x] 2.1 Define core DTOs and shared types
     - Implement `SessionId`, `MemberRef`, `RepositorySession`, `EventEnvelope`, `SignedEvent`,
       `Lock`, `Presence`, `DeclaredIntent`, `PlannedFileCreation`, `RiskMapEntry`,
       `CoordinationUpdate`, `AuditRecord`, `MembershipRegistryEntry`, and the Dependency_Graph
