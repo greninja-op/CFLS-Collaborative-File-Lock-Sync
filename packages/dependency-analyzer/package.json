@@ -18,9 +18,14 @@
   ],
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc -b"
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@cfls/protocol": "workspace:*"
+  },
+  "devDependencies": {
+    "@cfls/test-utils": "workspace:*"
   }
 }

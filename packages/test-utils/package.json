@@ -1,0 +1,21 @@
+{
+  "name": "@cfls/test-utils",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared property-based-testing harness (fast-check) and PBT tagging convention for collaborative-file-lock-sync.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fast-check": "^3.23.2"
+  }
+}

@@ -23,7 +23,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
 
 ## Tasks
 
-- [ ] 1. Monorepo scaffolding, build tooling, and documentation
+- [x] 1. Monorepo scaffolding, build tooling, and documentation
   - **Goal:** Stand up the pnpm-workspace monorepo, shared TypeScript/build/lint config, the
     fast-check-enabled test runner, and the seeded `docs/` set so every later package has a home.
   - [x] 1.1 Initialize workspace, TypeScript, and build/lint tooling
@@ -32,12 +32,12 @@ for a faster MVP); core implementation sub-tasks are never optional.
       `packages/{protocol,core-state,dependency-analyzer,mcp-server,security}` package skeletons.
     - Configure `tsup`/`esbuild` build scripts, ESLint + Prettier, and a root `build`/`lint` script.
     - _Requirements: 1.8 (store relocation structure), 2.2 (no-admin build); Design "Project Structure"_
-  - [ ] 1.2 Configure the test runner and property-testing harness
+  - [x] 1.2 Configure the test runner and property-testing harness
     - Add the test runner (vitest) and `fast-check`; establish the PBT tagging convention
       `Feature: collaborative-file-lock-sync, Property N: <text>` and a shared helper enforcing
       `numRuns >= 100`; add `unit`, `integration`, `simulation` test folders under `tests/`.
     - _Requirements: none (infra); Design "Testing Strategy" §13.1–13.2_
-  - [ ] 1.3 Seed the `docs/` files from the design
+  - [x] 1.3 Seed the `docs/` files from the design
     - Create `docs/architecture.md`, `docs/protocol.md`, `docs/threat-model.md`,
       `docs/deployment.md`, and `docs/testing.md`, seeded with the corresponding design sections
       (trust zones, message protocol, STRIDE table, laptop→VPS deployment, testing strategy).
