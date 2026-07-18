@@ -23,13 +23,17 @@
  * differing *enforcement* semantics (override/audit §10.3, hard-stop §10.4) are
  * layered on top by consumers reading this registry.
  *
- * Contention (Req 12.4): when a path/branch already has an active winning lock
- * held by another member, a new acquisition is recorded as a **concurrent
- * claim** (`concurrent: true`) and the existing winner is returned so the caller
- * can report the winning holder and its Event_Revision. The winner is the active
- * non-concurrent lock for the group; on release of the winner the earliest
- * remaining claim (lowest Event_Revision) is promoted so the group never lacks a
- * winner while claims exist.
+ * Contention (Req 12.4, 8.2, 14.5): when a path/branch has more than one claim,
+ * the winner is resolved through the shared {@link resolveByEarliestRevision}
+ * resolver as the claim with the **earliest assigned Event_Revision** — never a
+ * raw timestamp (Req 8.3). This is *order-independent*: a claim that is recorded
+ * later but carries an earlier revision still wins, and the previously-winning
+ * claim is demoted to a concurrent claim. Every non-winning claim is recorded
+ * with `concurrent: true`; the acquisition outcome reports the winning holder,
+ * its Event_Revision, and (for a losing acquisition) the {@link ConflictInfo}
+ * naming that winner (Req 8.4, 12.4). On release of the winner the earliest
+ * remaining claim is promoted so the group never lacks a winner while claims
+ * exist.
  *
  * Holder checks on release: a release by a member who does not hold the winning
  * lock is rejected with `NOT_LOCK_HOLDER` and the lock is retained unchanged
@@ -39,6 +43,7 @@
 
 import type { Lock, MemberRef, RiskLevel, ScopeKind, SessionId } from "@cfls/protocol";
 
+import { type ConflictInfo, resolveByEarliestRevision } from "./conflict";
 import { normalizePathKey, type PlatformCaseSensitivity } from "./path";
 import { sessionKey } from "./session";
 
@@ -76,13 +81,19 @@ export interface AcquireOutcome {
   /** The lock that was recorded (its `concurrent` flag reflects whether it won). */
   lock: Lock;
   /**
-   * The active winning lock for the target scope/branch. Equals {@link lock}
-   * when the acquisition won uncontended; otherwise the pre-existing holder
-   * whose identity and Event_Revision the caller should report (Req 12.4).
+   * The winning lock for the target scope/branch — the claim with the earliest
+   * Event_Revision (Req 8.2, 12.4, 14.5). Equals {@link lock} when the
+   * acquisition won; otherwise the claim whose holder identity and
+   * Event_Revision the caller should report.
    */
   winner: Lock;
   /** True when the acquisition was recorded as a concurrent (losing) claim. */
   contended: boolean;
+  /**
+   * Present only when {@link contended} — the winning member + revision to
+   * report to the losing claimant (Req 8.4, 12.4).
+   */
+  conflict?: ConflictInfo;
 }
 
 /** Error codes surfaced by {@link LockRegistry.release} (design §11.1). */
@@ -139,11 +150,36 @@ export class LockRegistry {
   }
 
   /**
-   * Acquire a lock (Req 12.1–12.4). Records the lock verbatim with the supplied
-   * Event_Revision. If the target scope/branch has no active lock, the new lock
-   * wins uncontended. If another member already holds the winning lock, the new
-   * lock is recorded as a concurrent claim and the existing winner is returned
-   * (Req 12.4). A re-acquisition by the current winner is idempotent.
+   * Resolve a group's claims through the shared earliest-Event_Revision resolver
+   * (§10.2), mutating each stored {@link Lock}'s `concurrent` flag in place so
+   * the winner is the earliest-revision claim regardless of insertion order
+   * (Req 8.2, 12.4, 14.5). Returns the winning lock, or `undefined` when empty.
+   */
+  private resolveGroup(claims: readonly Lock[]): Lock | undefined {
+    if (claims.length === 0) {
+      return undefined;
+    }
+    const wrapped = claims.map((lock) => ({
+      claimId: lock.lockId,
+      eventRevision: lock.eventRevision,
+      holder: lock.holder,
+      lock,
+    }));
+    const { winner, resolved } = resolveByEarliestRevision(wrapped);
+    for (const entry of resolved) {
+      entry.claim.lock.concurrent = entry.concurrent;
+    }
+    return winner?.lock;
+  }
+
+  /**
+   * Acquire a lock (Req 12.1–12.4, 8.2). Records the lock verbatim with the
+   * supplied Event_Revision, then resolves the target scope/branch group through
+   * the shared resolver so the winner is the claim with the earliest
+   * Event_Revision — independent of the order in which claims arrive (Req 8.2,
+   * 14.5). Losing claims are recorded as concurrent (Req 8.4, 12.4). A
+   * re-acquisition by a member that already holds a claim in the group is
+   * idempotent (no new claim recorded).
    */
   acquire(request: LockAcquisition): AcquireOutcome {
     const groups = this.groupsFor(request.session);
@@ -155,17 +191,16 @@ export class LockRegistry {
     );
     const claims = groups.get(gKey) ?? [];
 
-    const currentWinner = claims.find((lock) => !lock.concurrent);
-
-    // The current winner re-acquiring its own lock: no new claim, return as-is.
-    if (
-      currentWinner !== undefined &&
-      currentWinner.holder.memberId === request.holder.memberId
-    ) {
-      return { lock: currentWinner, winner: currentWinner, contended: false };
+    // Idempotency: a member that already has a claim in this group does not add
+    // a second one; return its existing claim after re-resolving the winner.
+    const existing = claims.find(
+      (lock) => lock.holder.memberId === request.holder.memberId,
+    );
+    if (existing !== undefined) {
+      const winner = this.resolveGroup(claims) as Lock;
+      return this.outcome(existing, winner);
     }
 
-    const contended = currentWinner !== undefined;
     const lock: Lock = {
       lockId: request.lockId,
       scope: request.scope,
@@ -175,17 +210,30 @@ export class LockRegistry {
       branch: request.branch,
       eventRevision: request.eventRevision,
       acquiredAt: request.acquiredAt,
-      concurrent: contended,
+      concurrent: false,
     };
 
     claims.push(lock);
     groups.set(gKey, claims);
 
-    return {
-      lock,
-      winner: contended ? (currentWinner as Lock) : lock,
-      contended,
-    };
+    const winner = this.resolveGroup(claims) as Lock;
+    return this.outcome(lock, winner);
+  }
+
+  /** Build an {@link AcquireOutcome} for a recorded lock and its group winner. */
+  private outcome(lock: Lock, winner: Lock): AcquireOutcome {
+    const contended = lock.lockId !== winner.lockId;
+    return contended
+      ? {
+          lock,
+          winner,
+          contended: true,
+          conflict: {
+            winner: winner.holder,
+            winningEventRevision: winner.eventRevision,
+          },
+        }
+      : { lock, winner, contended: false };
   }
 
   /**
@@ -236,7 +284,9 @@ export class LockRegistry {
       return { ok: false, code: "NO_ACTIVE_LOCK" };
     }
 
-    const winner = claims.find((lock) => !lock.concurrent);
+    // Resolve the current winner by earliest Event_Revision (Req 8.2), keeping
+    // stored concurrent flags in sync before the holder check.
+    const winner = this.resolveGroup(claims);
     if (winner === undefined) {
       return { ok: false, code: "NO_ACTIVE_LOCK" };
     }
@@ -246,21 +296,14 @@ export class LockRegistry {
       return { ok: false, code: "NOT_LOCK_HOLDER" };
     }
 
-    // Remove the winning lock.
+    // Remove the winning lock and re-resolve so the earliest remaining claim is
+    // promoted (Req 8.2) — the group never lacks a winner while claims exist.
     const remaining = claims.filter((lock) => lock.lockId !== winner.lockId);
 
     let promoted: Lock | undefined;
     if (remaining.length > 0) {
-      // Promote the earliest remaining claim (lowest Event_Revision) so the
-      // group never lacks a winner while claims exist.
-      const earliest = remaining.reduce((best, lock) =>
-        lock.eventRevision < best.eventRevision ? lock : best,
-      );
-      promoted = { ...earliest, concurrent: false };
-      const promotedClaims = remaining.map((lock) =>
-        lock.lockId === earliest.lockId ? (promoted as Lock) : lock,
-      );
-      groups.set(gKey, promotedClaims);
+      promoted = this.resolveGroup(remaining);
+      groups.set(gKey, remaining);
     } else {
       groups.delete(gKey);
     }

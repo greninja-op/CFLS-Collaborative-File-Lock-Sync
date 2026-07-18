@@ -103,6 +103,47 @@ describe("LockRegistry.acquire — contention (Req 12.4)", () => {
     );
   });
 
+  it("resolves the winner by earliest Event_Revision regardless of arrival order (Req 8.2, 12.4)", () => {
+    const registry = new LockRegistry("case-sensitive");
+    // Bob's claim arrives first but carries the LATER revision.
+    const bobOutcome = registry.acquire(
+      acq({ lockId: "lock-bob", holder: bob, eventRevision: 5 }),
+    );
+    expect(bobOutcome.contended).toBe(false);
+
+    // Alice's claim arrives second but carries the EARLIER revision — she wins.
+    const aliceOutcome = registry.acquire(
+      acq({ lockId: "lock-alice", holder: alice, eventRevision: 2 }),
+    );
+
+    expect(aliceOutcome.contended).toBe(false);
+    expect(aliceOutcome.lock.concurrent).toBe(false);
+
+    const winner = registry.winningLock(session, "src/api.ts", "file", "main");
+    expect(winner?.holder).toEqual(alice);
+    expect(winner?.eventRevision).toBe(2);
+
+    // Bob's earlier-arriving claim is now demoted to concurrent.
+    const bobClaim = registry
+      .claimsForScope(session, "src/api.ts", "file", "main")
+      .find((lock) => lock.lockId === "lock-bob");
+    expect(bobClaim?.concurrent).toBe(true);
+  });
+
+  it("reports the winning member + revision as conflict info on a losing claim (Req 8.4)", () => {
+    const registry = new LockRegistry("case-sensitive");
+    registry.acquire(acq({ holder: alice, lockId: "lock-1", eventRevision: 1 }));
+    const outcome = registry.acquire(
+      acq({ holder: bob, lockId: "lock-2", eventRevision: 2 }),
+    );
+
+    expect(outcome.contended).toBe(true);
+    expect(outcome.conflict).toEqual({
+      winner: alice,
+      winningEventRevision: 1,
+    });
+  });
+
   it("does not contend across different branches (Req 12.4 same-branch clause)", () => {
     const registry = new LockRegistry("case-sensitive");
     registry.acquire(acq({ holder: alice, branch: "main", eventRevision: 1 }));

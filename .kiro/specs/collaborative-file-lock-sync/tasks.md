@@ -127,14 +127,14 @@ for a faster MVP); core implementation sub-tasks are never optional.
       replays via the security counter/nonce logic, and validate schema + sender permission before
       any state change.
     - _Requirements: 7.4, 7.5, 7.7; Design §4.4_
-  - [ ]* 4.7 Write property test — idempotency of duplicate Event_IDs
+  - [x]* 4.7 Write property test — idempotency of duplicate Event_IDs
     - **Property 3: Idempotency of duplicate Event_IDs**
     - **Validates: Requirements 7.4**
   - [x] 4.8 Implement the lock registry and presence registry
     - Acquire/release soft, coordination-required, and hard locks with holder checks
       (`NOT_LOCK_HOLDER`, `NO_ACTIVE_LOCK`); track presence started/editing/stopped per member/path.
     - _Requirements: 11.1–11.4, 12.1–12.8, 13.1–13.5, 14.1–14.4; Design §10.3, §10.4_
-  - [ ] 4.9 Implement conflict resolution by earliest Event_Revision
+  - [x] 4.9 Implement conflict resolution by earliest Event_Revision
     - Select the winner as the earliest assigned revision for contested locks and Planned_File_Creations;
       record every other claim as a concurrent claim with the winning member + revision; never use raw
       timestamps as the sole resolver.
@@ -142,7 +142,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
   - [ ]* 4.10 Write property test — conflict resolution is deterministic and order-independent
     - **Property 2: Conflict resolution is deterministic and order-independent**
     - **Validates: Requirements 8.2, 8.3, 8.4, 12.4, 14.5, 18.1, 18.3**
-  - [ ] 4.11 Implement declared-intent lifecycle and planned-file-creation collision detection
+  - [x] 4.11 Implement declared-intent lifecycle and planned-file-creation collision detection
     - Declare/update/withdraw/complete intents with ownership enforcement (`NOT_OWNER`), reconcile
       with real saves/creations, reclassify create→modify when a path already exists, and detect
       duplicate Planned_File_Creations; support file/folder/glob `Intent_Scope`.
@@ -152,7 +152,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
       (`hard > coordination-required > soft`), default unmatched paths to soft, and fall back to
       all-soft on malformed config (never silently escalate).
     - _Requirements: 15.1–15.5; Design "Repository Rules Config Format", §6_
-  - [ ]* 4.13 Write property test — rules precedence is most-restrictive-wins
+  - [x]* 4.13 Write property test — rules precedence is most-restrictive-wins
     - **Property 10: Rules precedence is most-restrictive-wins**
     - **Validates: Requirements 15.3, 15.4**
   - [ ] 4.14 Implement risk classification, Risk_Map projection, and own-activity exclusion

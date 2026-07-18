@@ -34,6 +34,20 @@ export type {
   PersistedAppliedEvent,
 } from "./ingest";
 
+// ---- Conflict resolution by earliest Event_Revision (task 4.9; §10.2) ----
+export {
+  resolveByEarliestRevision,
+  resolvePlannedFileCreationClaims,
+  compareClaims,
+} from "./conflict";
+export type {
+  RevisionClaim,
+  ConflictInfo,
+  ResolvedClaim,
+  Resolution,
+  PlannedFileCreationClaim,
+} from "./conflict";
+
 // ---- Lock registry & presence registry (task 4.8; §10.3, §10.4) ----
 export { LockRegistry } from "./locks";
 export type {
@@ -45,6 +59,23 @@ export type {
 } from "./locks";
 export { PresenceRegistry } from "./presence";
 export type { PresenceReport } from "./presence";
+
+// ---- Declared-intent lifecycle & planned-file-creation collisions (task 4.11; Req 16–18, 32; §5.1, §10.2) ----
+export { IntentRegistry } from "./intents";
+export type {
+  IntentError,
+  DeclareIntentRequest,
+  UpdateIntentRequest,
+  WithdrawIntentRequest,
+  Reclassification,
+  PlannedCreationConflict,
+  DeclareResult,
+  WithdrawResult,
+  CreationReconciliation,
+  SaveReconciliation,
+  WithdrawCreationResult,
+  CoveringIntent,
+} from "./intents";
 
 // ---- Rules-precedence resolver (task 4.12; Req 15; §6) ----
 export {
