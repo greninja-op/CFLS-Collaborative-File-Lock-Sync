@@ -114,3 +114,21 @@ export type {
   CoordinationUpdatePayload,
   ErrorPayload,
 } from "./messages";
+
+// ---- JSON-schema validation (design §4.4, §4.7; Req 7.6, 7.7) ----
+export {
+  validateEnvelope,
+  validateSignedEvent,
+  validatePayload,
+  PAYLOAD_SCHEMAS,
+  ENVELOPE_SCHEMA,
+  VALIDATED_MESSAGE_TYPES,
+} from "./validation";
+export type {
+  FieldSpec,
+  FieldDefinition,
+  ObjectSchema,
+  EnvelopeValidationResult,
+  SignedEventValidationResult,
+  PayloadValidationResult,
+} from "./validation";

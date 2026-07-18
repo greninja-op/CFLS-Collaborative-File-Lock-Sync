@@ -43,7 +43,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
       (trust zones, message protocol, STRIDE table, laptop→VPS deployment, testing strategy).
     - _Requirements: none (docs); Design "Architecture", "Network & Message Protocol", "Security & Threat Model"_
 
-- [ ] 2. `packages/protocol` — versioned envelope, catalog, DTOs, schemas
+- [x] 2. `packages/protocol` — versioned envelope, catalog, DTOs, schemas
   - **Goal:** Establish the single source of truth for wire compatibility used by host, agent,
     mcp-server, and extension.
   - [x] 2.1 Define core DTOs and shared types
@@ -60,7 +60,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
       message catalog (auth/presence/locks/intents/dependency/path/heartbeat/sync/broadcast/error),
       and the `ErrorCode` union.
     - _Requirements: 7.1, 7.6; Design §4.2, §4.3, §11.1_
-  - [ ] 2.3 Implement JSON schemas and validation
+  - [x] 2.3 Implement JSON schemas and validation
     - Add JSON-schema definitions and a `validateEnvelope`/`validatePayload` function that rejects
       malformed or unsupported-version messages with `FORMAT_ERROR`; provide canonicalization used
       for signing.
