@@ -54,7 +54,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
       `DependencyEdge`, `ModuleDependencyMetadata`, `PublicContractFingerprint`,
       `ChangeDeltaMetadata`, `DependencyGraph`), plus `RiskLevel`/`ScopeKind`/`EdgeKind`/`Confidence`.
     - _Requirements: 7.1, 10.1, 24.7; Design §5.1_
-  - [ ] 2.2 Implement the versioned envelope, message catalog, and error codes
+  - [x] 2.2 Implement the versioned envelope, message catalog, and error codes
     - Define `MESSAGE_FORMAT_VERSION`, the canonical envelope shape (`type`, `version`, `eventId`,
       `session`, `deviceId`, `replay{counter,nonce}`, `sentAt`, `payload`, `signature`), the full
       message catalog (auth/presence/locks/intents/dependency/path/heartbeat/sync/broadcast/error),
