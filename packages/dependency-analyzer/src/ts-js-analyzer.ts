@@ -23,6 +23,8 @@ import type {
   ModuleDependencyMetadata,
 } from "@cfls/protocol";
 
+import { extractTsJsContracts } from "./contracts";
+import { dirOf, normalizePath, stripComments } from "./internal";
 import type {
   AnalyzeResult,
   LanguageAnalyzer,
@@ -59,26 +61,6 @@ interface RawImport {
 // ---------------------------------------------------------------------------
 // Path helpers (repo-relative, forward-slash, platform-independent).
 // ---------------------------------------------------------------------------
-
-function dirOf(path: string): string {
-  const idx = path.lastIndexOf("/");
-  return idx === -1 ? "" : path.slice(0, idx);
-}
-
-/** Collapse `.` / `..` segments in a forward-slash path. */
-function normalizePath(path: string): string {
-  const out: string[] = [];
-  for (const segment of path.split("/")) {
-    if (segment === "" || segment === ".") continue;
-    if (segment === "..") {
-      if (out.length > 0 && out[out.length - 1] !== "..") out.pop();
-      else out.push("..");
-      continue;
-    }
-    out.push(segment);
-  }
-  return out.join("/");
-}
 
 /** Resolve a relative specifier against the importing file's directory. */
 function resolveRelative(fromFile: string, specifier: string): string {
@@ -132,13 +114,6 @@ function isTestFile(path: string): boolean {
 // ---------------------------------------------------------------------------
 // Import-specifier extraction (regex over comment-stripped source).
 // ---------------------------------------------------------------------------
-
-/** Remove block and line comments so commented-out imports are ignored. */
-function stripComments(source: string): string {
-  return source
-    .replace(/\/\*[\s\S]*?\*\//g, " ")
-    .replace(/(^|[^:])\/\/[^\n]*/g, "$1");
-}
 
 const STATIC_IMPORT = /\bimport\s+(type\s+)?[^;'"]*?\bfrom\s*['"]([^'"]+)['"]/g;
 const SIDE_EFFECT_IMPORT = /\bimport\s+['"]([^'"]+)['"]/g;
@@ -268,8 +243,9 @@ export class TsJsImportAnalyzer implements LanguageAnalyzer {
       modules.push({ sourceFile: file.path, edges: dedupeEdges(edges) });
     }
 
-    // Public-contract fingerprints are produced in task 5.2.
-    return { modules, contracts: [] };
+    // Category 4 — hashed public-contract fingerprints for the TS/JS surface
+    // (design §7.1, §7.6; task 5.2). Hashes only, never file bodies.
+    return { modules, contracts: extractTsJsContracts(supported) };
   }
 }
 

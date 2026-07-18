@@ -92,7 +92,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Wrap Windows Credential Manager (`keytar`) with an encrypted-file fallback for storing the
       Device_Private_Key; surface a `SECURE_STORAGE_UNAVAILABLE` error when neither is usable.
     - _Requirements: 5.8, 5.9; Design §8.2_
-  - [-]* 3.5 Write property test — replay rejection leaves state unchanged
+  - [x]* 3.5 Write property test — replay rejection leaves state unchanged
     - **Property 4: Replay rejection leaves state unchanged**
     - **Validates: Requirements 7.5**
   - [x]* 3.6 Write property test — only authentically signed, admitted events mutate state
@@ -212,7 +212,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
       `Dependency_Edge`s (edge kinds) with confidence levels (high/medium/low/unknown) from import
       specifiers only — never file bodies.
     - _Requirements: 19.1, 19.2, 19.6; Design §7.5, §7.7_
-  - [ ] 5.2 Implement manifest metadata, contract fingerprints, and the exclusion list
+  - [x] 5.2 Implement manifest metadata, contract fingerprints, and the exclusion list
     - Extract `Package_Dependency_Metadata` and `Public_Contract_Fingerprint`s (hashes only); apply
       the always-excluded list (`node_modules`, build outputs, caches, `.git`, vendor, venv, secrets).
     - _Requirements: 19.2, 19.7, 29.2; Design §7.1, §7.6_
