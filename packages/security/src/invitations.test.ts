@@ -16,6 +16,7 @@ import {
   isAdmitted,
   isRevoked,
   issueInvitation,
+  type IssueInvitationParams,
   revokeDevice,
   rotateDeviceKey,
   validateInvitation,
@@ -43,17 +44,19 @@ function invite(
   device: ReturnType<typeof generateDeviceKey>,
   overrides: { memberId?: string; issuedAt?: string; expiresAt?: string | null } = {},
 ): SignedInvitation {
-  return issueInvitation(
-    {
-      session: SESSION,
-      devicePublicKey: device.publicKey,
-      memberId: overrides.memberId ?? "member-1",
-      issuerPublicKey: admin.publicKey,
-      issuedAt: overrides.issuedAt,
-      expiresAt: overrides.expiresAt,
-    },
-    admin.privateKey,
-  );
+  const params: IssueInvitationParams = {
+    session: SESSION,
+    devicePublicKey: device.publicKey,
+    memberId: overrides.memberId ?? "member-1",
+    issuerPublicKey: admin.publicKey,
+  };
+  if (overrides.issuedAt !== undefined) {
+    params.issuedAt = overrides.issuedAt;
+  }
+  if (overrides.expiresAt !== undefined) {
+    params.expiresAt = overrides.expiresAt;
+  }
+  return issueInvitation(params, admin.privateKey);
 }
 
 describe("issueInvitation / verifyInvitationSignature", () => {

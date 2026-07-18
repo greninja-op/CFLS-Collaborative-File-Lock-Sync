@@ -109,13 +109,13 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Derive canonical `repoId` from SSH/HTTPS/`.git` remotes; normalize repository-relative paths
       (separators, `.`/`..`, `./`, platform-aware case key); build `session_key` hashing.
     - _Requirements: 10.1, 10.2, 10.3, 10.4; Design §9.1, §9.3_
-  - [ ]* 4.2 Write property test — canonical repository ID is transport-independent
+  - [x]* 4.2 Write property test — canonical repository ID is transport-independent
     - **Property 12: Canonical repository ID is transport-independent**
     - **Validates: Requirements 10.1**
-  - [ ]* 4.3 Write property test — path normalization maps equivalents to one key
+  - [x]* 4.3 Write property test — path normalization maps equivalents to one key
     - **Property 11: Path normalization maps equivalents to one key**
     - **Validates: Requirements 10.3, 10.4**
-  - [ ] 4.4 Implement monotonic Event_Revision assignment with restart resume
+  - [x] 4.4 Implement monotonic Event_Revision assignment with restart resume
     - Per-session `++counter` assignment guaranteeing uniqueness/strict order; resume above the
       max persisted revision on restore.
     - _Requirements: 8.1, 1.6; Design §4.5_
@@ -221,10 +221,10 @@ for a faster MVP); core implementation sub-tasks are never optional.
       re-uploading a graph the host already holds at the same branch/base revision, and serialize/
       deserialize the graph preserving all five metadata categories.
     - _Requirements: 19.3, 19.4, 19.5, 20.1, 20.2, 20.3, 20.4; Design §7.3, §7.4_
-  - [ ]* 5.4 Write property test — Dependency_Graph serialization round-trip
+  - [x]* 5.4 Write property test — Dependency_Graph serialization round-trip
     - **Property 6: Dependency_Graph serialization round-trip**
     - **Validates: Requirements 20.4**
-  - [ ]* 5.5 Write unit tests for confidence levels, exclusion list, and delta computation
+  - [x]* 5.5 Write unit tests for confidence levels, exclusion list, and delta computation
     - Cover static→high / aliased→medium / dynamic→low|unknown, excluded folders never analyzed, and add/remove edge deltas.
     - _Requirements: 19.6, 19.7, 19.4_
 

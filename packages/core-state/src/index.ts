@@ -18,3 +18,7 @@ export {
 } from "./path";
 export type { PlatformCaseSensitivity } from "./path";
 export { sessionKey, buildSessionId } from "./session";
+
+// ---- Monotonic Event_Revision assignment with restart resume (task 4.4; §4.5) ----
+export { RevisionCounter } from "./revisions";
+export type { PersistedRevision } from "./revisions";
