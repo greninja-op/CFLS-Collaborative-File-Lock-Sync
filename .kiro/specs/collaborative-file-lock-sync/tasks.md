@@ -73,7 +73,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Assert each `ErrorCode` maps to the requirement it represents and envelopes round-trip through construct/parse.
     - _Requirements: 7.1, 11.1_
 
-- [ ] 3. `packages/security` — identity, invitations, replay, credential store
+- [x] 3. `packages/security` — identity, invitations, replay, credential store
   - **Goal:** Provide Ed25519 identity and the authenticity/replay gates that the host and agent rely on.
   - [x] 3.1 Implement Ed25519 key generation, signing, and verification
     - Generate Device_Key pairs, sign the canonical envelope, and verify signatures against a
@@ -84,7 +84,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
       chains to an authorized admin before admission; implement revocation and rotation predicates
       against a `Membership_Registry` view.
     - _Requirements: 5.2, 5.5, 5.6, 5.7; Design §8.2, §8.5_
-  - [ ] 3.3 Implement replay-protection counter and nonce logic
+  - [x] 3.3 Implement replay-protection counter and nonce logic
     - Track the highest accepted per-device monotonic counter and used nonces; expose an
       `acceptReplay(deviceId, counter, nonce)` predicate that rejects `counter <= last` or a reused nonce.
     - _Requirements: 7.5; Design §4.4_
@@ -92,13 +92,13 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Wrap Windows Credential Manager (`keytar`) with an encrypted-file fallback for storing the
       Device_Private_Key; surface a `SECURE_STORAGE_UNAVAILABLE` error when neither is usable.
     - _Requirements: 5.8, 5.9; Design §8.2_
-  - [ ]* 3.5 Write property test — replay rejection leaves state unchanged
+  - [-]* 3.5 Write property test — replay rejection leaves state unchanged
     - **Property 4: Replay rejection leaves state unchanged**
     - **Validates: Requirements 7.5**
-  - [ ]* 3.6 Write property test — only authentically signed, admitted events mutate state
+  - [x]* 3.6 Write property test — only authentically signed, admitted events mutate state
     - **Property 5: Only authentically signed, admitted events mutate state**
     - **Validates: Requirements 7.2, 7.3, 5.4, 5.6**
-  - [ ]* 3.7 Write unit tests for keygen/sign/verify, invitation validation, and rotation
+  - [x]* 3.7 Write unit tests for keygen/sign/verify, invitation validation, and rotation
     - Cover tampered signatures, non-admin invitation issuer rejection, revoked-key rejection, and rotation retiring the old key.
     - _Requirements: 5.1, 5.2, 5.5, 5.6, 5.7_
 
@@ -207,7 +207,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
 
 - [ ] 5. `packages/dependency-analyzer` — metadata-only TS/JS analyzer
   - **Goal:** Build the pluggable, metadata-only dependency analysis that feeds indirect-risk detection.
-  - [ ] 5.1 Define `LanguageAnalyzer` interface and the TS/JS import analyzer
+  - [x] 5.1 Define `LanguageAnalyzer` interface and the TS/JS import analyzer
     - Implement the `LanguageAnalyzer` interface and a TS/JS analyzer that extracts directed
       `Dependency_Edge`s (edge kinds) with confidence levels (high/medium/low/unknown) from import
       specifiers only — never file bodies.

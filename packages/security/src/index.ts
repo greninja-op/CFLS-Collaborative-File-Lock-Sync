@@ -48,6 +48,19 @@ export type {
 // ---- Signing / verification of canonical envelopes (design §8.3; Req 7.1, 7.2) ----
 export { signEnvelope, verifySignedEvent } from "./signing";
 
+// ---- Replay protection: per-device monotonic counter + nonce (design §4.4; Req 7.5) ----
+export {
+  createReplayGuard,
+  evaluateReplay,
+  emptyReplayRecord,
+} from "./replay";
+export type {
+  ReplayGuard,
+  ReplayRecord,
+  ReplayDecision,
+  ReplayEvaluation,
+} from "./replay";
+
 // ---- Credential store: Device_Private_Key secure storage (design §8.2; Req 5.8, 5.9) ----
 export { createSecretStore } from "./credential-store";
 export { createOsCredentialStore } from "./os-credential-store";
