@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/readme/cfls-hero.gif" width="1280" alt="Animated overview of CFLS: Alice's local Agent sends a signed work signal to the CFLS Host, then Bob sees the shared context before editing an overlapping file." />
+  <img src="./assets/readme/cfls-hero.png" width="1280" alt="CFLS overview: Alice's local Agent sends a signed work signal to the CFLS Host, then Bob sees the shared context before editing an overlapping file." />
 </p>
 
 <h1 align="center">CFLS — Collaborative File Lock Sync</h1>

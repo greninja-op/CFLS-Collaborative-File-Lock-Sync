@@ -1,4 +1,4 @@
-"""Render the animated CFLS hero used by the GitHub README.
+"""Render the high-resolution static CFLS hero used by the GitHub README.
 
 The banner is deliberately drawn from project-native primitives rather than a
 generic generated mock-up: its logo, claims, and coordination flow match the
@@ -16,12 +16,13 @@ from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
 WIDTH, HEIGHT = 1280, 400
 FRAME_COUNT = 24
-FRAME_DURATION_MS = 135
+SCENE_FRAME = 18
+OUTPUT_SCALE = 2
 
 ROOT = Path(__file__).resolve().parent.parent
 ASSET_DIR = ROOT / "assets" / "readme"
-GIF_PATH = ASSET_DIR / "cfls-hero.gif"
-POSTER_PATH = ASSET_DIR / "cfls-hero.png"
+LEGACY_GIF_PATH = ASSET_DIR / "cfls-hero.gif"
+PNG_PATH = ASSET_DIR / "cfls-hero.png"
 
 FONT_DIR = Path(r"C:\Windows\Fonts")
 SANS = FONT_DIR / "segoeui.ttf"
@@ -88,25 +89,46 @@ def rounded_panel(
 
 
 def draw_logo(draw: ImageDraw.ImageDraw, x: int, y: int, size: int) -> None:
-    """Draw the same three-node CFLS mark used by website/favicon.svg."""
+    """Draw the landing page's three-node CFLS mark at banner scale.
+
+    The numbers below are the `viewBox="0 0 36 36"` geometry from the
+    website header, placed inside the same 32px-to-24px icon proportion used
+    by `.brand-mark`. Keeping that source geometry avoids a second, almost-
+    matching version of the product mark in the README artwork.
+    """
     rounded_panel(
         draw,
         (x, y, x + size, y + size),
         fill=LIME,
-        outline="#DFFF9B",
-        radius=round(size * 0.26),
+        outline=LIME,
+        radius=round(size * (9 / 32)),
     )
-    scale = size / 64
-    line = round(4.5 * scale)
+    glyph_size = size * (24 / 32)
+    glyph_x = x + (size - glyph_size) / 2
+    glyph_y = y + (size - glyph_size) / 2
+    scale = glyph_size / 36
+    line = max(1, round(2.4 * scale))
     ink = rgba(CANVAS)
-    p1 = (x + round(17 * scale), y + round(22 * scale))
-    p2 = (x + round(32 * scale), y + round(22 * scale))
-    p3 = (x + round(48 * scale), y + round(42 * scale))
-    draw.line((p1, p2), fill=ink, width=line)
-    draw.line((p2[0], p2[1], p3[0], p3[1]), fill=ink, width=line)
-    draw.line((p3[0], p3[1], x + round(47 * scale), p3[1]), fill=ink, width=line)
-    radius = round(6 * scale)
-    for cx, cy in (p1, p2, p3):
+
+    def point(px: float, py: float) -> tuple[int, int]:
+        return (round(glyph_x + px * scale), round(glyph_y + py * scale))
+
+    def rounded_line(start: tuple[int, int], end: tuple[int, int]) -> None:
+        draw.line((start, end), fill=ink, width=line)
+        cap_radius = line / 2
+        for cx, cy in (start, end):
+            draw.ellipse(
+                (cx - cap_radius, cy - cap_radius, cx + cap_radius, cy + cap_radius),
+                fill=ink,
+            )
+
+    # Exact landing-page path: top link, bottom link, then the diagonal.
+    rounded_line(point(9.5, 11.5), point(17.8, 11.5))
+    rounded_line(point(18.2, 24.5), point(26.5, 24.5))
+    rounded_line(point(18.1, 11.5), point(25.4, 24.5))
+
+    radius = round(3.3 * scale)
+    for cx, cy in (point(8.5, 11.5), point(27.5, 24.5), point(19, 11.5)):
         draw.ellipse((cx - radius, cy - radius, cx + radius, cy + radius), fill=ink)
 
 
@@ -309,20 +331,17 @@ def render_frame(index: int) -> Image.Image:
 
 def main() -> None:
     ASSET_DIR.mkdir(parents=True, exist_ok=True)
-    frames = [render_frame(index) for index in range(FRAME_COUNT)]
-    frames[0].save(
-        GIF_PATH,
-        save_all=True,
-        append_images=frames[1:],
-        duration=FRAME_DURATION_MS,
-        loop=0,
-        optimize=True,
-        disposal=2,
+    scene = render_frame(SCENE_FRAME)
+    # Author at 2x the displayed width so GitHub's 1280px presentation stays
+    # crisp on high-density screens without GIF palette compression.
+    high_resolution = scene.resize(
+        (WIDTH * OUTPUT_SCALE, HEIGHT * OUTPUT_SCALE),
+        Image.Resampling.LANCZOS,
     )
-    # Keep a matching poster frame for contexts that cannot autoplay a GIF.
-    frames[6].save(POSTER_PATH, optimize=True)
-    print(f"Wrote {GIF_PATH.relative_to(ROOT)} ({GIF_PATH.stat().st_size:,} bytes)")
-    print(f"Wrote {POSTER_PATH.relative_to(ROOT)} ({POSTER_PATH.stat().st_size:,} bytes)")
+    high_resolution.save(PNG_PATH, format="PNG", optimize=True, compress_level=9)
+    if LEGACY_GIF_PATH.exists():
+        LEGACY_GIF_PATH.unlink()
+    print(f"Wrote {PNG_PATH.relative_to(ROOT)} ({PNG_PATH.stat().st_size:,} bytes)")
 
 
 if __name__ == "__main__":
