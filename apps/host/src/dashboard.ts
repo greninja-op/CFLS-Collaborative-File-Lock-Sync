@@ -1633,29 +1633,25 @@ export function renderDashboardHtml(): string {
         </div>
       </div>
     </header>
-    <main id="main-content">
-      <section class="hero dashboard-hero shell" aria-labelledby="dashboard-title">
-        <div class="hero-copy">
-          <p class="eyebrow"><span class="eyebrow-pulse"></span> Live coordination state</p>
-          <h1 id="dashboard-title">See the work <span>already in motion.</span></h1>
-          <p class="hero-lede">A calm, read-only view of the signals your team has already shared. CFLS coordinates activity; your source code stays in Git.</p>
+    <main id="main-content" class="dashboard-main">
+      <section class="dashboard-toolbar shell" aria-labelledby="dashboard-title">
+        <div>
+          <p class="dashboard-kicker"><span aria-hidden="true"></span> Live coordination</p>
+          <h1 id="dashboard-title">Coordination dashboard</h1>
+          <p class="dashboard-subtitle">Read-only work signals. Source code stays in Git.</p>
         </div>
-        <aside class="hero-host-scene" aria-label="Host update state">
-          <span class="hero-host-orbit" aria-hidden="true"></span>
-          <div class="hero-host" aria-hidden="true">
-            <div class="host-core">
-              <svg viewBox="0 0 24 24" fill="none">
-                <path d="M12 2.7 19 6.5v7.7L12 18l-7-3.8V6.5L12 2.7Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-                <path d="m5.3 6.7 6.7 3.7 6.7-3.7M12 10.4V18" stroke="currentColor" stroke-width="1.6"/>
-              </svg>
-              <span>CFLS HOST</span>
-            </div>
-            <p id="last-updated" class="hero-host-copy">Waiting for host data...</p>
-          </div>
+        <aside class="dashboard-host-status" aria-label="Host update state">
+          <span class="host-status-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none">
+              <path d="M12 2.7 19 6.5v7.7L12 18l-7-3.8V6.5L12 2.7Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+              <path d="m5.3 6.7 6.7 3.7 6.7-3.7M12 10.4V18" stroke="currentColor" stroke-width="1.6"/>
+            </svg>
+          </span>
+          <span><strong>Host live</strong><span id="last-updated">Waiting for host data...</span></span>
         </aside>
       </section>
 
-      <section id="totals" class="trust-strip shell" aria-label="Coordination overview">
+      <section id="totals" class="metric-grid shell" aria-label="Coordination overview">
         <article class="metric">
           <span class="metric-index">01</span>
           <span class="metric-copy"><span class="metric-label">Sessions</span><strong class="metric-value">–</strong><span class="metric-detail">Waiting for host state</span></span>
@@ -1670,15 +1666,15 @@ export function renderDashboardHtml(): string {
         </article>
       </section>
 
-      <section class="section section--tinted dashboard-workspace" aria-labelledby="workspaces-heading">
+      <section class="workspace-board" aria-labelledby="workspaces-heading">
         <div class="shell">
-        <div class="section-heading section-heading--split">
-          <div>
-            <p class="eyebrow"><span class="eyebrow-pulse"></span> Team workspaces</p>
-            <h2 id="workspaces-heading">The live coordination signal, in one place.</h2>
+          <div class="workspace-board-head">
+            <div>
+              <p>TEAM WORKSPACES</p>
+              <h2 id="workspaces-heading">Active work</h2>
+            </div>
+            <div id="session-switcher" class="session-switcher" aria-label="Choose a workspace"></div>
           </div>
-          <p><strong>Read-only</strong> coordination metadata only. The Host receives work signals, never copies of source files.</p>
-        </div>
         <section id="sessions" class="sessions" aria-live="polite" aria-busy="true">
           <article class="loading-state">
             <span class="loading-orbit" aria-hidden="true"></span>
@@ -1696,7 +1692,10 @@ export function renderDashboardHtml(): string {
         const connectionElement = document.getElementById("connection");
         const connectionTextElement = document.getElementById("connection-text");
         const lastUpdatedElement = document.getElementById("last-updated");
+        const sessionSwitcherElement = document.getElementById("session-switcher");
         let hasRendered = false;
+        let selectedSessionKey = "";
+        let lastState = null;
 
         function escapeHtml(value) {
           return String(value).replace(/[&<>"']/g, (character) => HTML_ESCAPES[character] || character);
@@ -1752,11 +1751,10 @@ export function renderDashboardHtml(): string {
         }
 
         function metricMarkup(icon, label, value, detail, tone) {
-          const iconClass = tone === "signal" ? "" : " trust-icon--" + tone;
-          return '<article class="metric metric--' + tone + '">' +
-            '<span class="trust-icon' + iconClass + '">' + icon + '</span>' +
-            '<p><strong><b>' + escapeHtml(value) + '</b> ' + label + '</strong>' +
-            '<span>' + escapeHtml(detail) + '</span></p></article>';
+          return '<article class="summary-card summary-card--' + tone + '">' +
+            '<span class="summary-card-index" aria-hidden="true">' + icon + '</span>' +
+            '<span><b>' + escapeHtml(label) + '</b><strong>' + escapeHtml(value) + '</strong>' +
+            '<small>' + escapeHtml(detail) + '</small></span></article>';
         }
 
         function renderDevices(devices) {
