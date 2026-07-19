@@ -48,6 +48,13 @@ export function isLoopbackUrl(url: string): boolean {
 export class WebSocketFrameTransport implements FrameTransport {
   private readonly socket: WebSocket;
   private open = false;
+  /**
+   * Frames enqueued before the socket finished opening. The client authenticates
+   * as soon as it is constructed, which can race ahead of the WebSocket `open`
+   * event; buffering here guarantees the `auth` frame (and any early request) is
+   * delivered in order once the socket is ready, rather than being dropped.
+   */
+  private readonly pending: string[] = [];
 
   constructor(url: string, socketImpl: typeof WebSocket = WebSocket) {
     if (!isLoopbackUrl(url)) {
@@ -59,6 +66,10 @@ export class WebSocketFrameTransport implements FrameTransport {
     this.socket = new socketImpl(url);
     this.socket.on("open", () => {
       this.open = true;
+      const queued = this.pending.splice(0, this.pending.length);
+      for (const frame of queued) {
+        this.socket.send(frame);
+      }
     });
     this.socket.on("close", () => {
       this.open = false;
@@ -66,7 +77,14 @@ export class WebSocketFrameTransport implements FrameTransport {
   }
 
   send(frame: unknown): void {
-    this.socket.send(JSON.stringify(frame));
+    const serialized = JSON.stringify(frame);
+    if (this.open && this.socket.readyState === this.socket.OPEN) {
+      this.socket.send(serialized);
+    } else {
+      // Not open yet: buffer and flush on the `open` event (avoids a lost auth
+      // frame that would otherwise leave the extension stuck Offline).
+      this.pending.push(serialized);
+    }
   }
 
   onMessage(handler: (raw: string) => void): void {
