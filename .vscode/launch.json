@@ -7,6 +7,7 @@
       "request": "launch",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}/apps/vscode-extension",
+        "--user-data-dir=${workspaceFolder}/playground/.vscode-user-alice",
         "${workspaceFolder}/playground/alice"
       ],
       "outFiles": ["${workspaceFolder}/apps/vscode-extension/dist/**/*.js"]
@@ -17,6 +18,7 @@
       "request": "launch",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}/apps/vscode-extension",
+        "--user-data-dir=${workspaceFolder}/playground/.vscode-user-bob",
         "${workspaceFolder}/playground/bob"
       ],
       "outFiles": ["${workspaceFolder}/apps/vscode-extension/dist/**/*.js"]
@@ -27,6 +29,7 @@
       "request": "launch",
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}/apps/vscode-extension",
+        "--user-data-dir=${workspaceFolder}/playground/.vscode-user-carol",
         "${workspaceFolder}/playground/carol"
       ],
       "outFiles": ["${workspaceFolder}/apps/vscode-extension/dist/**/*.js"]
