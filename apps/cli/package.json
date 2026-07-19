@@ -11,7 +11,8 @@
     "build": "tsup",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "package:win": "node scripts/build-exe.mjs"
   },
   "dependencies": {
     "@cfls/agent": "workspace:*",

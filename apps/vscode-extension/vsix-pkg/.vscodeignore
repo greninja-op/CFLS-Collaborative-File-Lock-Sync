@@ -1,0 +1,6 @@
+# Only the manifest + bundled dist/index.js + readme belong in the VSIX.
+*.vsix
+.vscodeignore
+node_modules/**
+**/*.map
+**/*.ts

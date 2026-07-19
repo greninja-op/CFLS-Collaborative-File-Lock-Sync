@@ -1,0 +1,7 @@
+{
+  "main": "dist-exe/cfls.cjs",
+  "output": "dist-exe/cfls.blob",
+  "disableExperimentalSEAWarning": true,
+  "useSnapshot": false,
+  "useCodeCache": false
+}
