@@ -1,8 +1,48 @@
 {
   "name": "@cfls/vscode-extension",
+  "displayName": "CFLS Collaborative File Lock Sync",
+  "description": "VS Code Editor_Extension that talks only to the local CoordinationAgent: emits editor events, renders coordination state, and enforces hard-stop for cooperating edits.",
   "version": "0.0.0",
   "private": true,
-  "main": "./dist/index.cjs",
+  "publisher": "cfls",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": ["Other"],
+  "main": "./dist/index.js",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      {
+        "command": "cfls.showCoordinationStatus",
+        "title": "CFLS: Show Coordination Status"
+      },
+      {
+        "command": "cfls.reconnectLocalAgent",
+        "title": "CFLS: Reconnect to Local Coordination Agent"
+      }
+    ],
+    "configuration": {
+      "title": "Collaborative File Lock Sync",
+      "properties": {
+        "cfls.localApi.url": {
+          "type": "string",
+          "default": "ws://127.0.0.1:8750",
+          "description": "Loopback WebSocket URL of the local CoordinationAgent Local_API. The extension never connects to the CoordinationHost directly."
+        },
+        "cfls.localApi.token": {
+          "type": "string",
+          "default": "",
+          "description": "Per-session Local_Auth_Token presented to the local CoordinationAgent Local_API."
+        },
+        "cfls.heartbeat.intervalMs": {
+          "type": "number",
+          "default": 10000,
+          "description": "Interval, in milliseconds, at which the extension sends heartbeats to the local CoordinationAgent."
+        }
+      }
+    }
+  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc -b",
@@ -10,9 +50,14 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@cfls/protocol": "workspace:*"
+    "@cfls/core-state": "workspace:*",
+    "@cfls/mcp-server": "workspace:*",
+    "@cfls/protocol": "workspace:*",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
-    "@cfls/test-utils": "workspace:*"
+    "@cfls/test-utils": "workspace:*",
+    "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.18.1"
   }
 }

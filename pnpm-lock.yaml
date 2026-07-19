@@ -103,13 +103,28 @@ importers:
 
   apps/vscode-extension:
     dependencies:
+      '@cfls/core-state':
+        specifier: workspace:*
+        version: link:../../packages/core-state
+      '@cfls/mcp-server':
+        specifier: workspace:*
+        version: link:../../packages/mcp-server
       '@cfls/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      ws:
+        specifier: ^8.21.1
+        version: 8.21.1
     devDependencies:
       '@cfls/test-utils':
         specifier: workspace:*
         version: link:../../packages/test-utils
+      '@types/vscode':
+        specifier: ^1.85.0
+        version: 1.125.0
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
 
   packages/core-state:
     dependencies:
@@ -613,6 +628,9 @@ packages:
 
   '@types/node@22.20.1':
     resolution: {integrity: sha512-EANqOCF9QFyra+4pfxUcX9STKJpCLjMbObVzljIJomAWSnuSIEAvyzEU53GaajbXJEgdh0iEcPL+DGvpUd4k1Q==}
+
+  '@types/vscode@1.125.0':
+    resolution: {integrity: sha512-0icm/ZQAaism87P0ekHqi4/Ju9du+Tm0RUW+y7vqRsxY2cY0FNRX1nAnaW7nT6npPt2tfHiheZ55Zm9UhqonFA==}
 
   '@types/ws@8.18.1':
     resolution: {integrity: sha512-ThVF6DCVhA8kUGy+aazFQ4kXQ7E1Ty7A3ypFOe0IcJV8O/M511G99AW24irKrW56Wt44yG9+ij8FaqoBGkuBXg==}
@@ -2100,6 +2118,8 @@ snapshots:
   '@types/node@22.20.1':
     dependencies:
       undici-types: 6.21.0
+
+  '@types/vscode@1.125.0': {}
 
   '@types/ws@8.18.1':
     dependencies:

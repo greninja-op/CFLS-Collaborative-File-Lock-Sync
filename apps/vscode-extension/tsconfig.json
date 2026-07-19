@@ -8,5 +8,9 @@
     "verbatimModuleSyntax": false
   },
   "include": ["src"],
-  "references": [{ "path": "../../packages/protocol" }]
+  "references": [
+    { "path": "../../packages/protocol" },
+    { "path": "../../packages/core-state" },
+    { "path": "../../packages/mcp-server" }
+  ]
 }

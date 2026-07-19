@@ -338,27 +338,27 @@ for a faster MVP); core implementation sub-tasks are never optional.
   - Ensure host and agent integration tests pass end-to-end over a real local WSS connection. Ask
     the user if questions arise.
 
-- [ ] 11. `apps/vscode-extension` — Editor_Extension
+- [x] 11. `apps/vscode-extension` — Editor_Extension
   - **Goal:** Deliver the VS Code client that talks only to the local agent, emits editor events,
     renders coordination state, and enforces hard-stop.
-  - [ ] 11.1 Implement Local_API-only connectivity and heartbeats
+  - [x] 11.1 Implement Local_API-only connectivity and heartbeats
     - Connect to the local CoordinationAgent through the Local_API only (never to the host); send
       periodic heartbeats to the agent.
     - _Requirements: 3.1, 26.6; Design §3.5_
-  - [ ] 11.2 Emit the 8 editor events within 2 seconds
+  - [x] 11.2 Emit the 8 editor events within 2 seconds
     - Detect and send `workspace_opened`, `file_opened`, `active_editor_changed`, `editing_started`,
       `file_saved`, `file_closed`, `file_renamed`, `file_deleted` to the agent within 2s.
     - _Requirements: 3.2; Design §3.5_
-  - [ ] 11.3 Render coordination state and offline/stale indicators
+  - [x] 11.3 Render coordination state and offline/stale indicators
     - Within 2s of a Coordination_Update, display per-path soft/coordination-required/hard locks,
       presence, intents, planned file creations, and indirect dependency risk with contributing
       member identity; show an offline/stale indicator.
     - _Requirements: 3.3, 3.4, 3.6, 33.3; Design §3.5_
-  - [ ] 11.4 Enforce hard-stop for cooperating edits
+  - [x] 11.4 Enforce hard-stop for cooperating edits
     - Reject edits to a hard-mode path with a valid winning lock held by another member (cooperative
       enforcement, never OS-level), reporting the holder.
     - _Requirements: 3.5, 14.1, 14.2, 14.3; Design §10.4_
-  - [ ] 11.5 Write tests for event emission, rendering, hard-stop, and offline indicator
+  - [x] 11.5 Write tests for event emission, rendering, hard-stop, and offline indicator
     - Cover event emission timing, update rendering, hard-stop decision, and offline banner.
     - _Requirements: 3.2, 3.3, 3.5, 3.6_
 
