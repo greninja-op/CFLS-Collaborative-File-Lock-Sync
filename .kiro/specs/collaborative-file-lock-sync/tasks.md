@@ -102,7 +102,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Cover tampered signatures, non-admin invitation issuer rejection, revoked-key rejection, and rotation retiring the old key.
     - _Requirements: 5.1, 5.2, 5.5, 5.6, 5.7_
 
-- [ ] 4. `packages/core-state` — pure in-memory coordination engine
+- [x] 4. `packages/core-state` — pure in-memory coordination engine
   - **Goal:** Implement the deterministic, dependency-free authority logic (revisions, locks,
     presence, intents, risk, sync, expiry, coalescing, data-minimization) that both host and agent embed.
   - [x] 4.1 Implement session identity, canonical repo ID, and path normalization
@@ -228,7 +228,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Cover static→high / aliased→medium / dynamic→low|unknown, excluded folders never analyzed, and add/remove edge deltas.
     - _Requirements: 19.6, 19.7, 19.4_
 
-- [ ] 6. Checkpoint — shared packages and pure logic
+- [x] 6. Checkpoint — shared packages and pure logic
   - Ensure all `protocol`, `security`, `core-state`, and `dependency-analyzer` unit and property
     tests pass. Ask the user if questions arise.
 
@@ -334,7 +334,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Cover backoff schedule, cache encrypt/decrypt with no plaintext source, and own-view consolidation.
     - _Requirements: 6.4, 31.1, 35.1, 35.4_
 
-- [ ] 10. Checkpoint — host and agent integration
+- [x] 10. Checkpoint — host and agent integration
   - Ensure host and agent integration tests pass end-to-end over a real local WSS connection. Ask
     the user if questions arise.
 
@@ -377,7 +377,7 @@ for a faster MVP); core implementation sub-tasks are never optional.
       convergence from a known revision; unauthorized/revoked-device rejection.
     - _Requirements: 12.1, 26.3, 9.4, 5.4; Design §13.4 (scenarios 5–8)_
 
-- [ ] 13. Final checkpoint — full suite green
+- [x] 13. Final checkpoint — full suite green
   - Ensure all unit, property, integration, and simulation tests pass across the monorepo. Ask the
     user if questions arise.
 
