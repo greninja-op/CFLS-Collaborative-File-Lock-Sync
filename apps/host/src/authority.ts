@@ -614,12 +614,16 @@ export class CoordinationAuthority {
                 : "No active lock to release.",
           };
         }
+        // Each coordination change gets its own strictly-increasing revision so
+        // the event log and every agent cache apply both the release and any
+        // promotion (a shared revision would drop the second — Req 8.1, 9.3).
+        const allocate = this.revisionAllocator(session, eventRevision);
         broadcasts.push({
           entryType: "soft_lock",
           op: "removed",
           path: release.released.scope,
           member: release.released.holder,
-          eventRevision,
+          eventRevision: allocate(),
         });
         if (release.promoted !== undefined) {
           broadcasts.push({
@@ -627,7 +631,7 @@ export class CoordinationAuthority {
             op: "added",
             path: release.promoted.scope,
             member: release.promoted.holder,
-            eventRevision,
+            eventRevision: allocate(),
           });
         }
         return undefined;
@@ -653,7 +657,12 @@ export class CoordinationAuthority {
             reason: declared.errors?.join("; ") ?? "Intent declaration rejected.",
           };
         }
-        this.emitIntentBroadcasts(declared.intent, "added", eventRevision, broadcasts);
+        this.emitIntentBroadcasts(
+          declared.intent,
+          "added",
+          this.revisionAllocator(session, eventRevision),
+          broadcasts,
+        );
         audits.push({
           member,
           action: "create",
@@ -681,7 +690,12 @@ export class CoordinationAuthority {
             reason: updated.errors?.join("; ") ?? "Intent update rejected.",
           };
         }
-        this.emitIntentBroadcasts(updated.intent, "added", eventRevision, broadcasts);
+        this.emitIntentBroadcasts(
+          updated.intent,
+          "added",
+          this.revisionAllocator(session, eventRevision),
+          broadcasts,
+        );
         audits.push({
           member,
           action: "update",
@@ -705,7 +719,12 @@ export class CoordinationAuthority {
             reason: "Intent withdrawal rejected.",
           };
         }
-        this.emitIntentBroadcasts(withdrawn.removed, "removed", eventRevision, broadcasts);
+        this.emitIntentBroadcasts(
+          withdrawn.removed,
+          "removed",
+          this.revisionAllocator(session, eventRevision),
+          broadcasts,
+        );
         audits.push({
           member,
           action: "withdraw",
@@ -723,14 +742,41 @@ export class CoordinationAuthority {
     }
   }
 
+  /**
+   * A per-event revision allocator. A single ingested event can produce several
+   * coordination broadcasts (e.g. a multi-path Declared_Intent, or a release
+   * plus a promotion); each must carry its OWN strictly-increasing
+   * Event_Revision so the coordination event log stays strictly ordered
+   * (Req 8.1) and every agent cache applies all of them rather than dropping
+   * later broadcasts that share a revision (Req 9.3). The first allocation
+   * reuses the event's assigned revision; subsequent ones advance the shared
+   * monotonic counter.
+   */
+  private revisionAllocator(session: SessionId, first: number): () => number {
+    let used = false;
+    return () => {
+      if (!used) {
+        used = true;
+        return first;
+      }
+      return this.revisions.next(session);
+    };
+  }
+
   private emitIntentBroadcasts(
     intent: { modifyPaths: readonly string[]; createPaths: readonly { path: string }[]; owner: MemberRef },
     op: "added" | "removed",
-    eventRevision: number,
+    allocate: () => number,
     broadcasts: CoordinationUpdate[],
   ): void {
     for (const path of intent.modifyPaths) {
-      broadcasts.push({ entryType: "intent", op, path, member: intent.owner, eventRevision });
+      broadcasts.push({
+        entryType: "intent",
+        op,
+        path,
+        member: intent.owner,
+        eventRevision: allocate(),
+      });
     }
     for (const creation of intent.createPaths) {
       broadcasts.push({
@@ -738,7 +784,7 @@ export class CoordinationAuthority {
         op,
         path: creation.path,
         member: intent.owner,
-        eventRevision,
+        eventRevision: allocate(),
       });
     }
   }

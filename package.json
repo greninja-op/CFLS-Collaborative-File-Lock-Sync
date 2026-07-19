@@ -20,6 +20,7 @@
     "format:check": "prettier --check .",
     "test": "vitest run",
     "test:watch": "vitest",
+    "demo": "pnpm -r build && pnpm --filter @cfls/demo demo",
     "clean": "pnpm -r exec node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && node -e \"require('node:fs').rmSync('tsconfig.tsbuildinfo',{force:true})\""
   },
   "devDependencies": {

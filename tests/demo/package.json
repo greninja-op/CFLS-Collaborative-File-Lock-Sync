@@ -1,0 +1,17 @@
+{
+  "name": "@cfls/demo",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Interactive single-laptop demo: one CoordinationHost + several in-process CoordinationAgents ('teammates') over real WSS, narrating what each teammate sees.",
+  "scripts": {
+    "demo": "node src/demo.mjs"
+  },
+  "dependencies": {
+    "@cfls/agent": "workspace:*",
+    "@cfls/core-state": "workspace:*",
+    "@cfls/host": "workspace:*",
+    "@cfls/protocol": "workspace:*",
+    "@cfls/security": "workspace:*"
+  }
+}

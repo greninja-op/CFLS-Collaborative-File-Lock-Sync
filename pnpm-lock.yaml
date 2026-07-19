@@ -190,6 +190,24 @@ importers:
         specifier: ^3.23.2
         version: 3.23.2
 
+  tests/demo:
+    dependencies:
+      '@cfls/agent':
+        specifier: workspace:*
+        version: link:../../apps/agent
+      '@cfls/core-state':
+        specifier: workspace:*
+        version: link:../../packages/core-state
+      '@cfls/host':
+        specifier: workspace:*
+        version: link:../../apps/host
+      '@cfls/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@cfls/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+
   tests/simulation:
     dependencies:
       '@cfls/agent':
