@@ -40,6 +40,8 @@ export interface HostConfig {
    * 1.6) require a real file path.
    */
   dbPath: string;
+  /** Whether the read-only coordination dashboard HTTP routes are available. */
+  dashboard: boolean;
   /** Heartbeat/expiry tuning forwarded to the core-state expiry engine (Req 26). */
   expiry?: ExpiryConfigInput;
   /** Milliseconds the {@link start} call is allowed before failing (Req 1.1). */
@@ -51,6 +53,8 @@ export interface HostConfigInput {
   hostUrl?: string;
   tls?: HostTlsConfig;
   dbPath?: string;
+  /** Enable the read-only dashboard routes. Defaults to true. */
+  dashboard?: boolean;
   expiry?: ExpiryConfigInput;
   startTimeoutMs?: number;
 }
@@ -95,6 +99,7 @@ export function parseHostUrl(hostUrl: string): { host: string; port: number; sec
  *   - `CFLS_TLS_KEY`          PEM private-key path
  *   - `CFLS_TLS_DEV_SELF_SIGNED`  `"1"`/`"true"` to use a dev self-signed cert
  *   - `CFLS_DB_PATH`          SQLite database file path
+ *   - `CFLS_DASHBOARD`        `"1"`/`"true"` to enable the dashboard (default true)
  *
  * There is no built-in default address: an absent `Host_URL` throws so the host
  * never silently listens on a hardcoded address (Req 6.1).
@@ -120,6 +125,11 @@ export function loadHostConfig(input: HostConfigInput = {}, env: NodeJS.ProcessE
     port,
     tls,
     dbPath: input.dbPath ?? env.CFLS_DB_PATH ?? ":memory:",
+    dashboard:
+      input.dashboard ??
+      (env.CFLS_DASHBOARD === undefined
+        ? true
+        : isTruthy(env.CFLS_DASHBOARD)),
     ...(input.expiry !== undefined ? { expiry: input.expiry } : {}),
     startTimeoutMs: input.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS,
   };

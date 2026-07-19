@@ -35,6 +35,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 
 import { CoordinationAuthority, type AuthPrincipal, type AuthorityOptions } from "./authority";
 import type { HostConfig } from "./config";
+import { buildDashboardState, renderDashboardHtml } from "./dashboard";
 import { resolveTls } from "./tls";
 
 /** Per-connection state tracked by the server. */
@@ -197,7 +198,7 @@ export class CoordinationServer {
   }
 
   // -------------------------------------------------------------------------
-  // HTTP (health / diagnostics)
+  // HTTP (health / diagnostics / dashboard)
   // -------------------------------------------------------------------------
 
   private handleHttp(req: IncomingMessage, res: ServerResponse): void {
@@ -210,6 +211,19 @@ export class CoordinationServer {
       this.sendJson(res, 200, this.diagnostics());
       return;
     }
+    if (req.method === "GET" && this.config.dashboard) {
+      // Keep the existing health/diagnostics prefix behavior unchanged, while
+      // requiring exact dashboard paths so unrelated URLs never serve the page.
+      const pathname = url.split("?", 1)[0] ?? "/";
+      if (pathname === "/" || pathname === "/dashboard") {
+        this.sendHtml(res, 200, renderDashboardHtml());
+        return;
+      }
+      if (pathname === "/api/coordination") {
+        this.sendJson(res, 200, this.dashboard());
+        return;
+      }
+    }
     this.sendJson(res, 404, { error: "not_found" });
   }
 
@@ -217,6 +231,24 @@ export class CoordinationServer {
     const json = JSON.stringify(body);
     res.writeHead(status, { "content-type": "application/json" });
     res.end(json);
+  }
+
+  private sendHtml(res: ServerResponse, status: number, html: string): void {
+    res.writeHead(status, { "content-type": "text/html; charset=utf-8" });
+    res.end(html);
+  }
+
+  /** Build the browser's deliberately narrow, metadata-only state projection. */
+  private dashboard() {
+    return buildDashboardState({
+      uptimeSeconds: this.uptimeSeconds(),
+      generatedAt: new Date().toISOString(),
+      sessions: this.authority.sessions().map((session) => ({
+        session,
+        snapshot: this.authority.snapshot(session),
+        connectedDevices: this.connectedDevices(session),
+      })),
+    });
   }
 
   // -------------------------------------------------------------------------

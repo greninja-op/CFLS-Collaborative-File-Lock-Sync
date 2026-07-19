@@ -108,6 +108,12 @@ hard-lock is safe while offline.
 
 **How to use it:** Automatic.
 
+### 2.8 Host dashboard
+**What it is:** Visit `https://<host>/dashboard` for a read-only live view of
+sessions, connected devices, locks, active editing, and planned file creations.
+It exposes coordination metadata only and can be disabled in the host
+configuration.
+
 ---
 
 ## 3. Onboarding — the `cfls` command-line tool

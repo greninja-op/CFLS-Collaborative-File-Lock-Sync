@@ -6,13 +6,20 @@
  */
 
 import { mkdtempSync, rmSync } from "node:fs";
+import type { IncomingHttpHeaders } from "node:http";
+import { get } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { startHost, type RunningHost } from "../src/index";
 import {
+  startHost,
+  type HostConfigInput,
+  type RunningHost,
+} from "../src/index";
+import {
+  deviceIdOf,
   invitationFor,
   makeDevice,
   makeSession,
@@ -32,11 +39,50 @@ function url(): string {
   return `wss://127.0.0.1:${host.port}`;
 }
 
-async function startFreshHost(): Promise<RunningHost> {
+async function startFreshHost(overrides: HostConfigInput = {}): Promise<RunningHost> {
   return startHost(
-    { hostUrl: "wss://127.0.0.1:0", tls: { devSelfSigned: true }, dbPath },
+    {
+      hostUrl: "wss://127.0.0.1:0",
+      tls: { devSelfSigned: true },
+      dbPath,
+      ...overrides,
+    },
     { expirySweepIntervalMs: 0 },
   );
+}
+
+interface HttpResponse {
+  statusCode: number | undefined;
+  headers: IncomingHttpHeaders;
+  body: string;
+}
+
+function getHttp(path: string): Promise<HttpResponse> {
+  return new Promise((resolve, reject) => {
+    const request = get(
+      {
+        hostname: "127.0.0.1",
+        port: host.port,
+        path,
+        rejectUnauthorized: false,
+      },
+      (response) => {
+        let body = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk: string) => {
+          body += chunk;
+        });
+        response.once("end", () => {
+          resolve({
+            statusCode: response.statusCode,
+            headers: response.headers,
+            body,
+          });
+        });
+      },
+    );
+    request.once("error", reject);
+  });
 }
 
 beforeEach(async () => {
@@ -98,6 +144,99 @@ describe("authentication handshake (Req 5.3, 5.4)", () => {
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("AUTH_INVALID_DEVICE");
     second.close();
+  });
+});
+
+describe("dashboard HTTP", () => {
+  it("serves a live metadata-only page and API by default", async () => {
+    expect(host.config.dashboard).toBe(true);
+    const root = await getHttp("/");
+    const page = await getHttp("/dashboard");
+    expect(root.statusCode).toBe(200);
+    expect(String(root.headers["content-type"])).toMatch(/^text\/html/);
+    expect(page.statusCode).toBe(200);
+    expect(page.body).toContain("CFLS Coordination Dashboard");
+
+    const client = await TestClient.open(url());
+    expect(
+      (
+        await client.handshake(
+          session,
+          admin,
+          invitationFor(session, admin.key, admin),
+        )
+      ).ok,
+    ).toBe(true);
+
+    const initial = await getHttp("/api/coordination");
+    expect(initial.statusCode).toBe(200);
+    expect(String(initial.headers["content-type"])).toMatch(/^application\/json/);
+    const initialState = JSON.parse(initial.body) as {
+      sessions: Array<{ repoId: string; branch: string; connectedDevices: string[] }>;
+    };
+    const initialSession = initialState.sessions.find(
+      (entry) => entry.repoId === session.repoId && entry.branch === session.branch,
+    );
+    expect(initialSession?.connectedDevices).toContain(deviceIdOf(admin));
+
+    client.sendEvent(
+      signedEvent(
+        "lock.acquire",
+        { scope: "src/dashboard-live.ts", scopeKind: "file", mode: "soft" },
+        {
+          session,
+          device: admin,
+          counter: client.nextCounter(),
+          eventId: "evt-dashboard-live-lock",
+        },
+      ),
+    );
+    await client.waitFor(
+      (message) =>
+        message?.type === "coordination.update" &&
+        message.payload.path === "src/dashboard-live.ts",
+    );
+
+    const live = await getHttp("/api/coordination");
+    const liveState = JSON.parse(live.body) as {
+      sessions: Array<{
+        repoId: string;
+        branch: string;
+        locks: Array<{
+          path: string;
+          holder: string;
+          mode: string;
+          eventRevision: number;
+        }>;
+      }>;
+    };
+    const liveSession = liveState.sessions.find(
+      (entry) => entry.repoId === session.repoId && entry.branch === session.branch,
+    );
+    expect(liveSession?.locks).toContainEqual({
+      path: "src/dashboard-live.ts",
+      holder: "admin",
+      mode: "soft",
+      eventRevision: 1,
+    });
+    client.close();
+  });
+
+  it("returns 404 for dashboard routes when disabled without affecting health endpoints", async () => {
+    await host.stop();
+    host = await startFreshHost({ dashboard: false });
+    expect(host.config.dashboard).toBe(false);
+
+    for (const path of ["/", "/dashboard", "/api/coordination"]) {
+      expect((await getHttp(path)).statusCode).toBe(404);
+    }
+
+    const health = await getHttp("/health");
+    const diagnostics = await getHttp("/diagnostics");
+    expect(health.statusCode).toBe(200);
+    expect(JSON.parse(health.body)).toMatchObject({ status: "ok" });
+    expect(diagnostics.statusCode).toBe(200);
+    expect(JSON.parse(diagnostics.body)).toMatchObject({ status: "ok" });
   });
 });
 
