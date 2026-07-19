@@ -8,11 +8,7 @@
  * projection is deterministic and directly unit-testable.
  */
 
-import type {
-  RiskLevel,
-  SessionId,
-  SessionStateSnapshot,
-} from "@cfls/protocol";
+import type { RiskLevel, SessionId, SessionStateSnapshot } from "@cfls/protocol";
 
 /** One session snapshot plus the devices currently connected to that session. */
 export interface DashboardSessionInput {
@@ -96,14 +92,12 @@ export function buildDashboardState(input: DashboardInput): DashboardState {
     .map(({ session, snapshot, connectedDevices }): DashboardSession => {
       const locks = snapshot.locks
         .filter((lock) => !lock.concurrent)
-        .map(
-          (lock): DashboardLock => ({
-            path: lock.scope,
-            holder: lock.holder.memberId,
-            mode: lock.mode,
-            eventRevision: lock.eventRevision,
-          }),
-        )
+        .map((lock): DashboardLock => ({
+          path: lock.scope,
+          holder: lock.holder.memberId,
+          mode: lock.mode,
+          eventRevision: lock.eventRevision,
+        }))
         .sort(
           (left, right) =>
             compareStrings(left.path, right.path) ||
@@ -114,31 +108,25 @@ export function buildDashboardState(input: DashboardInput): DashboardState {
 
       const presence = snapshot.presence
         .filter((entry) => entry.state !== "stopped")
-        .map(
-          (entry): DashboardPresence => ({
-            member: entry.member.memberId,
-            path: entry.path,
-          }),
-        )
+        .map((entry): DashboardPresence => ({
+          member: entry.member.memberId,
+          path: entry.path,
+        }))
         .sort(
           (left, right) =>
-            compareStrings(left.path, right.path) ||
-            compareStrings(left.member, right.member),
+            compareStrings(left.path, right.path) || compareStrings(left.member, right.member),
         );
 
       const plannedCreations = snapshot.intents
         .flatMap((intent) =>
-          intent.createPaths.map(
-            (creation): DashboardPlannedCreation => ({
-              member: intent.owner.memberId,
-              path: creation.path,
-            }),
-          ),
+          intent.createPaths.map((creation): DashboardPlannedCreation => ({
+            member: intent.owner.memberId,
+            path: creation.path,
+          })),
         )
         .sort(
           (left, right) =>
-            compareStrings(left.path, right.path) ||
-            compareStrings(left.member, right.member),
+            compareStrings(left.path, right.path) || compareStrings(left.member, right.member),
         );
 
       return {
@@ -194,10 +182,7 @@ const HTML_ESCAPES: Readonly<Record<string, string>> = {
  * directly unit-testable without a browser runtime.
  */
 export function escapeDashboardHtml(value: unknown): string {
-  return String(value).replace(
-    /[&<>"']/g,
-    (character) => HTML_ESCAPES[character] ?? character,
-  );
+  return String(value).replace(/[&<>"']/g, (character) => HTML_ESCAPES[character] ?? character);
 }
 
 /**
@@ -1602,6 +1587,615 @@ export function renderDashboardHtml(): string {
         .lock-row { grid-template-columns: 3px minmax(0, 1fr); }
         .lock-side { grid-column: 2; justify-items: start; grid-auto-flow: column; justify-content: start; padding-left: 0; }
       }
+      /* Operational dashboard composition: retain the CFLS visual tokens, but
+         prioritize live work state over marketing-style page sections. */
+      .site-grid {
+        opacity: .22;
+        mask-image: linear-gradient(to bottom, black, transparent 94%);
+      }
+      .site-noise { opacity: .08; }
+      .nav-shell {
+        min-height: 64px;
+      }
+      .dashboard-main {
+        min-height: calc(100vh - 64px);
+        padding: 24px 0 44px;
+      }
+      .dashboard-main .shell {
+        width: min(1360px, calc(100% - 48px));
+      }
+      .dashboard-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        min-height: 76px;
+      }
+      .dashboard-kicker {
+        display: inline-flex;
+        align-items: center;
+        gap: 7px;
+        margin: 0 0 4px;
+        color: var(--signal);
+        font-family: var(--mono);
+        font-size: .62rem;
+        font-weight: 700;
+        letter-spacing: .11em;
+        text-transform: uppercase;
+      }
+      .dashboard-kicker span {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: 0 0 11px currentColor;
+      }
+      .dashboard-toolbar h1 {
+        margin: 0;
+        color: var(--text);
+        font-size: clamp(1.45rem, 2.2vw, 1.85rem);
+        letter-spacing: -.055em;
+        line-height: 1.12;
+      }
+      .dashboard-subtitle {
+        margin: 4px 0 0;
+        color: var(--muted);
+        font-size: .78rem;
+      }
+      .dashboard-host-status {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        min-width: 248px;
+        padding: 10px 12px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: rgba(7, 14, 16, .52);
+        box-shadow: var(--shadow-sm);
+      }
+      .host-status-icon {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        flex: 0 0 auto;
+        place-items: center;
+        color: var(--cyan);
+        border: 1px solid rgba(98, 230, 224, .24);
+        border-radius: 8px;
+        background: rgba(98, 230, 224, .07);
+      }
+      .host-status-icon svg { width: 17px; height: 17px; }
+      .dashboard-host-status > span:last-child { display: grid; min-width: 0; gap: 2px; }
+      .dashboard-host-status strong {
+        color: var(--text);
+        font-size: .72rem;
+        line-height: 1.2;
+      }
+      .dashboard-host-status #last-updated {
+        overflow: hidden;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .58rem;
+        line-height: 1.35;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .metric-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+        margin: 16px auto 22px;
+      }
+      .summary-card {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        min-width: 0;
+        min-height: 82px;
+        padding: 13px 14px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: linear-gradient(145deg, rgba(24, 38, 40, .7), rgba(11, 20, 23, .78));
+        box-shadow: 0 12px 24px rgba(0, 0, 0, .12);
+      }
+      .summary-card > span:last-child { display: grid; min-width: 0; gap: 1px; }
+      .summary-card-index {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        flex: 0 0 auto;
+        place-items: center;
+        color: var(--amber);
+        border: 1px solid rgba(255, 194, 103, .25);
+        border-radius: 8px;
+        background: rgba(255, 194, 103, .07);
+        font-family: var(--mono);
+        font-size: .62rem;
+        font-weight: 700;
+      }
+      .summary-card b {
+        overflow: hidden;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .55rem;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-overflow: ellipsis;
+        text-transform: uppercase;
+        white-space: nowrap;
+      }
+      .summary-card strong {
+        color: var(--text);
+        font-size: 1.28rem;
+        font-weight: 800;
+        letter-spacing: -.055em;
+        line-height: 1;
+      }
+      .summary-card small {
+        overflow: hidden;
+        color: var(--muted);
+        font-size: .67rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .summary-card--cyan .summary-card-index {
+        color: var(--cyan);
+        border-color: rgba(98, 230, 224, .25);
+        background: rgba(98, 230, 224, .07);
+      }
+      .summary-card--lime .summary-card-index {
+        color: var(--signal);
+        border-color: rgba(196, 243, 109, .25);
+        background: rgba(196, 243, 109, .07);
+      }
+      .summary-card--violet .summary-card-index {
+        color: var(--violet);
+        border-color: rgba(184, 158, 255, .25);
+        background: rgba(184, 158, 255, .07);
+      }
+
+      .workspace-board {
+        position: relative;
+        padding: 0;
+        border: 0;
+        background: none;
+      }
+      .workspace-board-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        margin: 0 0 11px;
+      }
+      .workspace-board-head p {
+        margin: 0 0 2px;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .58rem;
+        font-weight: 700;
+        letter-spacing: .1em;
+      }
+      .workspace-board-head h2 {
+        margin: 0;
+        color: var(--text);
+        font-size: 1.06rem;
+        letter-spacing: -.035em;
+      }
+      .session-switcher {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 7px;
+        min-width: 0;
+        overflow-x: auto;
+        scrollbar-width: thin;
+      }
+      .session-count {
+        flex: 0 0 auto;
+        padding: 5px 8px;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, .018);
+        font-family: var(--mono);
+        font-size: .6rem;
+        font-weight: 700;
+      }
+      .session-tab {
+        display: grid;
+        min-width: 0;
+        max-width: 205px;
+        gap: 1px;
+        padding: 5px 9px;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        background: rgba(255, 255, 255, .018);
+        font: inherit;
+        text-align: left;
+        cursor: pointer;
+      }
+      .session-tab span,
+      .session-tab small {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .session-tab span { font-family: var(--mono); font-size: .6rem; }
+      .session-tab small { color: var(--dim); font-size: .58rem; }
+      .session-tab:hover,
+      .session-tab:focus-visible,
+      .session-tab.is-active {
+        color: var(--text);
+        border-color: rgba(196, 243, 109, .4);
+        outline: none;
+        background: rgba(196, 243, 109, .075);
+      }
+      .session-tab.is-active small { color: var(--signal); }
+
+      .sessions {
+        display: grid;
+        gap: 12px;
+        margin: 0;
+      }
+      .session-card {
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        background: linear-gradient(145deg, rgba(20, 34, 37, .88), rgba(9, 17, 20, .94));
+        box-shadow: var(--shadow-lg);
+      }
+      .session-card-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 20px;
+        padding: 15px 18px 13px;
+        border-bottom: 1px solid var(--line);
+      }
+      .session-repo {
+        display: flex;
+        min-width: 0;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .session-repo-icon {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        flex: 0 0 auto;
+        place-items: center;
+        color: var(--cyan);
+        border: 1px solid rgba(98, 230, 224, .24);
+        border-radius: 8px;
+        background: rgba(98, 230, 224, .07);
+      }
+      .session-repo-icon svg { width: 17px; height: 17px; }
+      .session-kicker {
+        margin: 0 0 3px;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .55rem;
+        font-weight: 700;
+        letter-spacing: .09em;
+        text-transform: uppercase;
+      }
+      .session-repo h3 {
+        min-width: 0;
+        margin: 0;
+        color: var(--text);
+        font-size: .97rem;
+        letter-spacing: -.035em;
+      }
+      .session-repo h3 code { overflow-wrap: anywhere; font-size: .92em; }
+      .session-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin: 7px 0 0;
+      }
+      .session-tags span {
+        display: inline-flex;
+        gap: 5px;
+        padding: 3px 6px;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        background: rgba(255, 255, 255, .02);
+        font-family: var(--mono);
+        font-size: .58rem;
+      }
+      .session-tags b { color: var(--dim); font-size: .52rem; letter-spacing: .06em; }
+      .session-health {
+        display: grid;
+        flex: 0 0 auto;
+        gap: 5px;
+        min-width: 106px;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .55rem;
+        font-weight: 700;
+        letter-spacing: .07em;
+        text-align: right;
+      }
+      .session-health strong {
+        display: block;
+        margin-top: 1px;
+        color: var(--text);
+        font-size: .76rem;
+        letter-spacing: 0;
+      }
+      .session-live {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+        color: var(--signal);
+        font-family: var(--sans);
+        font-size: .68rem;
+        letter-spacing: 0;
+      }
+      .session-live::before {
+        width: 6px;
+        height: 6px;
+        content: "";
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: 0 0 9px currentColor;
+      }
+      .session-snapshot {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        border-bottom: 1px solid var(--line);
+        background: rgba(4, 11, 13, .26);
+      }
+      .session-snapshot > div {
+        display: grid;
+        gap: 1px;
+        min-width: 0;
+        padding: 10px 18px;
+        border-right: 1px solid var(--line);
+      }
+      .session-snapshot > div:last-child { border-right: 0; }
+      .session-snapshot span,
+      .session-devices p span {
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .55rem;
+        font-weight: 700;
+        letter-spacing: .08em;
+      }
+      .session-snapshot strong { color: var(--text); font-size: .92rem; line-height: 1.05; }
+      .session-snapshot small { color: var(--muted); font-size: .64rem; }
+      .session-devices {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-height: 54px;
+        padding: 9px 18px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, .012);
+      }
+      .session-devices p {
+        display: grid;
+        flex: 0 0 auto;
+        gap: 1px;
+        min-width: 130px;
+        margin: 0;
+      }
+      .session-devices p strong { color: var(--text); font-size: .68rem; }
+      .device-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        min-width: 0;
+      }
+      .device-chip {
+        display: inline-flex;
+        max-width: 185px;
+        align-items: center;
+        gap: 5px;
+        padding: 4px 7px;
+        color: #cbe1dd;
+        border: 1px solid rgba(196, 243, 109, .16);
+        border-radius: 6px;
+        background: rgba(196, 243, 109, .045);
+        font-size: .62rem;
+      }
+      .device-chip code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .device-dot { width: 5px; height: 5px; flex: 0 0 auto; border-radius: 50%; background: var(--signal); box-shadow: 0 0 7px rgba(196, 243, 109, .7); }
+      .no-devices { color: var(--muted); font-size: .68rem; }
+      .session-panels {
+        display: grid;
+        grid-template-columns: minmax(0, 1.14fr) minmax(0, 1fr) minmax(0, 1fr);
+        background: var(--line);
+        gap: 1px;
+      }
+      .data-panel {
+        min-width: 0;
+        min-height: 220px;
+        padding: 13px 15px;
+        background: rgba(10, 19, 22, .93);
+      }
+      .data-panel--locks { background: linear-gradient(145deg, rgba(196, 243, 109, .055), rgba(10, 19, 22, .96) 52%); }
+      .data-panel--editing { background: linear-gradient(145deg, rgba(98, 230, 224, .045), rgba(10, 19, 22, .96) 52%); }
+      .data-panel--planned { background: linear-gradient(145deg, rgba(184, 158, 255, .045), rgba(10, 19, 22, .96) 52%); }
+      .data-panel-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 10px;
+        padding-bottom: 10px;
+        border-bottom: 1px solid rgba(196, 219, 220, .1);
+      }
+      .data-panel-head p {
+        margin: 0;
+        color: var(--signal);
+        font-family: var(--mono);
+        font-size: .61rem;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+      }
+      .data-panel--editing .data-panel-head p { color: var(--cyan); }
+      .data-panel--planned .data-panel-head p { color: var(--violet); }
+      .data-panel-head span { display: block; margin-top: 2px; color: var(--dim); font-size: .64rem; }
+      .data-panel-head b {
+        display: grid;
+        min-width: 23px;
+        height: 23px;
+        place-items: center;
+        color: var(--signal);
+        border: 1px solid rgba(196, 243, 109, .2);
+        border-radius: 6px;
+        background: rgba(196, 243, 109, .06);
+        font-family: var(--mono);
+        font-size: .61rem;
+      }
+      .data-panel--editing .data-panel-head b { color: var(--cyan); border-color: rgba(98, 230, 224, .2); background: rgba(98, 230, 224, .06); }
+      .data-panel--planned .data-panel-head b { color: var(--violet); border-color: rgba(184, 158, 255, .2); background: rgba(184, 158, 255, .06); }
+      .panel-content {
+        max-height: 178px;
+        padding: 10px 3px 2px 0;
+        overflow: auto;
+        scrollbar-color: rgba(196, 219, 220, .25) transparent;
+        scrollbar-width: thin;
+      }
+      .lock-list,
+      .activity-list {
+        display: grid;
+        gap: 0;
+        padding: 0;
+        margin: 0;
+        list-style: none;
+      }
+      .lock-row {
+        display: grid;
+        grid-template-columns: 3px minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: start;
+        min-width: 0;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(196, 219, 220, .08);
+      }
+      .lock-row:last-child,
+      .activity-row:last-child { border-bottom: 0; }
+      .lock-rail { width: 3px; min-height: 28px; border-radius: 999px; }
+      .lock-rail.mode-soft { background: var(--signal); }
+      .lock-rail.mode-coordinate { background: var(--amber); }
+      .lock-rail.mode-hard { background: var(--red); }
+      .lock-main { display: grid; min-width: 0; gap: 2px; }
+      .lock-main code,
+      .activity-path {
+        overflow-wrap: anywhere;
+        color: var(--text);
+        font-family: var(--mono);
+        font-size: .67rem;
+        line-height: 1.35;
+      }
+      .lock-holder { color: var(--muted); font-size: .62rem; }
+      .lock-holder b { color: var(--text); }
+      .lock-side { display: grid; gap: 3px; justify-items: end; }
+      .mode {
+        padding: 2px 5px;
+        border-radius: 4px;
+        font-family: var(--mono);
+        font-size: .52rem;
+        font-weight: 700;
+      }
+      .mode-soft { color: var(--signal); background: rgba(196, 243, 109, .08); }
+      .mode-coordinate { color: var(--amber); background: rgba(255, 194, 103, .08); }
+      .mode-hard { color: var(--red); background: rgba(255, 141, 134, .08); }
+      .lock-revision { color: var(--dim); font-family: var(--mono); font-size: .53rem; }
+      .activity-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        min-width: 0;
+        padding: 8px 0;
+        border-bottom: 1px solid rgba(196, 219, 220, .08);
+      }
+      .member-avatar {
+        display: grid;
+        width: 23px;
+        height: 23px;
+        flex: 0 0 auto;
+        place-items: center;
+        border-radius: 6px;
+        font-family: var(--mono);
+        font-size: .61rem;
+        font-weight: 700;
+      }
+      .member-avatar--lime { color: #102007; background: var(--signal); }
+      .member-avatar--cyan { color: #08201f; background: var(--cyan); }
+      .member-avatar--violet { color: #1d1430; background: var(--violet); }
+      .member-avatar--amber { color: #2b1d07; background: var(--amber); }
+      .activity-copy { display: grid; min-width: 0; gap: 2px; }
+      .activity-title { display: flex; gap: 5px; align-items: baseline; min-width: 0; }
+      .activity-member { color: var(--text); font-size: .68rem; }
+      .activity-verb { color: var(--dim); font-size: .61rem; }
+      .empty-copy { margin: 0; color: var(--muted); font-size: .68rem; line-height: 1.6; }
+      .session-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 9px 15px;
+        color: var(--dim);
+        border-top: 1px solid var(--line);
+        background: rgba(4, 10, 12, .45);
+        font-size: .62rem;
+      }
+      .session-footer span { display: inline-flex; align-items: center; gap: 6px; }
+      .session-footer i { width: 6px; height: 6px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 8px rgba(196, 243, 109, .72); }
+      .session-footer code { color: var(--muted); font-size: .9em; }
+      .dashboard-message {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        min-height: 160px;
+        padding: 24px;
+        border: 1px solid var(--line-strong);
+        border-radius: 14px;
+        background: rgba(9, 17, 20, .74);
+      }
+      .dashboard-message h2 { margin: 0; font-size: 1rem; }
+      .dashboard-message p { margin: 4px 0 0; color: var(--muted); font-size: .76rem; }
+      .dashboard-message .empty-orbit,
+      .dashboard-message .loading-orbit { color: var(--cyan); }
+
+      @media (max-width: 900px) {
+        .session-panels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .data-panel--locks { grid-column: 1 / -1; }
+      }
+      @media (max-width: 700px) {
+        .dashboard-main { padding-top: 18px; }
+        .dashboard-main .shell { width: min(100% - 30px, 1360px); }
+        .dashboard-toolbar { align-items: flex-start; min-height: 0; }
+        .dashboard-host-status { display: none; }
+        .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .summary-card { min-height: 77px; }
+        .workspace-board-head { align-items: flex-start; flex-direction: column; }
+        .session-switcher { width: 100%; justify-content: flex-start; }
+        .session-card-header { align-items: flex-start; flex-direction: column; }
+        .session-health { text-align: left; }
+        .session-live { justify-content: flex-start; }
+        .session-snapshot > div { padding: 10px 12px; }
+        .session-devices { align-items: flex-start; flex-direction: column; gap: 7px; padding: 10px 12px; }
+        .session-devices p { min-width: 0; }
+        .session-panels { grid-template-columns: 1fr; }
+        .data-panel--locks { grid-column: auto; }
+        .data-panel { min-height: 0; padding: 13px 12px; }
+        .panel-content { max-height: 205px; }
+        .session-footer { align-items: flex-start; flex-direction: column; padding: 9px 12px; }
+      }
+      @media (max-width: 430px) {
+        .metric-grid { grid-template-columns: 1fr; }
+        .session-snapshot { grid-template-columns: 1fr; }
+        .session-snapshot > div { border-right: 0; border-bottom: 1px solid var(--line); }
+        .session-snapshot > div:last-child { border-bottom: 0; }
+      }
     </style>
   </head>
   <body>
@@ -1856,33 +2450,133 @@ export function renderDashboardHtml(): string {
             '<code>' + teamId + ' / ' + branch + '</code></footer></article>';
         }
 
+        function sessionKey(session) {
+          return [
+            displayValue(session && session.repoId),
+            displayValue(session && session.teamId),
+            displayValue(session && session.branch),
+          ].join("|");
+        }
+
+        function sessionPriority(session) {
+          const locks = arrayOf(session && session.locks);
+          const presence = arrayOf(session && session.presence);
+          const creations = arrayOf(session && session.plannedCreations);
+          const lockWeight = locks.reduce((total, lock) => {
+            if (lock && lock.mode === "hard") return total + 100;
+            if (lock && lock.mode === "coordination-required") return total + 40;
+            return total + 10;
+          }, 0);
+          return lockWeight + presence.length * 5 + creations.length * 2;
+        }
+
+        function preferredSession(sessions) {
+          const selected = sessions.find((session) => sessionKey(session) === selectedSessionKey);
+          if (selected) return selected;
+          const ranked = sessions.slice().sort((left, right) => sessionPriority(right) - sessionPriority(left));
+          const next = ranked[0] || null;
+          selectedSessionKey = next ? sessionKey(next) : "";
+          return next;
+        }
+
+        function renderSessionSwitcher(sessions, selected) {
+          if (!sessionSwitcherElement) return;
+          if (sessions.length < 2) {
+            sessionSwitcherElement.innerHTML = '<span class="session-count">' + sessions.length +
+              (sessions.length === 1 ? ' workspace' : ' workspaces') + '</span>';
+            return;
+          }
+          const selectedKey = selected ? sessionKey(selected) : "";
+          sessionSwitcherElement.innerHTML = '<span class="session-count">' + sessions.length + ' workspaces</span>' +
+            sessions.map((session) => {
+              const key = sessionKey(session);
+              const repo = displayValue(session && session.repoId);
+              const branch = displayValue(session && session.branch);
+              const active = key === selectedKey;
+              return '<button type="button" class="session-tab' + (active ? ' is-active' : '') +
+                '" data-session-key="' + escapeHtml(key) + '" aria-pressed="' + active + '" title="' +
+                escapeHtml(repo + ' / ' + branch) + '"><span>' + escapeHtml(repo) + '</span><small>' +
+                escapeHtml(branch) + '</small></button>';
+            }).join("");
+        }
+
+        function panelMarkup(tone, label, count, helper, content) {
+          return '<section class="data-panel data-panel--' + tone + '"><header class="data-panel-head"><div><p>' +
+            label + '</p><span>' + helper + '</span></div><b>' + count + '</b></header><div class="panel-content">' +
+            content + '</div></section>';
+        }
+
+        function renderCompactSession(session) {
+          const locks = arrayOf(session && session.locks);
+          const presence = arrayOf(session && session.presence);
+          const creations = arrayOf(session && session.plannedCreations);
+          const devices = arrayOf(session && session.connectedDevices);
+          const repoId = escapeHtml(displayValue(session && session.repoId));
+          const teamId = escapeHtml(displayValue(session && session.teamId));
+          const branch = escapeHtml(displayValue(session && session.branch));
+          const revision = escapeHtml(displayValue(session && session.highestRevision));
+          const deviceLabel = devices.length === 1 ? 'device connected' : 'devices connected';
+
+          return '<article class="session-card"><header class="session-card-header"><div class="session-repo"><span class="session-repo-icon" aria-hidden="true">' +
+            '<svg viewBox="0 0 24 24" fill="none"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"/><path d="m4.4 7.7 7.6 4.3 7.6-4.3M12 12v9" stroke="currentColor" stroke-width="1.65"/></svg></span><div><p class="session-kicker">Repository session</p><h3><code>' +
+            repoId + '</code></h3><div class="session-tags"><span><b>TEAM</b>' + teamId + '</span><span><b>BRANCH</b>' +
+            branch + '</span></div></div></div><div class="session-health"><span class="session-live">Live session</span><span>HOST REVISION<strong>r' +
+            revision + '</strong></span></div></header><div class="session-snapshot"><div><span>FILES IN PLAY</span><strong>' +
+            locks.length + '</strong><small>' + (locks.length === 1 ? 'active lock' : 'active locks') + '</small></div><div><span>EDITING NOW</span><strong>' +
+            presence.length + '</strong><small>' + (presence.length === 1 ? 'teammate' : 'teammates') + '</small></div><div><span>EXPECTED NEXT</span><strong>' +
+            creations.length + '</strong><small>' + (creations.length === 1 ? 'planned file' : 'planned files') + '</small></div></div><div class="session-devices"><p><span>CONNECTED DEVICES</span><strong>' +
+            devices.length + ' ' + deviceLabel + '</strong></p><div class="device-list">' + renderDevices(devices) +
+            '</div></div><div class="session-panels">' +
+            panelMarkup('locks', 'Files in play', locks.length, 'Active locks and risk levels', renderLocks(locks)) +
+            panelMarkup('editing', 'Editing now', presence.length, 'Live teammate presence', renderActivity(presence, 'No one is editing in this session yet.', 'editing')) +
+            panelMarkup('planned', 'Expected next', creations.length, 'Planned file creation', renderActivity(creations, 'No planned file creations in this session.', 'planning')) +
+            '</div><footer class="session-footer"><span><i aria-hidden="true"></i>Source stays in Git. This Host only receives coordination metadata.</span><code>' +
+            teamId + ' / ' + branch + '</code></footer></article>';
+        }
+
         function render(state) {
           const sessions = arrayOf(state && state.sessions);
           const totals = state && typeof state.totals === "object" && state.totals !== null ? state.totals : {};
-          const sessionCount = safeNumber(totals.sessions, sessions.length);
           const deviceCount = safeNumber(totals.devices, 0);
           const lockCount = safeNumber(totals.locks, 0);
+          const editingCount = sessions.reduce((total, session) => total + arrayOf(session && session.presence).length, 0);
+          const plannedCount = sessions.reduce((total, session) => total + arrayOf(session && session.plannedCreations).length, 0);
+          const selected = preferredSession(sessions);
           totalsElement.innerHTML =
-            metricMarkup("S", "Sessions", sessionCount, sessionCount === 1 ? "one repository in view" : "repositories in view", "signal") +
-            metricMarkup("D", "Devices online", deviceCount, deviceCount === 1 ? "one team device connected" : "team devices connected", "cyan") +
-            metricMarkup("F", "Files in play", lockCount, lockCount === 0 ? "no held files right now" : "files already in motion", "amber") +
-            metricMarkup("H", "Host status", "Live", "uptime " + formatUptime(state && state.uptimeSeconds), "host");
+            metricMarkup("F", "Files in play", lockCount, lockCount === 1 ? "active lock" : "active locks", "amber") +
+            metricMarkup("E", "Editing now", editingCount, editingCount === 1 ? "teammate active" : "teammates active", "cyan") +
+            metricMarkup("D", "Devices online", deviceCount, deviceCount === 1 ? "device connected" : "devices connected", "lime") +
+            metricMarkup("+", "Expected next", plannedCount, plannedCount === 1 ? "planned file" : "planned files", "violet");
           lastUpdatedElement.textContent = "Updated " + formatTime(state && state.generatedAt) +
-            " / host uptime " + formatUptime(state && state.uptimeSeconds);
+            " · uptime " + formatUptime(state && state.uptimeSeconds);
           if (sessions.length === 0) {
-            sessionsElement.innerHTML = '<article class="empty-state"><span class="empty-orbit" aria-hidden="true">' +
+            if (sessionSwitcherElement) sessionSwitcherElement.innerHTML = '<span class="session-count">No workspaces</span>';
+            sessionsElement.innerHTML = '<article class="dashboard-message"><span class="empty-orbit" aria-hidden="true">' +
               '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3v18M5.5 8.2 12 12l6.5-3.8M5.5 15.8 12 12l6.5 3.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="3" r="1.5" fill="currentColor"/><circle cx="5.5" cy="8.2" r="1.5" fill="currentColor"/><circle cx="18.5" cy="8.2" r="1.5" fill="currentColor"/></svg>' +
               '</span><div><h2>No active sessions</h2><p>When a team member connects to a repository session, its coordination metadata will appear here.</p></div></article>';
           } else {
-            sessionsElement.innerHTML = sessions.map(renderSession).join("");
+            renderSessionSwitcher(sessions, selected);
+            sessionsElement.innerHTML = renderCompactSession(selected);
           }
           sessionsElement.setAttribute("aria-busy", "false");
+          lastState = state;
           hasRendered = true;
         }
 
         function setConnection(status, reconnecting) {
           connectionTextElement.textContent = status;
           connectionElement.classList.toggle("is-reconnecting", reconnecting);
+        }
+
+        if (sessionSwitcherElement) {
+          sessionSwitcherElement.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!(target instanceof Element) || !lastState) return;
+            const button = target.closest("button[data-session-key]");
+            if (!button) return;
+            selectedSessionKey = button.getAttribute("data-session-key") || "";
+            render(lastState);
+          });
         }
 
         async function refresh() {
