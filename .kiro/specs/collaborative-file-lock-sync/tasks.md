@@ -232,22 +232,22 @@ for a faster MVP); core implementation sub-tasks are never optional.
   - Ensure all `protocol`, `security`, `core-state`, and `dependency-analyzer` unit and property
     tests pass. Ask the user if questions arise.
 
-- [ ] 7. `packages/mcp-server` — Local_MCP_Server and the 12 tools
+- [x] 7. `packages/mcp-server` — Local_MCP_Server and the 12 tools
   - **Goal:** Expose the strictly-local MCP surface wired to the core-state engine through the agent.
-  - [ ] 7.1 Scaffold the MCP server and the `McpEnvelope`
+  - [x] 7.1 Scaffold the MCP server and the `McpEnvelope`
     - Build on `@modelcontextprotocol/sdk` (stdio/local transport); implement the common `McpEnvelope`
       carrying `connection` and `staleness` on every response.
     - _Requirements: 4.1, 4.7, 33.2; Design §3.4_
-  - [ ] 7.2 Implement the 12 MCP tools wired to core-state via the agent
+  - [x] 7.2 Implement the 12 MCP tools wired to core-state via the agent
     - Implement `get_risk_map`, `get_dependency_impact`, `get_dependencies`, `get_dependents`,
       `declare_intent`, `update_intent`, `withdraw_intent`, `acquire_lock`, `release_lock`,
       `subscribe_to_coordination_updates`, `get_connection_status`, `get_project_session_status`,
       including offline-queued/rejected behavior without falsely reporting host acceptance.
     - _Requirements: 4.2, 4.3, 4.4, 4.5, 4.6, 4.8, 12.1–12.8, 16.1–16.8, 23.1–23.5, 24.1–24.7, 25.1, 31.5, 32.1, 32.4, 33.1; Design §3.4_
-  - [ ] 7.3 Write integration tests for MCP tool round-trips
+  - [x] 7.3 Write integration tests for MCP tool round-trips
     - Exercise query tools, a mutating tool, and an offline-queued mutation through the MCP SDK.
     - _Requirements: 4.3, 4.4, 4.5, 4.6, 4.8, 33.1_
-  - [ ] 7.4 Write unit tests for the envelope, error mapping, and offline behavior
+  - [x] 7.4 Write unit tests for the envelope, error mapping, and offline behavior
     - Cover `McpEnvelope` connectivity/staleness fields, `ErrorCode` mapping, and `OFFLINE_QUEUED` results.
     - _Requirements: 4.7, 4.8, 33.2_
 

@@ -1,11 +1,80 @@
 /**
  * @cfls/mcp-server — the strictly-local Local_MCP_Server built on
- * @modelcontextprotocol/sdk, exposing the 12 coordination tools wired to
- * the core-state engine through the agent.
+ * `@modelcontextprotocol/sdk`, exposing the 12 coordination tools wired to the
+ * core-state engine through the CoordinationAgent (design §3.4; Req 4.1–4.8).
  *
- * Placeholder only — implemented in spec tasks 7.1–7.4.
+ * Public surface:
+ *   - {@link createMcpServer} / {@link registerTools} — build the server and
+ *     register the 12 tools against an {@link AgentPort}.
+ *   - {@link McpEnvelope} and helpers — the common connection/staleness response
+ *     envelope carried by every tool response (Req 4.7, 33.2).
+ *   - {@link AgentPort} and its request/response DTOs — the clean port the
+ *     CoordinationAgent implements (Task 9).
+ *   - {@link CoreStateAgentPort} — an in-memory, core-state-backed reference
+ *     implementation of the port (used by tests).
  */
 
 export const PACKAGE_NAME = "@cfls/mcp-server";
 
-export {};
+// ---- Server + tools (task 7.1, 7.2; design §3.4) ----
+export {
+  createMcpServer,
+  MCP_SERVER_INFO,
+  type CreateMcpServerOptions,
+} from "./server";
+export { registerTools, TOOL_NAMES, type ToolName } from "./tools";
+
+// ---- Common response envelope + error mapping (task 7.1; Req 4.7, 33.2) ----
+export {
+  makeEnvelope,
+  mapToolErrorCode,
+  offlineQueuedResult,
+} from "./envelope";
+export type {
+  AgentResult,
+  ConnectionSnapshot,
+  EnvelopeError,
+  McpEnvelope,
+  StalenessSnapshot,
+  ToolErrorAlias,
+} from "./envelope";
+
+// ---- Agent-facing port + DTOs (task 7.2; design §3.4) ----
+export type {
+  AcquireLockData,
+  AcquireLockRequest,
+  AgentPort,
+  ConnectionStatusData,
+  DeclareIntentData,
+  DeclareIntentRequest,
+  DependencyImpact,
+  GetDependenciesData,
+  GetDependenciesRequest,
+  GetDependencyImpactData,
+  GetDependencyImpactRequest,
+  GetDependentsData,
+  GetDependentsRequest,
+  GetRiskMapData,
+  GetRiskMapRequest,
+  MaybePromise,
+  ProjectSessionStatusData,
+  ReleaseLockData,
+  ReleaseLockRequest,
+  RiskContributor,
+  RiskEdge,
+  RiskExplanation,
+  RiskPathEntry,
+  SessionRef,
+  SubscribeData,
+  SubscribeRequest,
+  UpdateIntentData,
+  UpdateIntentRequest,
+  WithdrawIntentData,
+  WithdrawIntentRequest,
+} from "./port";
+
+// ---- Reference in-memory port backed by core-state (tests) ----
+export {
+  CoreStateAgentPort,
+  type CoreStateAgentOptions,
+} from "./fake-agent";
