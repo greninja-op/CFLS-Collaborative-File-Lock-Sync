@@ -43,3 +43,12 @@ export function localApiConfigPath(repoRoot: string): string {
 export function sessionConfigPath(repoRoot: string): string {
   return join(coordinationDir(repoRoot), "session.json");
 }
+
+/**
+ * The team-shared, committed config file: `<repoRoot>/.coordination/config.json`.
+ * Holds non-secret team settings such as the optional `autoSync` block. Unlike
+ * `agent.json`/`local-api.json` this file IS committed and shared by the team.
+ */
+export function teamConfigPath(repoRoot: string): string {
+  return join(coordinationDir(repoRoot), "config.json");
+}

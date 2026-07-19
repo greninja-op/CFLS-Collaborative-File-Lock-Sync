@@ -23,6 +23,7 @@ import { deriveDeviceId, issueInvitation } from "@cfls/security";
 import {
   appendAdminPublicKey,
   readAgentConfig,
+  readAutoSyncConfig,
   readHostConfig,
   updateAgentConfig,
   writeLocalApiConfig,
@@ -31,7 +32,21 @@ import {
   agentConfigPath,
   hostConfigPath,
   localApiConfigPath,
+  teamConfigPath,
 } from "./paths";
+import {
+  commit,
+  currentBranch,
+  defaultGitRunner,
+  fetch as gitFetch,
+  listTrackingBranches,
+  mergeNoConflict,
+  push as gitPush,
+  stagePaths,
+  userBranchName,
+  workingTreeChanges,
+} from "./git";
+import { buildCommitMessage, startGitSyncLoop } from "./git-sync";
 import { decodeInvitation, encodeInvitation } from "./invitation";
 import { createAdminKey, loadAdminKey, loadOrCreateThisDeviceKey } from "./keys";
 import {
@@ -293,9 +308,203 @@ async function cmdAgent(args: ParsedArgs, cwd: string): Promise<void> {
   log.info(`Local_API: ws://127.0.0.1:${port} (extension auto-discovers via ${localApiConfigPath(repoRoot)})`);
   log.info(`Session:   ${describeSession(session)}`);
   log.info("Open this repo in VS Code (with the CFLS extension installed) — it goes Online automatically.");
+
+  // OPT-IN automatic git sync (Model A). A strict no-op unless the team's
+  // committed .coordination/config.json sets autoSync.enabled = true, so default
+  // `cfls agent` behavior is unchanged. Never switches/resets the user's branch,
+  // never force-pushes, never auto-resolves conflicts.
+  const autoSync = readAutoSyncConfig(teamConfigPath(repoRoot));
+  const syncLoop = startGitSyncLoop({
+    cwd: repoRoot,
+    config: autoSync,
+    member: memberId,
+    runner: defaultGitRunner,
+    onNotice: (notice) => log.info(notice),
+  });
+  if (autoSync.enabled) {
+    log.info(
+      `Auto-sync ON (Model A): publishing to ${userBranchName(autoSync.branchPrefix, memberId)} ` +
+        `every ${autoSync.commitIntervalSec}s, fetching every ${autoSync.fetchIntervalSec}s` +
+        `${autoSync.autoMerge ? ", autoMerge (conflict-free only)" : ", notify-only"}.`,
+    );
+  }
   log.info("Press Ctrl+C to stop.");
 
-  await waitForShutdown(() => agent.stop());
+  await waitForShutdown(async () => {
+    syncLoop.stop();
+    await agent.stop();
+  });
+}
+
+/**
+ * Resolve the member name used for the per-user publish branch: prefers the
+ * saved agent config, then the stored invitation, then `--name`. Throws a clear
+ * error when none is available (the sync commands need a stable identity).
+ */
+function resolveSyncMember(repoRoot: string, args: ParsedArgs): string {
+  const config = readAgentConfig(agentConfigPath(repoRoot));
+  const fromInvitation =
+    config.invitation !== undefined ? decodeInvitation(config.invitation).claims.memberId : undefined;
+  const member = stringOption(args, "name") ?? config.memberName ?? fromInvitation;
+  if (member === undefined || member === "") {
+    throw new Error(
+      'No member name found. Run "cfls join --name <you>" / "cfls connect <invitation>" first, ' +
+        "or pass --name <you>.",
+    );
+  }
+  return member;
+}
+
+/** `cfls sync status` — show branches, ahead/behind, and working-tree state. */
+function cmdSyncStatus(args: ParsedArgs, cwd: string): void {
+  const repoRoot = resolveRepoRoot(cwd);
+  const autoSync = readAutoSyncConfig(teamConfigPath(repoRoot));
+  const member = resolveSyncMember(repoRoot, args);
+  const branch = currentBranch(repoRoot) ?? "(unknown)";
+  const myBranch = userBranchName(autoSync.branchPrefix, member);
+  const changes = workingTreeChanges(repoRoot);
+
+  log.info(`Auto-sync:      ${autoSync.enabled ? "ENABLED" : "disabled (opt-in)"}`);
+  log.info(`Current branch: ${branch}`);
+  log.info(`My publish br.: ${myBranch}  (remote: ${autoSync.remote})`);
+  log.info(`Working tree:   ${changes.length === 0 ? "clean" : `${changes.length} changed path(s)`}`);
+  log.info("");
+
+  const branches = listTrackingBranches(autoSync.remote, autoSync.branchPrefix, repoRoot).filter(
+    (b) => b.branch !== myBranch,
+  );
+  if (branches.length === 0) {
+    log.info(`No other ${autoSync.branchPrefix}* branches on ${autoSync.remote} yet.`);
+    return;
+  }
+  log.info("Teammate branches:");
+  for (const b of branches) {
+    log.info(`  ${b.branch}  (behind you ${b.behind}, ahead of you ${b.ahead})`);
+  }
+}
+
+/** `cfls sync push` — manually stage coordinated changes, commit, and publish. */
+function cmdSyncPush(args: ParsedArgs, cwd: string): void {
+  const repoRoot = resolveRepoRoot(cwd);
+  const autoSync = readAutoSyncConfig(teamConfigPath(repoRoot));
+  const member = resolveSyncMember(repoRoot, args);
+  const branch = userBranchName(autoSync.branchPrefix, member);
+
+  const changes = workingTreeChanges(repoRoot);
+  if (changes.length === 0) {
+    log.info("Nothing to sync — working tree is clean.");
+    return;
+  }
+
+  const paths = changes.map((c) => c.path);
+  const staged = stagePaths(paths, repoRoot);
+  if (!staged.ok) {
+    throw new Error("Failed to stage changes (git add). Resolve manually and retry.");
+  }
+  const committed = commit(buildCommitMessage(member, paths.length), repoRoot);
+  if (!committed.ok) {
+    log.info("Nothing committed (no staged changes after .gitignore).");
+    return;
+  }
+  const pushed = gitPush(autoSync.remote, branch, repoRoot);
+  if (!pushed.ok) {
+    throw new Error(
+      `Committed ${paths.length} file(s), but push to ${branch} was rejected ` +
+        "(auth or non-fast-forward). Check credentials or fetch/merge, then retry.",
+    );
+  }
+  log.info(`Published ${paths.length} file(s) to ${autoSync.remote}/${branch}.`);
+}
+
+/** `cfls sync merge <member>` — safe, conflict-aborting merge of a teammate branch. */
+function cmdSyncMerge(args: ParsedArgs, cwd: string): void {
+  const [target] = args.positionals;
+  if (target === undefined) {
+    throw new Error("Usage: cfls sync merge <member>");
+  }
+  const repoRoot = resolveRepoRoot(cwd);
+  const autoSync = readAutoSyncConfig(teamConfigPath(repoRoot));
+  const branch = userBranchName(autoSync.branchPrefix, target);
+  const ref = `${autoSync.remote}/${branch}`;
+
+  // Refresh remote-tracking refs first so we merge the latest published tip.
+  gitFetch(autoSync.remote, repoRoot);
+
+  const result = mergeNoConflict(ref, repoRoot);
+  if (result.ok) {
+    log.info(
+      result.alreadyUpToDate === true
+        ? `Already up to date with ${ref}.`
+        : `Merged ${ref} cleanly into ${currentBranch(repoRoot) ?? "the current branch"}.`,
+    );
+    return;
+  }
+  throw new Error(
+    `Merge of ${ref} hit conflicts and was aborted (your tree is unchanged). ` +
+      "Resolve manually: `git merge " + ref + "`, fix conflicts, commit — or open a PR.",
+  );
+}
+
+/** `cfls sync <status|push|merge>` — automatic git sync commands (Model A). */
+async function cmdSync(args: ParsedArgs, cwd: string): Promise<void> {
+  const [sub, ...rest] = args.positionals;
+  const subArgs: ParsedArgs = { positionals: rest, options: args.options };
+  switch (sub) {
+    case "status":
+      cmdSyncStatus(subArgs, cwd);
+      return;
+    case "push":
+      cmdSyncPush(subArgs, cwd);
+      return;
+    case "merge":
+      cmdSyncMerge(subArgs, cwd);
+      return;
+    default:
+      throw new Error("Usage: cfls sync <status|push|merge <member>>");
+  }
+}
+
+/** `cfls clone <repo-url> [--host <wss>] [--name <member>] [--team <id>]`. */
+async function cmdClone(args: ParsedArgs): Promise<void> {
+  const [repoUrl] = args.positionals;
+  if (repoUrl === undefined) {
+    throw new Error(
+      "Usage: cfls clone <repo-url> [--host <wss>] [--name <member>] [--team <id>]",
+    );
+  }
+
+  // `git clone` uses the user's OWN GitHub/remote access (SSH keys, credential
+  // helper, PAT). cfls never handles those credentials.
+  const clone = defaultGitRunner(["clone", repoUrl], process.cwd());
+  if (!clone.ok) {
+    throw new Error(
+      `git clone failed for ${repoUrl}. Ensure you have access to the repo ` +
+        "(SSH key / credentials) — cfls uses your own GitHub access and stores no tokens.",
+    );
+  }
+
+  // Derive the checkout directory git created (last path segment, minus .git).
+  const tail = repoUrl.replace(/\.git$/, "").replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? "repo";
+  const repoRoot = resolve(process.cwd(), tail);
+
+  const hostUrl = stringOption(args, "host");
+  const memberName = stringOption(args, "name");
+  const teamId = stringOption(args, "team");
+  updateAgentConfig(agentConfigPath(repoRoot), {
+    ...(hostUrl !== undefined ? { hostUrl } : {}),
+    ...(memberName !== undefined ? { memberName } : {}),
+    ...(teamId !== undefined ? { teamId } : {}),
+  });
+
+  log.info(`Cloned ${repoUrl} into ${repoRoot}.`);
+  log.info(`Scaffolded ${agentConfigPath(repoRoot)}.`);
+  log.info("");
+  log.info("Next steps (from inside the repo):");
+  log.info("  1. cfls id                 # share this device's public key with your admin");
+  log.info("  2. cfls connect <invite>   # paste the invitation the admin returns");
+  log.info("  3. cfls agent --insecure-tls");
+  log.info("");
+  log.info("Note: pushing/pulling files still uses YOUR own GitHub access.");
 }
 
 /** Print top-level usage. */
@@ -318,6 +527,13 @@ function printUsage(): void {
       "  cfls connect <invitationBase64>               Store an invitation",
       "  cfls agent [--insecure-tls] [--local-port 8750]",
       "                                                Run the local CoordinationAgent",
+      "",
+      "Automatic git sync (Model A, opt-in via .coordination/config.json):",
+      "  cfls clone <repo-url> [--host <wss>] [--name <name>] [--team <id>]",
+      "                                                Clone + scaffold .coordination",
+      "  cfls sync status                              Show branches + ahead/behind + tree state",
+      "  cfls sync push                                Commit coordinated changes + push cfls/<you>",
+      "  cfls sync merge <member>                      Safe (conflict-aborting) merge of a teammate",
     ].join("\n"),
   );
 }
@@ -350,6 +566,12 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         return 0;
       case "agent":
         await cmdAgent(args, cwd);
+        return 0;
+      case "sync":
+        await cmdSync(args, cwd);
+        return 0;
+      case "clone":
+        await cmdClone(args);
         return 0;
       case undefined:
       case "help":

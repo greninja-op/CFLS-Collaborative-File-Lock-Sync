@@ -1,0 +1,10 @@
+{
+  "autoSync": {
+    "enabled": false,
+    "remote": "origin",
+    "branchPrefix": "cfls/",
+    "commitIntervalSec": 20,
+    "fetchIntervalSec": 20,
+    "autoMerge": false
+  }
+}

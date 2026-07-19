@@ -10,11 +10,16 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
+import { writeFileSync } from "node:fs";
+
 import {
   appendAdminPublicKey,
+  DEFAULT_AUTO_SYNC,
   readAgentConfig,
+  readAutoSyncConfig,
   readHostConfig,
   readLocalApiConfig,
+  readTeamConfig,
   updateAgentConfig,
   writeLocalApiConfig,
 } from "./config-files";
@@ -66,5 +71,68 @@ describe("config files round-trip", () => {
       url: "ws://127.0.0.1:8750",
       token: "tok-123",
     });
+  });
+});
+
+describe("config.json autoSync", () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "cfls-cli-autosync-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("returns the safe disabled defaults when the file is absent", () => {
+    const path = join(dir, "config.json");
+    expect(readAutoSyncConfig(path)).toEqual(DEFAULT_AUTO_SYNC);
+    expect(readAutoSyncConfig(path).enabled).toBe(false);
+    expect(readTeamConfig(path)).toEqual({});
+  });
+
+  it("returns disabled defaults when the autoSync block is absent", () => {
+    const path = join(dir, "config.json");
+    writeFileSync(path, JSON.stringify({ somethingElse: true }));
+    expect(readAutoSyncConfig(path)).toEqual(DEFAULT_AUTO_SYNC);
+  });
+
+  it("fills missing fields with defaults but honors provided ones", () => {
+    const path = join(dir, "config.json");
+    writeFileSync(
+      path,
+      JSON.stringify({ autoSync: { enabled: true, autoMerge: true, commitIntervalSec: 45 } }),
+    );
+    expect(readAutoSyncConfig(path)).toEqual({
+      enabled: true,
+      remote: "origin",
+      branchPrefix: "cfls/",
+      commitIntervalSec: 45,
+      fetchIntervalSec: 20,
+      autoMerge: true,
+    });
+  });
+
+  it("ignores invalid field types and falls back to defaults", () => {
+    const path = join(dir, "config.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        autoSync: {
+          enabled: "yes", // not a boolean → treated as disabled
+          remote: "", // empty → default
+          branchPrefix: 123, // wrong type → default
+          commitIntervalSec: -5, // non-positive → default
+          fetchIntervalSec: 0, // non-positive → default
+          autoMerge: "true", // not a boolean → false
+        },
+      }),
+    );
+    expect(readAutoSyncConfig(path)).toEqual(DEFAULT_AUTO_SYNC);
+  });
+
+  it("only enables when enabled === true (boolean, not truthy)", () => {
+    const path = join(dir, "config.json");
+    writeFileSync(path, JSON.stringify({ autoSync: { enabled: true } }));
+    expect(readAutoSyncConfig(path).enabled).toBe(true);
   });
 });

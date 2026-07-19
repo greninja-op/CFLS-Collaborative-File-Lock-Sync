@@ -13,7 +13,21 @@ import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import { collectGitFacts, type GitRunner } from "./git";
+import {
+  collectGitFacts,
+  listTrackingBranches,
+  mergeNoConflict,
+  parseForEachRef,
+  parseLeftRightCount,
+  parsePorcelain,
+  push,
+  sanitizeMemberName,
+  stagePaths,
+  userBranchName,
+  workingTreeChanges,
+  type GitCommandResult,
+  type GitRunner,
+} from "./git";
 import { resolveRepositorySession } from "./session";
 
 /** Build a mock runner from a map of "arg arg" → stdout (missing ⇒ failure). */
@@ -23,6 +37,18 @@ function mockRunner(map: Record<string, string>): GitRunner {
     const stdout = map[key];
     return stdout === undefined ? { ok: false, stdout: "" } : { ok: true, stdout };
   };
+}
+
+/** A runner that records every invocation for assertion on command construction. */
+function recordingRunner(
+  responder: (args: readonly string[]) => GitCommandResult,
+): { runner: GitRunner; calls: string[][] } {
+  const calls: string[][] = [];
+  const runner: GitRunner = (args) => {
+    calls.push([...args]);
+    return responder(args);
+  };
+  return { runner, calls };
 }
 
 describe("collectGitFacts", () => {
@@ -120,5 +146,176 @@ describe("resolveRepositorySession", () => {
         resolveRepositorySession({ repoRoot: dir, gitRunner: mockRunner({}) }),
       ).toThrow(/Repository_Session/);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Automatic git sync helpers (Model A)
+// ---------------------------------------------------------------------------
+
+describe("branch naming", () => {
+  it("builds cfls/<member> and sanitizes ref-unsafe characters", () => {
+    expect(userBranchName("cfls/", "alice")).toBe("cfls/alice");
+    expect(userBranchName("cfls/", "Bob Smith")).toBe("cfls/Bob-Smith");
+    expect(sanitizeMemberName("  weird//name.. ")).toBe("weird-name");
+  });
+});
+
+describe("parsePorcelain", () => {
+  it("parses NUL-delimited porcelain into changed paths (ignored excluded by git)", () => {
+    // `git status --porcelain=v1 -z` output: entries joined by NUL.
+    const stdout = [" M src/a.ts", "A  src/b.ts", "?? new.txt"].join("\0") + "\0";
+    expect(parsePorcelain(stdout)).toEqual([
+      { status: " M", path: "src/a.ts" },
+      { status: "A ", path: "src/b.ts" },
+      { status: "??", path: "new.txt" },
+    ]);
+  });
+
+  it("keeps the destination path of a rename and skips its 'from' token", () => {
+    const stdout = ["R  new/name.ts", "old/name.ts", " M other.ts"].join("\0") + "\0";
+    expect(parsePorcelain(stdout)).toEqual([
+      { status: "R ", path: "new/name.ts" },
+      { status: " M", path: "other.ts" },
+    ]);
+  });
+
+  it("returns [] for empty output", () => {
+    expect(parsePorcelain("")).toEqual([]);
+  });
+});
+
+describe("workingTreeChanges", () => {
+  it("returns parsed changes on success", () => {
+    const runner = mockRunner({
+      "status --porcelain=v1 -z": " M src/a.ts\0?? b.ts\0",
+    });
+    expect(workingTreeChanges("/repo", runner)).toEqual([
+      { status: " M", path: "src/a.ts" },
+      { status: "??", path: "b.ts" },
+    ]);
+  });
+
+  it("treats a git failure as no changes (safe no-op)", () => {
+    expect(workingTreeChanges("/repo", mockRunner({}))).toEqual([]);
+  });
+});
+
+describe("stagePaths", () => {
+  it("never uses `git add .` — stages only the listed paths after `--`", () => {
+    const { runner, calls } = recordingRunner(() => ({ ok: true, stdout: "" }));
+    stagePaths(["src/a.ts", "src/b.ts"], "/repo", runner);
+    expect(calls).toEqual([["add", "--", "src/a.ts", "src/b.ts"]]);
+  });
+
+  it("is a no-op for an empty path list", () => {
+    const { runner, calls } = recordingRunner(() => ({ ok: true, stdout: "" }));
+    expect(stagePaths([], "/repo", runner)).toEqual({ ok: true, stdout: "" });
+    expect(calls).toEqual([]);
+  });
+});
+
+describe("push", () => {
+  it("publishes HEAD to refs/heads/<branch> without force and without switching", () => {
+    const { runner, calls } = recordingRunner(() => ({ ok: true, stdout: "" }));
+    push("origin", "cfls/alice", "/repo", runner);
+    expect(calls).toEqual([["push", "origin", "HEAD:refs/heads/cfls/alice"]]);
+    // Never a --force / +refspec.
+    expect(calls[0]?.join(" ")).not.toMatch(/force|\+/);
+  });
+});
+
+describe("parseForEachRef / parseLeftRightCount", () => {
+  it("keeps only <remote>/<prefix>* refs and extracts member + commit", () => {
+    const stdout = [
+      "origin/cfls/alice aaa111",
+      "origin/cfls/bob bbb222",
+      "origin/main ccc333", // not under the prefix
+      "origin/feature/x ddd444", // not under the prefix
+    ].join("\n");
+    expect(parseForEachRef(stdout, "origin", "cfls/")).toEqual([
+      { ref: "origin/cfls/alice", branch: "cfls/alice", member: "alice", commit: "aaa111" },
+      { ref: "origin/cfls/bob", branch: "cfls/bob", member: "bob", commit: "bbb222" },
+    ]);
+  });
+
+  it("parses left/right ahead-behind counts", () => {
+    expect(parseLeftRightCount("2\t5")).toEqual({ left: 2, right: 5 });
+    expect(parseLeftRightCount("bogus")).toEqual({ left: 0, right: 0 });
+  });
+});
+
+describe("listTrackingBranches", () => {
+  it("lists cfls/* branches with ahead/behind relative to HEAD", () => {
+    const runner = mockRunner({
+      "for-each-ref --format=%(refname:short) %(objectname) refs/remotes/origin/cfls/":
+        "origin/cfls/alice aaa111\norigin/cfls/bob bbb222",
+      // HEAD is behind alice by 3 (right), ahead by 1 (left).
+      "rev-list --left-right --count HEAD...origin/cfls/alice": "1\t3",
+      // HEAD is even with bob.
+      "rev-list --left-right --count HEAD...origin/cfls/bob": "0\t0",
+    });
+    expect(listTrackingBranches("origin", "cfls/", "/repo", runner)).toEqual([
+      {
+        ref: "origin/cfls/alice",
+        branch: "cfls/alice",
+        member: "alice",
+        commit: "aaa111",
+        ahead: 3,
+        behind: 1,
+      },
+      {
+        ref: "origin/cfls/bob",
+        branch: "cfls/bob",
+        member: "bob",
+        commit: "bbb222",
+        ahead: 0,
+        behind: 0,
+      },
+    ]);
+  });
+
+  it("returns [] when for-each-ref fails", () => {
+    expect(listTrackingBranches("origin", "cfls/", "/repo", mockRunner({}))).toEqual([]);
+  });
+});
+
+describe("mergeNoConflict", () => {
+  it("returns ok on a clean merge and never aborts", () => {
+    const { runner, calls } = recordingRunner((args) =>
+      args[0] === "merge" ? { ok: true, stdout: "Fast-forward" } : { ok: true, stdout: "" },
+    );
+    expect(mergeNoConflict("origin/cfls/alice", "/repo", runner)).toEqual({
+      ok: true,
+      conflicted: false,
+      alreadyUpToDate: false,
+    });
+    expect(calls).toEqual([["merge", "--no-edit", "origin/cfls/alice"]]);
+  });
+
+  it("detects an already-up-to-date merge", () => {
+    const runner = mockRunner({
+      "merge --no-edit origin/cfls/bob": "Already up to date.",
+    });
+    expect(mergeNoConflict("origin/cfls/bob", "/repo", runner)).toEqual({
+      ok: true,
+      conflicted: false,
+      alreadyUpToDate: true,
+    });
+  });
+
+  it("aborts on conflict and reports conflicted without leaving a dirty tree", () => {
+    const { runner, calls } = recordingRunner((args) =>
+      args[0] === "merge" && args[1] === "--no-edit"
+        ? { ok: false, stdout: "CONFLICT" }
+        : { ok: true, stdout: "" },
+    );
+    expect(mergeNoConflict("origin/cfls/alice", "/repo", runner)).toEqual({
+      ok: false,
+      conflicted: true,
+    });
+    // The second call MUST be the abort.
+    expect(calls[0]).toEqual(["merge", "--no-edit", "origin/cfls/alice"]);
+    expect(calls[1]).toEqual(["merge", "--abort"]);
   });
 });

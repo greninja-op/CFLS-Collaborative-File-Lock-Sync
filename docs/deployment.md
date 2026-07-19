@@ -108,7 +108,7 @@ collaborative-file-lock-sync/
 ├─ apps/
 │  ├─ host/                 # CoordinationHost server (WSS, ingest, authority)
 │  ├─ agent/                # CoordinationAgent (WSS client, Local_API, watcher, cache)
-│  ├─ cli/                  # `cfls` onboarding CLI (admin-init/host/id/invite/join/connect/agent)
+│  ├─ cli/                  # `cfls` CLI (admin-init/host/id/invite/join/connect/agent; sync/clone git-sync)
 │  └─ vscode-extension/     # VS Code Editor_Extension
 ├─ packages/
 │  ├─ protocol/             # envelope, message catalog, DTOs, error codes, JSON schemas, version

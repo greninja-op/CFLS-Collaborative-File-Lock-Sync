@@ -123,11 +123,93 @@ soft locks, and (where configured) hard-lock coordination live.
 | `.coordination/local-api.json` | per-repo, per-machine | no (gitignored) | loopback Local_API url + per-session token |
 | `.coordination/session.json` | per-repo | optional | manual session fallback when git is unavailable |
 | `.coordination/rules.json` | per-repo | **yes** (team-shared) | Repository_Rules_Config |
+| `.coordination/config.json` | per-repo | **yes** (team-shared) | optional `autoSync` block (opt-in git sync; no secrets) |
 
 Secrets never land in `.coordination/*`. Private keys live only in the OS secret
 store or the encrypted-file fallback under `~/.cfls`. The `.gitignore` already
 excludes `.cfls/`, `.coordination/local-api.json`, `.coordination/agent.json`, and
 `.coordination/.cache/`.
+
+## Automatic git sync (optional)
+
+CFLS coordinates **metadata only** — git is still what moves file bytes. On top
+of that, the CLI offers an **opt-in** layer that automates the git side so
+teammates' coordinated changes flow between laptops without manual `push`/`pull`.
+It is **disabled by default**: with no config (or `enabled: false`), nothing new
+runs and `cfls agent` behaves exactly as before.
+
+### Model A: per-user branches (and why)
+
+Each teammate's agent publishes **only their own** coordinated working-tree
+changes to their **own** branch `cfls/<memberName>` and never touches anyone
+else's branch automatically. This was chosen over a single fully-shared,
+real-time branch **for safety**: a shared branch invites silent clobbering,
+force-pushes, and half-applied conflicting writes. With per-user branches:
+
+- **Producer (automatic):** if your working tree has non-ignored changes, the
+  agent stages exactly those known paths (never `git add .`), commits them as
+  `cfls: <member> sync <n> file(s)`, and publishes with
+  `git push <remote> HEAD:refs/heads/cfls/<member>`. This publishes **without
+  switching or resetting your checked-out branch** — the safest possible push.
+  A rejected (non-fast-forward) or unauthenticated push logs a concise notice and
+  retries next cycle; it **never force-pushes**.
+- **Consumer (fetch + notify):** the agent periodically `git fetch`es and, when
+  another `cfls/*` branch advances, notifies e.g. *"alice published 2 commit(s)"*.
+  Applying those changes is a **safe, explicit** step (`cfls sync merge alice`)
+  unless you enable `autoMerge`.
+- **Optional `autoMerge` (conflict-free only):** when enabled, the consumer
+  attempts a merge and applies it **only** when it is clean/fast-forward.
+  On **any** conflict it runs `git merge --abort` (your tree is left untouched)
+  and notifies *"manual merge needed"*. It **never auto-resolves conflicts**.
+
+> Honest caveat: real conflicts still require a manual merge or a PR. The
+> automatic layer safely moves conflict-free work and gets out of your way the
+> moment human judgement is needed. Fully-shared-branch real-time sync was
+> intentionally **not** chosen.
+
+### Enabling it
+
+Add an `autoSync` block to the **committed, team-shared** `.coordination/config.json`
+(no secrets ever go here):
+
+```json
+{
+  "autoSync": {
+    "enabled": true,
+    "remote": "origin",
+    "branchPrefix": "cfls/",
+    "commitIntervalSec": 20,
+    "fetchIntervalSec": 20,
+    "autoMerge": false
+  }
+}
+```
+
+Any missing field falls back to a safe default; a missing file or block means
+**disabled**. With `enabled: true`, `cfls agent` starts the background sync loop
+(cancelled cleanly on Ctrl+C alongside the agent).
+
+### Commands
+
+```bash
+cfls sync status            # current branch, your cfls/<you> publish branch,
+                            # teammate cfls/* branches with ahead/behind, tree state
+cfls sync push              # manual: stage coordinated changes, commit, push cfls/<you>
+                            # (skips cleanly when the tree is clean)
+cfls sync merge <member>    # safe merge of <remote>/cfls/<member> into your branch;
+                            # aborts and tells you to resolve manually on conflict
+```
+
+### Convenience clone
+
+```bash
+cfls clone <repo-url> [--host <wss>] [--name <you>] [--team <id>]
+```
+
+`cfls clone` runs `git clone` and scaffolds `.coordination/agent.json` (host, name,
+team) so you can jump straight to `cfls id` → `cfls connect` → `cfls agent`. It
+still uses **your own** GitHub access (SSH key / credential helper / PAT); cfls
+stores no git tokens.
 
 ## Troubleshooting
 
