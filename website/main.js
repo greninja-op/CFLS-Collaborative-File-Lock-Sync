@@ -1,145 +1,267 @@
-/* ===== CFLS landing page — interactions & animations ===== */
-(function () {
+(() => {
   "use strict";
 
-  const hasGsap = typeof window.gsap !== "undefined";
-  if (hasGsap && window.ScrollTrigger) {
-    gsap.registerPlugin(ScrollTrigger);
-  }
+  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  /* -------- scroll reveals -------- */
   function initReveals() {
     const items = Array.from(document.querySelectorAll("[data-reveal]"));
-    if (!hasGsap) {
-      // Graceful fallback: just show everything.
-      document.documentElement.classList.add("no-anim");
+    if (items.length === 0) return;
+
+    if (prefersReducedMotion || !("IntersectionObserver" in window)) {
+      items.forEach((item) => item.classList.add("is-visible"));
       return;
     }
-    items.forEach((el) => {
-      gsap.to(el, {
-        opacity: 1,
-        y: 0,
-        duration: 0.7,
-        ease: "power3.out",
-        scrollTrigger: { trigger: el, start: "top 88%" },
-      });
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          entry.target.classList.add("is-visible");
+          observer.unobserve(entry.target);
+        });
+      },
+      { rootMargin: "0px 0px -7% 0px", threshold: 0.08 },
+    );
+
+    items.forEach((item) => {
+      item.classList.add("reveal-ready");
+      observer.observe(item);
     });
   }
 
-  /* -------- install tabs -------- */
-  function initTabs() {
-    const tabs = document.querySelectorAll(".tab");
-    const panels = document.querySelectorAll(".tab-panel");
-    tabs.forEach((tab) => {
-      tab.addEventListener("click", () => {
-        const key = tab.getAttribute("data-tab");
-        tabs.forEach((t) => t.classList.toggle("is-active", t === tab));
-        panels.forEach((p) =>
-          p.classList.toggle("is-active", p.getAttribute("data-panel") === key),
-        );
-      });
-    });
-  }
+  function initMobileMenu() {
+    const toggle = document.querySelector(".menu-toggle");
+    const menu = document.querySelector("#mobile-menu");
+    if (!(toggle instanceof HTMLButtonElement) || !(menu instanceof HTMLElement)) return;
 
-  /* -------- copy-to-clipboard -------- */
-  function initCopy() {
-    document.querySelectorAll(".copy-btn").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const text = btn.getAttribute("data-copy") || "";
-        try {
-          await navigator.clipboard.writeText(text);
-        } catch {
-          // Fallback for non-secure contexts.
-          const ta = document.createElement("textarea");
-          ta.value = text;
-          ta.style.position = "fixed";
-          ta.style.opacity = "0";
-          document.body.appendChild(ta);
-          ta.select();
-          try { document.execCommand("copy"); } catch { /* ignore */ }
-          document.body.removeChild(ta);
-        }
-        const original = btn.textContent;
-        btn.textContent = "Copied!";
-        btn.classList.add("copied");
-        setTimeout(() => {
-          btn.textContent = original;
-          btn.classList.remove("copied");
-        }, 1400);
-      });
-    });
-  }
-
-  /* -------- hero coordination loop -------- */
-  function initHero() {
-    if (!hasGsap) return;
-    const lock = document.querySelector("#hero-lockline .inline-lock");
-    const toast = document.querySelector("#hero-toast");
-    if (!lock || !toast) return;
-
-    const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.6, delay: 0.6 });
-    tl.to(lock, { opacity: 1, duration: 0.4, ease: "back.out(2)" })
-      .to(toast, { opacity: 1, y: 0, duration: 0.5, ease: "power3.out" }, "-=0.1")
-      .to({}, { duration: 2.4 })
-      .to([toast], { opacity: 0, y: 10, duration: 0.4 })
-      .to(lock, { opacity: 0, duration: 0.4 }, "-=0.2");
-  }
-
-  /* -------- live demo loop (Alice types → Bob is warned → auto-sync) -------- */
-  function initDemo() {
-    if (!hasGsap) return;
-    const caret = document.querySelector("#alice-caret");
-    const packet = document.querySelector("#flow-packet");
-    const bobLock = document.querySelector("#bob-lock");
-    const toast = document.querySelector("#demo-toast");
-    const sync = document.querySelector("#demo-sync");
-    const aliceLine = document.querySelector("#alice-typing");
-    if (!caret || !packet || !bobLock || !toast || !sync || !aliceLine) return;
-
-    // blink caret continuously
-    gsap.to(caret, { opacity: 1, duration: 0.001, repeat: -1, yoyo: true, repeatDelay: 0.45 });
-
-    const tl = gsap.timeline({ repeat: -1, repeatDelay: 1.4, delay: 0.8 });
-    tl
-      // Alice "starts editing"
-      .set([bobLock, toast, sync], { opacity: 0 })
-      .set(packet, { opacity: 0, left: "0%" })
-      .to(aliceLine, { backgroundColor: "rgba(96,165,250,.08)", duration: 0.3 })
-      // packet flows Alice → host → Bob
-      .to(packet, { opacity: 1, duration: 0.15 })
-      .to(packet, { left: "100%", duration: 1.0, ease: "power1.inOut" })
-      .to(packet, { opacity: 0, duration: 0.15 })
-      // Bob sees the lock + warning
-      .to(bobLock, { opacity: 1, duration: 0.35, ease: "back.out(2)" })
-      .to(toast, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, "-=0.1")
-      .to({}, { duration: 2.0 })
-      // auto-sync resolves
-      .to(toast, { opacity: 0, y: 8, duration: 0.4 })
-      .to(sync, { opacity: 1, y: 0, duration: 0.45, ease: "power3.out" }, "-=0.1")
-      .to({}, { duration: 2.0 })
-      // reset
-      .to([sync, bobLock], { opacity: 0, duration: 0.4 })
-      .to(aliceLine, { backgroundColor: "rgba(0,0,0,0)", duration: 0.3 }, "-=0.3");
-  }
-
-  /* -------- nav shadow on scroll (subtle) -------- */
-  function initNav() {
-    const nav = document.querySelector("header nav > div");
-    if (!nav) return;
-    const onScroll = () => {
-      if (window.scrollY > 20) nav.classList.add("shadow-2xl");
-      else nav.classList.remove("shadow-2xl");
+    const setMenuOpen = (open) => {
+      toggle.setAttribute("aria-expanded", String(open));
+      toggle.classList.toggle("is-open", open);
+      menu.hidden = !open;
     };
-    window.addEventListener("scroll", onScroll, { passive: true });
-    onScroll();
+
+    toggle.addEventListener("click", () => {
+      setMenuOpen(toggle.getAttribute("aria-expanded") !== "true");
+    });
+
+    menu.querySelectorAll("a").forEach((link) => {
+      link.addEventListener("click", () => setMenuOpen(false));
+    });
   }
 
-  document.addEventListener("DOMContentLoaded", () => {
+  function initInstallTabs() {
+    const tabs = Array.from(document.querySelectorAll("[data-install-tab]"));
+    const panels = Array.from(document.querySelectorAll("[data-install-panel]"));
+    if (tabs.length === 0 || panels.length === 0) return;
+
+    const select = (key, focus = false) => {
+      tabs.forEach((tab) => {
+        const isSelected = tab.getAttribute("data-install-tab") === key;
+        tab.classList.toggle("is-active", isSelected);
+        tab.setAttribute("aria-selected", String(isSelected));
+        if (isSelected && focus) {
+          tab.focus();
+        }
+      });
+
+      panels.forEach((panel) => {
+        const isSelected = panel.getAttribute("data-install-panel") === key;
+        panel.classList.toggle("is-active", isSelected);
+        panel.hidden = !isSelected;
+      });
+    };
+
+    tabs.forEach((tab, index) => {
+      tab.addEventListener("click", () => select(tab.getAttribute("data-install-tab")));
+      tab.addEventListener("keydown", (event) => {
+        if (!["ArrowDown", "ArrowUp", "ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key))
+          return;
+        event.preventDefault();
+
+        let nextIndex = index;
+        if (event.key === "Home") nextIndex = 0;
+        if (event.key === "End") nextIndex = tabs.length - 1;
+        if (event.key === "ArrowDown" || event.key === "ArrowRight")
+          nextIndex = (index + 1) % tabs.length;
+        if (event.key === "ArrowUp" || event.key === "ArrowLeft")
+          nextIndex = (index - 1 + tabs.length) % tabs.length;
+
+        const nextTab = tabs[nextIndex];
+        select(nextTab.getAttribute("data-install-tab"), true);
+      });
+    });
+  }
+
+  async function copyText(value) {
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(value);
+        return true;
+      } catch {
+        // Fall through to the legacy clipboard route.
+      }
+    }
+
+    const textarea = document.createElement("textarea");
+    textarea.value = value;
+    textarea.setAttribute("readonly", "");
+    textarea.style.position = "fixed";
+    textarea.style.opacity = "0";
+    textarea.style.pointerEvents = "none";
+    document.body.appendChild(textarea);
+    textarea.select();
+
+    let copied = false;
+    try {
+      copied = document.execCommand("copy");
+    } catch {
+      copied = false;
+    }
+
+    textarea.remove();
+    return copied;
+  }
+
+  function initCopyButtons() {
+    const status = document.querySelector("#copy-status");
+    document.querySelectorAll("[data-copy]").forEach((button) => {
+      if (!(button instanceof HTMLButtonElement)) return;
+      const originalText = button.textContent || "Copy";
+
+      button.addEventListener("click", async () => {
+        const copied = await copyText(button.getAttribute("data-copy") || "");
+        if (copied) {
+          button.textContent = "Copied";
+          button.classList.add("is-copied");
+          if (status) status.textContent = "Command copied to clipboard.";
+        } else {
+          button.textContent = "Copy failed";
+          if (status)
+            status.textContent = "Could not copy the command. Select it and copy manually.";
+        }
+
+        window.setTimeout(() => {
+          button.textContent = originalText;
+          button.classList.remove("is-copied");
+        }, 1600);
+      });
+    });
+  }
+
+  function initDemo() {
+    const canvas = document.querySelector("#demo-canvas");
+    const copy = document.querySelector("#demo-copy");
+    const play = document.querySelector("#demo-play");
+    const steps = Array.from(document.querySelectorAll("[data-demo-step]"));
+    const bobStatus = canvas?.querySelector(".demo-bob-status");
+
+    if (
+      !(canvas instanceof HTMLElement) ||
+      !(copy instanceof HTMLElement) ||
+      !(play instanceof HTMLButtonElement) ||
+      steps.length === 0
+    ) {
+      return;
+    }
+
+    const messages = [
+      "Both teammates are online and looking at the same repository.",
+      "Alice starts editing payments.ts. Her local Agent now has a coordination signal to share.",
+      "The Host receives the signed activity metadata and updates the shared coordination state.",
+      "Bob sees that payments.ts is active before he begins overlapping work.",
+      "Bob changes course or coordinates with Alice. Git can stay focused on the code, not a surprise collision.",
+    ];
+
+    let step = 0;
+    let playbackId = 0;
+
+    const applyStep = (nextStep) => {
+      step = Math.max(0, Math.min(nextStep, messages.length - 1));
+      canvas.dataset.step = String(step);
+      canvas.classList.toggle("is-alice-editing", step >= 1);
+      canvas.classList.toggle("is-host-signaled", step >= 2);
+      canvas.classList.toggle("is-bob-aware", step >= 3);
+      canvas.classList.toggle("is-bob-safe", step >= 4);
+      copy.textContent = messages[step];
+
+      if (bobStatus instanceof HTMLElement) {
+        bobStatus.textContent =
+          step >= 4 ? "Safe next move" : step >= 3 ? "1 file in play" : "No files in play";
+      }
+
+      steps.forEach((button) => {
+        const isCurrent = Number(button.getAttribute("data-demo-step")) === step;
+        button.classList.toggle("is-active", isCurrent);
+        button.setAttribute("aria-selected", String(isCurrent));
+      });
+    };
+
+    steps.forEach((button) => {
+      button.addEventListener("click", () => {
+        playbackId += 1;
+        applyStep(Number(button.getAttribute("data-demo-step")));
+      });
+
+      button.addEventListener("keydown", (event) => {
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        event.preventDefault();
+        const current = Number(button.getAttribute("data-demo-step"));
+        const next =
+          event.key === "Home"
+            ? 0
+            : event.key === "End"
+              ? steps.length - 1
+              : event.key === "ArrowLeft"
+                ? Math.max(0, current - 1)
+                : Math.min(steps.length - 1, current + 1);
+        playbackId += 1;
+        applyStep(next);
+        const focused = steps[next];
+        if (focused instanceof HTMLButtonElement) focused.focus();
+      });
+    });
+
+    play.addEventListener("click", async () => {
+      playbackId += 1;
+      const thisPlayback = playbackId;
+      play.disabled = true;
+      play.querySelector("span").textContent = "Playing...";
+      applyStep(0);
+
+      if (prefersReducedMotion) {
+        applyStep(4);
+      } else {
+        for (let nextStep = 1; nextStep < messages.length; nextStep += 1) {
+          await new Promise((resolve) => window.setTimeout(resolve, 1250));
+          if (thisPlayback !== playbackId) {
+            play.disabled = false;
+            play.querySelector("span").textContent = "Replay walkthrough";
+            return;
+          }
+          applyStep(nextStep);
+        }
+      }
+
+      if (thisPlayback === playbackId) {
+        play.disabled = false;
+        play.querySelector("span").textContent = "Replay walkthrough";
+      }
+    });
+
+    applyStep(0);
+  }
+
+  function init() {
     initReveals();
-    initTabs();
-    initCopy();
-    initHero();
+    initMobileMenu();
+    initInstallTabs();
+    initCopyButtons();
     initDemo();
-    initNav();
-  });
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init, { once: true });
+  } else {
+    init();
+  }
 })();
