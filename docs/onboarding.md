@@ -197,8 +197,26 @@ cfls sync status            # current branch, your cfls/<you> publish branch,
 cfls sync push              # manual: stage coordinated changes, commit, push cfls/<you>
                             # (skips cleanly when the tree is clean)
 cfls sync merge <member>    # safe merge of <remote>/cfls/<member> into your branch;
-                            # aborts and tells you to resolve manually on conflict
+                            # aborts cleanly on conflict AND lists the conflicting files
+cfls sync merge <m> --resolve
+                            # merge and, on conflict, open the conflicted files in your
+                            # editor's 3-way merge UI to resolve them, then `git commit`
 ```
+
+### Conflict handling
+
+Auto-sync is built to make conflicts rare and safe:
+
+- **Live-edit pre-warning:** before an auto-merge touches a file a teammate is
+  editing *right now* (from the live coordination view), you're warned — and with
+  `autoMerge` on, that branch's merge is **deferred** so live work is never
+  clobbered.
+- **`git rerere`** is turned on automatically when auto-sync is enabled, so a
+  conflict you resolve once is replayed automatically next time.
+- **`cfls sync merge <member> --resolve`** opens the conflicted files in your
+  editor's merge editor for point-and-click resolution.
+
+See [`features.md`](./features.md) for the full feature guide.
 
 ### Convenience clone
 

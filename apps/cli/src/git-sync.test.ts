@@ -19,6 +19,7 @@ import {
   buildCommitMessage,
   decideConsumer,
   decideProducer,
+  detectLockCollisions,
   startGitSyncLoop,
   type SyncDeps,
 } from "./git-sync";
@@ -201,6 +202,76 @@ describe("decideConsumer", () => {
     const result = decideConsumer(deps, new Map());
     expect(result.fetchFailed).toBe(true);
     expect(result.advanced).toHaveLength(0);
+  });
+
+  it("pre-warns when an incoming branch touches a file a teammate is editing", () => {
+    const { runner } = baseRunner({
+      [listKey]: { ok: true, stdout: "origin/cfls/bob bbb222" },
+      "rev-list --left-right --count HEAD...origin/cfls/bob": { ok: true, stdout: "0\t2" },
+      "diff --name-only -z HEAD...origin/cfls/bob": { ok: true, stdout: "src/shared.ts\0" },
+    });
+    const deps: SyncDeps = {
+      cwd: "/repo",
+      config: cfg(), // notify-only
+      member: "alice",
+      runner,
+      heldPathsByOthers: new Set(["src/shared.ts"]),
+    };
+    const result = decideConsumer(deps, new Map());
+    expect(result.advanced[0]?.lockCollisions).toEqual(["src/shared.ts"]);
+    expect(result.notices.some((n) => /heads-up/.test(n) && /src\/shared\.ts/.test(n))).toBe(true);
+  });
+
+  it("defers an autoMerge (never merges) when it would touch a file in active use", () => {
+    const { runner, calls } = baseRunner({
+      [listKey]: { ok: true, stdout: "origin/cfls/bob bbb222" },
+      "rev-list --left-right --count HEAD...origin/cfls/bob": { ok: true, stdout: "0\t2" },
+      "diff --name-only -z HEAD...origin/cfls/bob": { ok: true, stdout: "src/shared.ts\0" },
+    });
+    const deps: SyncDeps = {
+      cwd: "/repo",
+      config: cfg({ autoMerge: true }),
+      member: "alice",
+      runner,
+      heldPathsByOthers: new Set(["src/shared.ts"]),
+    };
+    const result = decideConsumer(deps, new Map());
+    expect(result.advanced[0]?.merged).toBeUndefined();
+    expect(result.notices.some((n) => /deferred auto-merge/.test(n))).toBe(true);
+    // No merge was attempted at all.
+    expect(calls.some((c) => c.startsWith("merge"))).toBe(false);
+  });
+
+  it("still auto-merges when the incoming files do not collide with active edits", () => {
+    const { runner, calls } = baseRunner({
+      [listKey]: { ok: true, stdout: "origin/cfls/bob bbb222" },
+      "rev-list --left-right --count HEAD...origin/cfls/bob": { ok: true, stdout: "0\t2" },
+      "diff --name-only -z HEAD...origin/cfls/bob": { ok: true, stdout: "src/other.ts\0" },
+      "merge --no-edit origin/cfls/bob": { ok: true, stdout: "Fast-forward" },
+    });
+    const deps: SyncDeps = {
+      cwd: "/repo",
+      config: cfg({ autoMerge: true }),
+      member: "alice",
+      runner,
+      heldPathsByOthers: new Set(["src/shared.ts"]),
+    };
+    const result = decideConsumer(deps, new Map());
+    expect(result.advanced[0]?.merged).toBe(true);
+    expect(calls).toContain("merge --no-edit origin/cfls/bob");
+  });
+});
+
+describe("detectLockCollisions", () => {
+  it("returns the incoming files that a teammate is holding (slash/case-insensitive)", () => {
+    const incoming = ["src/Shared.ts", "src/new.ts"];
+    const held = new Set(["src\\shared.ts"]);
+    expect(detectLockCollisions(incoming, held)).toEqual(["src/Shared.ts"]);
+  });
+
+  it("returns [] when nothing is held or nothing incoming", () => {
+    expect(detectLockCollisions(["a.ts"], new Set())).toEqual([]);
+    expect(detectLockCollisions([], new Set(["a.ts"]))).toEqual([]);
   });
 });
 

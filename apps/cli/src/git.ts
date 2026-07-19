@@ -317,6 +317,104 @@ export interface MergeResult {
 }
 
 /**
+ * Enable git's "reuse recorded resolution" (rerere) for this repository, so once
+ * a conflict is resolved by hand git remembers the resolution and re-applies it
+ * automatically the next time the same conflict appears (design "autoSync";
+ * conflict-avoidance). Idempotent and best-effort: a failure is reported as
+ * `{ ok: false }` and never throws. Runs `git config rerere.enabled true`.
+ */
+export function enableRerere(cwd: string, runner: GitRunner = defaultGitRunner): GitCommandResult {
+  return runner(["config", "rerere.enabled", "true"], cwd);
+}
+
+/**
+ * List the currently-conflicted (unmerged) paths via
+ * `git diff --name-only --diff-filter=U -z`. Returns repo-relative paths with
+ * forward slashes (git's native form). Returns `[]` on any git failure. Safe to
+ * call whether or not a merge is in progress (yields `[]` when nothing conflicts).
+ */
+export function listConflictedFiles(
+  cwd: string,
+  runner: GitRunner = defaultGitRunner,
+): string[] {
+  const res = runner(["diff", "--name-only", "--diff-filter=U", "-z"], cwd);
+  if (!res.ok) {
+    return [];
+  }
+  return res.stdout.split("\0").filter((p) => p.length > 0);
+}
+
+/**
+ * The files a `<toRef>` brings in relative to `<fromRef>`, via
+ * `git diff --name-only -z <fromRef>...<toRef>` (the `...` three-dot form uses
+ * the merge base, so this is exactly "what would change if I merged toRef").
+ * Returns repo-relative forward-slash paths, or `[]` on git failure.
+ */
+export function filesChangedBetween(
+  fromRef: string,
+  toRef: string,
+  cwd: string,
+  runner: GitRunner = defaultGitRunner,
+): string[] {
+  const res = runner(["diff", "--name-only", "-z", `${fromRef}...${toRef}`], cwd);
+  if (!res.ok) {
+    return [];
+  }
+  return res.stdout.split("\0").filter((p) => p.length > 0);
+}
+
+/** A merge outcome that also reports which files conflicted (feature: helper). */
+export interface DetailedMergeResult extends MergeResult {
+  /** Repo-relative paths that conflicted (empty on a clean merge). */
+  conflictedFiles: string[];
+}
+
+/**
+ * Like {@link mergeNoConflict}, but on conflict it CAPTURES the conflicted file
+ * list (before aborting) so the caller can show the user exactly which files
+ * clashed. Still non-destructive: it `git merge --abort`s on conflict so the
+ * working tree is restored. Returns `{ ok, conflicted, alreadyUpToDate?,
+ * conflictedFiles }`.
+ */
+export function mergeReportingConflicts(
+  branch: string,
+  cwd: string,
+  runner: GitRunner = defaultGitRunner,
+): DetailedMergeResult {
+  const merge = runner(["merge", "--no-edit", branch], cwd);
+  if (merge.ok) {
+    const alreadyUpToDate = /already up to date/i.test(merge.stdout);
+    return { ok: true, conflicted: false, alreadyUpToDate, conflictedFiles: [] };
+  }
+  const conflictedFiles = listConflictedFiles(cwd, runner);
+  runner(["merge", "--abort"], cwd);
+  return { ok: false, conflicted: true, conflictedFiles };
+}
+
+/**
+ * Start a merge and DELIBERATELY leave conflict markers in place for interactive
+ * resolution (used by `cfls sync merge <member> --resolve`). On a clean merge it
+ * behaves like {@link mergeReportingConflicts}. On conflict it does NOT abort —
+ * the conflicted files are left with `<<<<<<<`/`>>>>>>>` markers so the user can
+ * resolve them (e.g. in VS Code's merge editor) and then `git commit`. The
+ * conflicted file list is returned so the caller can open those files.
+ */
+export function mergeLeavingConflicts(
+  branch: string,
+  cwd: string,
+  runner: GitRunner = defaultGitRunner,
+): DetailedMergeResult {
+  const merge = runner(["merge", "--no-edit", branch], cwd);
+  if (merge.ok) {
+    const alreadyUpToDate = /already up to date/i.test(merge.stdout);
+    return { ok: true, conflicted: false, alreadyUpToDate, conflictedFiles: [] };
+  }
+  // Leave the in-progress merge as-is for manual resolution.
+  const conflictedFiles = listConflictedFiles(cwd, runner);
+  return { ok: false, conflicted: true, conflictedFiles };
+}
+
+/**
  * Attempt to merge `branch` (typically `<remote>/cfls/<member>`) into the current
  * branch, aborting on ANY conflict so the working tree is never left in a
  * conflicted state. Returns `{ ok: true }` on a clean merge (including

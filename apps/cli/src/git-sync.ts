@@ -32,6 +32,7 @@ import type { AutoSyncConfig } from "./config-files";
 import {
   commit,
   fetch,
+  filesChangedBetween,
   listTrackingBranches,
   mergeNoConflict,
   push,
@@ -42,6 +43,29 @@ import {
   type TrackingBranch,
 } from "./git";
 import { defaultGitRunner } from "./git";
+
+/** Normalize a repo-relative path for cross-platform comparison (slashes, case). */
+function normalizeForCompare(path: string): string {
+  return path.replace(/\\/g, "/").replace(/^\.\//, "").toLowerCase();
+}
+
+/**
+ * Intersect the files an incoming teammate branch would change with the set of
+ * paths OTHER teammates are actively editing/holding right now (from the live
+ * coordination view). Returns the ORIGINAL `incomingFiles` entries that collide,
+ * so the caller can warn "this merge touches a file someone is editing" before
+ * doing anything. Comparison is slash- and case-insensitive (Windows-friendly).
+ */
+export function detectLockCollisions(
+  incomingFiles: readonly string[],
+  heldByOthers: ReadonlySet<string>,
+): string[] {
+  if (heldByOthers.size === 0 || incomingFiles.length === 0) {
+    return [];
+  }
+  const held = new Set([...heldByOthers].map(normalizeForCompare));
+  return incomingFiles.filter((f) => held.has(normalizeForCompare(f)));
+}
 
 /** A single-line notice emitted by the sync loop (secret-free, human-readable). */
 export type SyncNotice = string;
@@ -72,6 +96,15 @@ export interface SyncDeps {
   member: string;
   /** Injectable git runner (mocked in tests). */
   runner: GitRunner;
+  /**
+   * OPTIONAL snapshot of repo-relative paths OTHER teammates are actively
+   * editing/holding right now (from the live coordination view). When provided,
+   * the consumer cross-checks each incoming teammate branch against it and warns
+   * before touching a file someone is mid-edit on; with `autoMerge` on it also
+   * DEFERS the auto-merge for those branches so it never clobbers live work.
+   * Absent ⇒ the pre-warning is skipped (unchanged behavior).
+   */
+  heldPathsByOthers?: ReadonlySet<string>;
 }
 
 /**
@@ -140,6 +173,12 @@ export interface AdvancedBranch {
   merged?: boolean;
   /** Whether an autoMerge was attempted but aborted due to conflicts. */
   conflicted?: boolean;
+  /**
+   * Incoming files that collide with a path a teammate is editing right now.
+   * When non-empty, an otherwise-eligible autoMerge is DEFERRED (not attempted)
+   * so live work is never overwritten; the user is told to review + merge by hand.
+   */
+  lockCollisions?: string[];
 }
 
 /** The outcome of one consumer cycle. */
@@ -203,17 +242,41 @@ export function decideConsumer(
     const noun = b.ahead === 1 ? "commit" : "commits";
     notices.push(`${b.member} published ${b.ahead} ${noun} (${b.branch}).`);
 
-    if (config.autoMerge) {
-      const result = mergeNoConflict(b.ref, cwd, runner);
-      if (result.ok) {
-        entry.merged = true;
-        notices.push(`auto-sync: merged ${b.member}'s changes cleanly.`);
-      } else {
-        entry.conflicted = true;
+    // Pre-warning (coordination-aware): if this branch would touch a file a
+    // teammate is editing RIGHT NOW, surface it before doing anything.
+    let collisions: string[] = [];
+    if (deps.heldPathsByOthers !== undefined && deps.heldPathsByOthers.size > 0) {
+      const incoming = filesChangedBetween("HEAD", b.ref, cwd, runner);
+      collisions = detectLockCollisions(incoming, deps.heldPathsByOthers);
+      if (collisions.length > 0) {
+        entry.lockCollisions = collisions;
         notices.push(
-          `auto-sync: manual merge needed for ${b.member} — conflicts detected, ` +
-            `merge aborted. Run: cfls sync merge ${b.member}`,
+          `⚠ heads-up: ${b.member}'s changes touch ${collisions.length} file(s) a teammate ` +
+            `is editing now (${collisions.slice(0, 3).join(", ")}` +
+            `${collisions.length > 3 ? ", …" : ""}) — coordinate before merging.`,
         );
+      }
+    }
+
+    if (config.autoMerge) {
+      if (collisions.length > 0) {
+        // Never auto-merge over live edits; defer to a deliberate manual merge.
+        notices.push(
+          `auto-sync: deferred auto-merge of ${b.member} (touches files in active use). ` +
+            `Review, then run: cfls sync merge ${b.member}`,
+        );
+      } else {
+        const result = mergeNoConflict(b.ref, cwd, runner);
+        if (result.ok) {
+          entry.merged = true;
+          notices.push(`auto-sync: merged ${b.member}'s changes cleanly.`);
+        } else {
+          entry.conflicted = true;
+          notices.push(
+            `auto-sync: manual merge needed for ${b.member} — conflicts detected, ` +
+              `merge aborted. Run: cfls sync merge ${b.member}`,
+          );
+        }
       }
     }
     advanced.push(entry);
@@ -226,6 +289,13 @@ export function decideConsumer(
 export interface GitSyncLoopOptions extends SyncDeps {
   /** Sink for notices (defaults to `console.log`). Secret-free strings only. */
   onNotice?: (notice: SyncNotice) => void;
+  /**
+   * OPTIONAL provider returning the live set of repo-relative paths OTHER
+   * teammates are editing/holding right now. Called fresh each consumer cycle so
+   * the pre-warning always reflects current coordination state. When omitted the
+   * pre-warning is disabled (unchanged behavior).
+   */
+  getHeldPathsByOthers?: () => ReadonlySet<string>;
   /** Injectable timers (tests). Defaults to global `setInterval`/`clearInterval`. */
   setIntervalFn?: (handler: () => void, ms: number) => ReturnType<typeof setInterval>;
   clearIntervalFn?: (handle: ReturnType<typeof setInterval>) => void;
@@ -276,7 +346,10 @@ export function startGitSyncLoop(options: GitSyncLoopOptions): GitSyncLoopHandle
 
   const runConsumer = (): void => {
     try {
-      const result = decideConsumer(deps, consumerTips);
+      const held = options.getHeldPathsByOthers?.();
+      const consumerDeps: SyncDeps =
+        held !== undefined ? { ...deps, heldPathsByOthers: held } : deps;
+      const result = decideConsumer(consumerDeps, consumerTips);
       consumerTips = result.tips;
       for (const notice of result.notices) {
         onNotice(notice);

@@ -15,8 +15,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   collectGitFacts,
+  enableRerere,
+  filesChangedBetween,
+  listConflictedFiles,
   listTrackingBranches,
+  mergeLeavingConflicts,
   mergeNoConflict,
+  mergeReportingConflicts,
   parseForEachRef,
   parseLeftRightCount,
   parsePorcelain,
@@ -317,5 +322,97 @@ describe("mergeNoConflict", () => {
     // The second call MUST be the abort.
     expect(calls[0]).toEqual(["merge", "--no-edit", "origin/cfls/alice"]);
     expect(calls[1]).toEqual(["merge", "--abort"]);
+  });
+});
+
+describe("enableRerere", () => {
+  it("runs `git config rerere.enabled true`", () => {
+    const { runner, calls } = recordingRunner(() => ({ ok: true, stdout: "" }));
+    expect(enableRerere("/repo", runner).ok).toBe(true);
+    expect(calls).toEqual([["config", "rerere.enabled", "true"]]);
+  });
+});
+
+describe("listConflictedFiles", () => {
+  it("parses NUL-delimited unmerged paths", () => {
+    const runner = mockRunner({
+      "diff --name-only --diff-filter=U -z": "src/a.ts\0src/b.ts\0",
+    });
+    expect(listConflictedFiles("/repo", runner)).toEqual(["src/a.ts", "src/b.ts"]);
+  });
+
+  it("returns [] on git failure", () => {
+    expect(listConflictedFiles("/repo", mockRunner({}))).toEqual([]);
+  });
+});
+
+describe("filesChangedBetween", () => {
+  it("uses the three-dot (merge-base) diff and parses NUL output", () => {
+    const { runner, calls } = recordingRunner(() => ({
+      ok: true,
+      stdout: "src/x.ts\0src/y.ts\0",
+    }));
+    expect(filesChangedBetween("HEAD", "origin/cfls/bob", "/repo", runner)).toEqual([
+      "src/x.ts",
+      "src/y.ts",
+    ]);
+    expect(calls[0]).toEqual([
+      "diff",
+      "--name-only",
+      "-z",
+      "HEAD...origin/cfls/bob",
+    ]);
+  });
+});
+
+describe("mergeReportingConflicts", () => {
+  it("captures the conflicted files then aborts (tree restored)", () => {
+    const { runner, calls } = recordingRunner((args) => {
+      if (args[0] === "merge" && args[1] === "--no-edit") {
+        return { ok: false, stdout: "CONFLICT" };
+      }
+      if (args.join(" ") === "diff --name-only --diff-filter=U -z") {
+        return { ok: true, stdout: "src/a.ts\0" };
+      }
+      return { ok: true, stdout: "" };
+    });
+    expect(mergeReportingConflicts("origin/cfls/bob", "/repo", runner)).toEqual({
+      ok: false,
+      conflicted: true,
+      conflictedFiles: ["src/a.ts"],
+    });
+    // Must have aborted to restore the tree.
+    expect(calls).toContainEqual(["merge", "--abort"]);
+  });
+
+  it("reports a clean merge with no conflicted files", () => {
+    const runner = mockRunner({ "merge --no-edit origin/cfls/bob": "Fast-forward" });
+    expect(mergeReportingConflicts("origin/cfls/bob", "/repo", runner)).toEqual({
+      ok: true,
+      conflicted: false,
+      alreadyUpToDate: false,
+      conflictedFiles: [],
+    });
+  });
+});
+
+describe("mergeLeavingConflicts", () => {
+  it("does NOT abort on conflict — leaves markers for manual resolution", () => {
+    const { runner, calls } = recordingRunner((args) => {
+      if (args[0] === "merge" && args[1] === "--no-edit") {
+        return { ok: false, stdout: "CONFLICT" };
+      }
+      if (args.join(" ") === "diff --name-only --diff-filter=U -z") {
+        return { ok: true, stdout: "src/a.ts\0src/b.ts\0" };
+      }
+      return { ok: true, stdout: "" };
+    });
+    expect(mergeLeavingConflicts("origin/cfls/bob", "/repo", runner)).toEqual({
+      ok: false,
+      conflicted: true,
+      conflictedFiles: ["src/a.ts", "src/b.ts"],
+    });
+    // Crucially, NO abort was issued.
+    expect(calls).not.toContainEqual(["merge", "--abort"]);
   });
 });

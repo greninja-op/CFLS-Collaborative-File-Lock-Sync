@@ -18,6 +18,7 @@ import { fileURLToPath } from "node:url";
 
 import { CoordinationAgent, generateLocalAuthToken, loadRulesConfig } from "@cfls/agent";
 import { startHost } from "@cfls/host";
+import type { SessionId } from "@cfls/protocol";
 import { deriveDeviceId, issueInvitation } from "@cfls/security";
 
 import {
@@ -38,15 +39,18 @@ import {
   commit,
   currentBranch,
   defaultGitRunner,
+  enableRerere,
   fetch as gitFetch,
   listTrackingBranches,
-  mergeNoConflict,
+  mergeLeavingConflicts,
+  mergeReportingConflicts,
   push as gitPush,
   stagePaths,
   userBranchName,
   workingTreeChanges,
 } from "./git";
 import { buildCommitMessage, startGitSyncLoop } from "./git-sync";
+import { openInEditor } from "./editor";
 import { decodeInvitation, encodeInvitation } from "./invitation";
 import { createAdminKey, loadAdminKey, loadOrCreateThisDeviceKey } from "./keys";
 import {
@@ -314,18 +318,29 @@ async function cmdAgent(args: ParsedArgs, cwd: string): Promise<void> {
   // `cfls agent` behavior is unchanged. Never switches/resets the user's branch,
   // never force-pushes, never auto-resolves conflicts.
   const autoSync = readAutoSyncConfig(teamConfigPath(repoRoot));
+  if (autoSync.enabled) {
+    // Turn on git's "reuse recorded resolution" so a conflict resolved once is
+    // replayed automatically next time (conflict-avoidance). Best-effort.
+    enableRerere(repoRoot);
+  }
   const syncLoop = startGitSyncLoop({
     cwd: repoRoot,
     config: autoSync,
     member: memberId,
     runner: defaultGitRunner,
     onNotice: (notice) => log.info(notice),
+    // Live coordination-aware pre-warning: the set of paths OTHER teammates are
+    // editing/holding right now, read fresh from the agent's converged view each
+    // consumer cycle. The consumer warns (and defers auto-merge) before touching
+    // a file someone is mid-edit on.
+    getHeldPathsByOthers: () => heldPathsByOthers(agent, session, memberId),
   });
   if (autoSync.enabled) {
     log.info(
       `Auto-sync ON (Model A): publishing to ${userBranchName(autoSync.branchPrefix, memberId)} ` +
         `every ${autoSync.commitIntervalSec}s, fetching every ${autoSync.fetchIntervalSec}s` +
-        `${autoSync.autoMerge ? ", autoMerge (conflict-free only)" : ", notify-only"}.`,
+        `${autoSync.autoMerge ? ", autoMerge (conflict-free only)" : ", notify-only"}` +
+        `, rerere on, live-edit pre-warning on.`,
     );
   }
   log.info("Press Ctrl+C to stop.");
@@ -334,6 +349,34 @@ async function cmdAgent(args: ParsedArgs, cwd: string): Promise<void> {
     syncLoop.stop();
     await agent.stop();
   });
+}
+
+/**
+ * Read the live set of repo-relative paths OTHER teammates are actively editing
+ * or holding a lock on, from the agent's converged coordination view. Used to
+ * pre-warn (and defer auto-merges) before a git merge would touch a file someone
+ * is mid-edit on. Never throws — returns an empty set if the view is unavailable.
+ */
+function heldPathsByOthers(
+  agent: CoordinationAgent,
+  session: SessionId,
+  selfMemberId: string,
+): ReadonlySet<string> {
+  const held = new Set<string>();
+  try {
+    for (const entry of agent.view.entries(session)) {
+      if (
+        entry.path !== undefined &&
+        entry.member.memberId !== selfMemberId &&
+        (entry.entryType === "soft_lock" || entry.entryType === "presence")
+      ) {
+        held.add(entry.path);
+      }
+    }
+  } catch {
+    // View not ready / offline — no pre-warning this cycle.
+  }
+  return held;
 }
 
 /**
@@ -416,21 +459,60 @@ function cmdSyncPush(args: ParsedArgs, cwd: string): void {
   log.info(`Published ${paths.length} file(s) to ${autoSync.remote}/${branch}.`);
 }
 
-/** `cfls sync merge <member>` — safe, conflict-aborting merge of a teammate branch. */
+/**
+ * `cfls sync merge <member> [--resolve]` — merge a teammate's published branch.
+ *
+ * Default (safe): attempts a clean merge; on conflict it lists the exact
+ * conflicting files and restores your working tree untouched (nothing is left
+ * half-merged). With `--resolve` it instead performs the merge and LEAVES the
+ * conflict markers in place, then opens the conflicted files in your editor's
+ * merge UI so you can resolve them and `git commit`.
+ */
 function cmdSyncMerge(args: ParsedArgs, cwd: string): void {
   const [target] = args.positionals;
   if (target === undefined) {
-    throw new Error("Usage: cfls sync merge <member>");
+    throw new Error("Usage: cfls sync merge <member> [--resolve]");
   }
   const repoRoot = resolveRepoRoot(cwd);
   const autoSync = readAutoSyncConfig(teamConfigPath(repoRoot));
   const branch = userBranchName(autoSync.branchPrefix, target);
   const ref = `${autoSync.remote}/${branch}`;
+  const resolve = boolOption(args, "resolve");
 
+  // rerere lets a hand-resolved conflict be replayed automatically next time.
+  enableRerere(repoRoot);
   // Refresh remote-tracking refs first so we merge the latest published tip.
   gitFetch(autoSync.remote, repoRoot);
 
-  const result = mergeNoConflict(ref, repoRoot);
+  if (resolve) {
+    const result = mergeLeavingConflicts(ref, repoRoot);
+    if (result.ok) {
+      log.info(
+        result.alreadyUpToDate === true
+          ? `Already up to date with ${ref}.`
+          : `Merged ${ref} cleanly into ${currentBranch(repoRoot) ?? "the current branch"}.`,
+      );
+      return;
+    }
+    log.warn(`Merge of ${ref} has conflicts in ${result.conflictedFiles.length} file(s):`);
+    for (const f of result.conflictedFiles) {
+      log.warn(`  ${f}`);
+    }
+    const opened = openInEditor(result.conflictedFiles, repoRoot);
+    log.info("");
+    if (opened !== null) {
+      log.info(`Opened the conflicted files in ${opened}. Use its merge editor to resolve each,`);
+      log.info('then run:  git commit   (the merge is in progress — do NOT run "git merge --abort"');
+      log.info("unless you want to throw the merge away).");
+    } else {
+      log.info("Could not launch an editor automatically. Open the files above, resolve the");
+      log.info("<<<<<<< / >>>>>>> markers, then run:  git add -A  &&  git commit");
+    }
+    log.info(`To cancel this merge entirely:  git merge --abort`);
+    return;
+  }
+
+  const result = mergeReportingConflicts(ref, repoRoot);
   if (result.ok) {
     log.info(
       result.alreadyUpToDate === true
@@ -439,9 +521,14 @@ function cmdSyncMerge(args: ParsedArgs, cwd: string): void {
     );
     return;
   }
+  const list =
+    result.conflictedFiles.length > 0
+      ? ` Conflicting file(s):\n  - ${result.conflictedFiles.join("\n  - ")}`
+      : "";
   throw new Error(
-    `Merge of ${ref} hit conflicts and was aborted (your tree is unchanged). ` +
-      "Resolve manually: `git merge " + ref + "`, fix conflicts, commit — or open a PR.",
+    `Merge of ${ref} hit conflicts and was aborted (your tree is unchanged).${list}\n` +
+      `To resolve interactively in your editor, run:  cfls sync merge ${target} --resolve\n` +
+      "Or open a Pull Request on GitHub and resolve it there.",
   );
 }
 
@@ -533,7 +620,8 @@ function printUsage(): void {
       "                                                Clone + scaffold .coordination",
       "  cfls sync status                              Show branches + ahead/behind + tree state",
       "  cfls sync push                                Commit coordinated changes + push cfls/<you>",
-      "  cfls sync merge <member>                      Safe (conflict-aborting) merge of a teammate",
+      "  cfls sync merge <member> [--resolve]          Merge a teammate; --resolve opens the",
+      "                                                editor merge UI instead of aborting on conflict",
     ].join("\n"),
   );
 }
