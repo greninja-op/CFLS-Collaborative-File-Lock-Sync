@@ -14,9 +14,12 @@
     "@cfls/core-state": "workspace:*",
     "@cfls/dependency-analyzer": "workspace:*",
     "@cfls/protocol": "workspace:*",
-    "@cfls/security": "workspace:*"
+    "@cfls/security": "workspace:*",
+    "selfsigned": "^5.5.0",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
-    "@cfls/test-utils": "workspace:*"
+    "@cfls/test-utils": "workspace:*",
+    "@types/ws": "^8.18.1"
   }
 }

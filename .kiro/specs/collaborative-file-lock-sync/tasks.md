@@ -251,45 +251,45 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Cover `McpEnvelope` connectivity/staleness fields, `ErrorCode` mapping, and `OFFLINE_QUEUED` results.
     - _Requirements: 4.7, 4.8, 33.2_
 
-- [ ] 8. `apps/host` — CoordinationHost server
+- [x] 8. `apps/host` — CoordinationHost server
   - **Goal:** Assemble the definitive authority: WSS server, auth, ingest, persistence, broadcast,
     sync, expiry, diagnostics, and audit, reusing the core-state engine.
-  - [ ] 8.1 Implement the WSS/TLS server with configurable Host_URL
+  - [x] 8.1 Implement the WSS/TLS server with configurable Host_URL
     - Listen for agent connections at the configured `Host_URL` within 10s over WSS/TLS; no hardcoded address.
     - _Requirements: 1.1, 6.1, 6.2, 6.3; Design §2.2, §4.1_
-  - [ ] 8.2 Implement the authentication handshake
+  - [x] 8.2 Implement the authentication handshake
     - Ed25519 challenge-response (`auth.hello`/`auth.challenge`/`auth.response`/`auth.ok|auth.error`);
       validate device identity, membership, invitation validity, revocation, and message-format version.
     - _Requirements: 5.3, 5.4, 5.5, 5.6, 7.6, 10.7; Design §4.1_
-  - [ ] 8.3 Implement the ingest pipeline and revision assignment
+  - [x] 8.3 Implement the ingest pipeline and revision assignment
     - Verify signatures, enforce idempotency and replay protection, validate schema/permission,
       assign monotonic Event_Revisions via core-state, and reject data-minimization violations.
     - _Requirements: 7.1–7.7, 8.1–8.5, 29.5; Design §4.4, §4.5_
-  - [ ] 8.4 Implement the SQLite `Store` behind the DAO with restart recovery
+  - [x] 8.4 Implement the SQLite `Store` behind the DAO with restart recovery
     - Implement the `Store` interface over SQLite (tables per design), durable event/audit
       persistence, and restore of authoritative state + revision counters on restart; keep the DAO
       seam so PostgreSQL can replace it later unchanged.
     - _Requirements: 1.5, 1.6, 1.8; Design §5.2_
-  - [ ] 8.5 Implement broadcast, subscriptions, and session scoping
+  - [x] 8.5 Implement broadcast, subscriptions, and session scoping
     - Broadcast each accepted `Coordination_Update` (carrying its Event_Revision) only to agents
       authorized for the same session; isolate all state by `session_key`; reject events for
       unauthorized sessions.
     - _Requirements: 1.2, 1.4, 10.2, 10.7, 25.1–25.6; Design §9.5_
-  - [ ] 8.6 Implement sync-from-revision
+  - [x] 8.6 Implement sync-from-revision
     - Serve `sync.events` for revisions `> fromRevision` and a `sync.snapshot` fallback via core-state.
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.5; Design §4.6_
-  - [ ] 8.7 Implement heartbeats, expiry, and audit records
+  - [x] 8.7 Implement heartbeats, expiry, and audit records
     - Track heartbeats, run the stale lock/intent expiry sweep, and write durable Audit_Records
       (member, device, action, revision, time, Override_Reason) with no source content.
     - _Requirements: 26.1–26.5, 28.1–28.4; Design §5.2_
-  - [ ] 8.8 Implement health, diagnostics, and peer-connectivity reporting
+  - [x] 8.8 Implement health, diagnostics, and peer-connectivity reporting
     - Expose health/diagnostics endpoints reporting operational + connectivity metadata only (no
       source/secrets).
     - _Requirements: 27.1–27.5; Design §3.1_
-  - [ ] 8.9 Write integration tests for the host over real WSS + SQLite
+  - [x] 8.9 Write integration tests for the host over real WSS + SQLite
     - Cover handshake, ingest→broadcast, sync convergence, restart recovery, and revoked/absent-device rejection.
     - _Requirements: 1.1, 1.5, 1.6, 5.4, 7.4, 8.1, 9.3_
-  - [ ] 8.10 Write unit tests for the DAO and revision-counter atomicity
+  - [x] 8.10 Write unit tests for the DAO and revision-counter atomicity
     - Cover atomic `nextRevision`, `hasAppliedEventId`, and typed error codes.
     - _Requirements: 8.1, 1.8, 7.4_
 
