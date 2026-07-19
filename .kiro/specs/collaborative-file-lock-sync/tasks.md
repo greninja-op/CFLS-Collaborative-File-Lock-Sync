@@ -293,44 +293,44 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Cover atomic `nextRevision`, `hasAppliedEventId`, and typed error codes.
     - _Requirements: 8.1, 1.8, 7.4_
 
-- [ ] 9. `apps/agent` — CoordinationAgent
+- [x] 9. `apps/agent` — CoordinationAgent
   - **Goal:** Assemble the per-user agent: one WSS connection, loopback-only Local_API, embedded
     MCP server, folder watcher, encrypted cache, reconnect/re-assert, and Windows packaging.
-  - [ ] 9.1 Implement the WSS client with backoff and Offline_State
+  - [x] 9.1 Implement the WSS client with backoff and Offline_State
     - Single outbound persistent WSS connection with exponential backoff; enter Offline_State on
       loss (never claim hard-lock safety), report connectivity.
     - _Requirements: 2.3, 6.1–6.6, 33.1, 33.3; Design §3.2, §8.4_
-  - [ ] 9.2 Implement the Local_API (named pipe + loopback WS + token fallback)
+  - [x] 9.2 Implement the Local_API (named pipe + loopback WS + token fallback)
     - Windows named pipe with an authenticated loopback WebSocket fallback, both requiring a
       per-session `Local_Auth_Token`; reject non-loopback origins and unauthorized subscriptions;
       emit a startup error and refuse clients if it cannot bind.
     - _Requirements: 2.4, 2.5, 2.9, 25.6; Design §3.3, §8.3_
-  - [ ] 9.3 Embed the MCP server and implement multi-client fan-in
+  - [x] 9.3 Embed the MCP server and implement multi-client fan-in
     - Serve the embedded `mcp-server` through the Local_API, wire it to the core-state engine, and
       coordinate multiple local clients under one device identity with a single consistent host view.
     - _Requirements: 2.6, 31.1–31.5; Design §3.2_
-  - [ ] 9.4 Implement the filesystem watcher on the Authorized_Folder
+  - [x] 9.4 Implement the filesystem watcher on the Authorized_Folder
     - Watch only the Authorized_Folder (never scan elsewhere, never modify files); reconcile saves,
       creations, renames/moves, and deletions into presence/intents/dependency-edge updates.
     - _Requirements: 2.7, 2.8, 17.1–17.5, 30.1–30.7; Design §7.6_
-  - [ ] 9.5 Implement the local encrypted cache, reconnect sync, and re-assert
+  - [x] 9.5 Implement the local encrypted cache, reconnect sync, and re-assert
     - Persist coordination state in a local encrypted cache (no source/secrets); on reconnect run
       sync-from-revision, re-assert still-held locks/intents, and clear staleness; apply coalescing.
     - _Requirements: 9.6, 33.4, 33.5, 34.1–34.4, 35.1–35.4; Design §4.6, §8.5_
-  - [ ] 9.6 Integrate key storage and rules-config loading
+  - [x] 9.6 Integrate key storage and rules-config loading
     - Use the `security` credential store for the Device_Key (fail closed on
       `SECURE_STORAGE_UNAVAILABLE`); load/validate `Repository_Rules_Config` and the manual
       session fallback.
     - _Requirements: 5.1, 5.8, 5.9, 10.6, 15.1–15.5; Design §8.2, §9.4_
-  - [ ] 9.7 Package the agent as a Windows executable with login-startup registration
+  - [x] 9.7 Package the agent as a Windows executable with login-startup registration
     - Build a Windows executable via Node SEA (fallback `pkg`); register per-user login startup via
       the HKCU Run key / Startup folder without requiring administrator privileges.
     - _Requirements: 2.1, 2.2; Design "Project Structure" (Packaging)_
-  - [ ] 9.8 Write integration tests for connect/offline/reconnect and Local_API
+  - [x] 9.8 Write integration tests for connect/offline/reconnect and Local_API
     - Cover connect→offline→reconnect convergence, Local_API loopback-only rejection, and
       watcher-driven rename/delete reconciliation.
     - _Requirements: 2.5, 6.4, 6.6, 9.4, 30.1_
-  - [ ] 9.9 Write unit tests for backoff, cache encryption, and multi-client fan-in
+  - [x] 9.9 Write unit tests for backoff, cache encryption, and multi-client fan-in
     - Cover backoff schedule, cache encrypt/decrypt with no plaintext source, and own-view consolidation.
     - _Requirements: 6.4, 31.1, 35.1, 35.4_
 

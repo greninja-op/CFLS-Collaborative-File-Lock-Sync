@@ -59,10 +59,19 @@ importers:
       '@cfls/security':
         specifier: workspace:*
         version: link:../../packages/security
+      ws:
+        specifier: ^8.21.1
+        version: 8.21.1
     devDependencies:
+      '@cfls/host':
+        specifier: workspace:*
+        version: link:../host
       '@cfls/test-utils':
         specifier: workspace:*
         version: link:../../packages/test-utils
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
 
   apps/host:
     dependencies:

@@ -10,7 +10,7 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { DependencyGraph, MemberRef, SessionId } from "@cfls/protocol";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 import type { McpEnvelope } from "./envelope";
 import { CoreStateAgentPort } from "./fake-agent";

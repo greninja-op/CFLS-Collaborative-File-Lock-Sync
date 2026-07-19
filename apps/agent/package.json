@@ -4,20 +4,27 @@
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
+  "bin": {
+    "cfls-agent": "./dist/index.js"
+  },
   "scripts": {
     "build": "tsup",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "package:win": "node scripts/build-sea.mjs"
   },
   "dependencies": {
     "@cfls/core-state": "workspace:*",
     "@cfls/dependency-analyzer": "workspace:*",
     "@cfls/mcp-server": "workspace:*",
     "@cfls/protocol": "workspace:*",
-    "@cfls/security": "workspace:*"
+    "@cfls/security": "workspace:*",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
-    "@cfls/test-utils": "workspace:*"
+    "@cfls/host": "workspace:*",
+    "@cfls/test-utils": "workspace:*",
+    "@types/ws": "^8.18.1"
   }
 }

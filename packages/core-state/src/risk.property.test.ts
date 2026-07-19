@@ -176,7 +176,13 @@ const contextArb: fc.Arbitrary<RiskMapContext> = fc
     rules: rulesArb,
     graph: fc.option(graphArb, { nil: undefined }),
   })
-  .map((ctx) => ({ ...ctx, sensitivity: "case-sensitive" as const }));
+  .map(({ graph, ...ctx }) => ({
+    ...ctx,
+    sensitivity: "case-sensitive" as const,
+    // Omit `graph` entirely when absent (exactOptionalPropertyTypes) rather than
+    // setting it to `undefined`; behaviour is identical.
+    ...(graph !== undefined ? { graph } : {}),
+  }));
 
 describe(propertyTag(13, "a member's own activity is excluded from its own Risk_Map"), () => {
   it("never lists the requesting member as a contributor in its own Risk_Map (Req 31.5)", () => {

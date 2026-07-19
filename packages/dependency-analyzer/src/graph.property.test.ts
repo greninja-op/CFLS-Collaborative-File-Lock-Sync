@@ -129,7 +129,10 @@ const deltaArb: fc.Arbitrary<ChangeDeltaMetadata> = fc.record(
   {
     changedEdges: fc.array(changedEdgeArb, { maxLength: 6 }),
     changedManifests: fc.array(token, { maxLength: 6 }),
-    changedLockfileHash: fc.option(token, { nil: undefined }),
+    // Present-or-absent (exactOptionalPropertyTypes): the `requiredKeys` below
+    // omit this field, so fast-check drops the key entirely instead of ever
+    // producing an explicit `undefined` value.
+    changedLockfileHash: token,
     changedContracts: fc.array(contractArb, { maxLength: 6 }),
   },
   { requiredKeys: ["changedEdges", "changedManifests", "changedContracts"] },

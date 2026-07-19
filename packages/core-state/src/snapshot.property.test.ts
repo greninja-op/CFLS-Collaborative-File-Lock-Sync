@@ -74,7 +74,11 @@ const modeArb = fc.constantFrom<RiskLevel>("soft", "coordination-required", "har
 // Restrict Intent_Scope to file/folder to keep generated authoritative state
 // valid without depending on glob-pattern validity (covered elsewhere).
 const scopeKindArb = fc.constantFrom<ScopeKind>("file", "folder");
-const presenceStateArb = fc.constantFrom("started", "editing", "stopped" as const);
+const presenceStateArb = fc.constantFrom<"started" | "editing" | "stopped">(
+  "started",
+  "editing",
+  "stopped",
+);
 
 const lockArb = fc.record({
   memberIdx: fc.nat({ max: 64 }),
