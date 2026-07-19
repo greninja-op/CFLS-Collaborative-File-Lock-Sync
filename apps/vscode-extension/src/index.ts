@@ -157,8 +157,37 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       }
     }),
     vscode.commands.registerCommand("cfls.showCoordinationStatus", () => {
+      const vm = currentViewModel;
+      if (vm === undefined || vm.offline) {
+        void vscode.window.showWarningMessage(
+          "CFLS: Offline — the local coordination agent is not reachable. Is the host running?",
+        );
+        return;
+      }
+      if (vm.paths.length === 0 && vm.plannedFileCreations.length === 0) {
+        void vscode.window.showInformationMessage(
+          "CFLS: Online. No teammates are currently editing tracked files.",
+        );
+        return;
+      }
+      const lines: string[] = [];
+      for (const p of vm.paths) {
+        const who: string[] = [
+          ...p.presenceMembers.map((m) => `${m} editing`),
+          ...p.softLockMembers.map((m) => `${m} holds lock`),
+          ...p.coordinationRequiredMembers.map((m) => `${m} coordination-required`),
+          ...p.hardLockMembers.map((m) => `${m} hard-lock`),
+          ...p.intentMembers.map((m) => `${m} plans to change`),
+          ...p.dependencyRiskMembers.map((m) => `${m} (dependency)`),
+        ];
+        lines.push(`• ${p.path} [${p.riskLevel}]${who.length > 0 ? ` — ${who.join(", ")}` : ""}`);
+      }
+      for (const pfc of vm.plannedFileCreations) {
+        lines.push(`• ${pfc.path} — planned new file by ${pfc.memberId}`);
+      }
       void vscode.window.showInformationMessage(
-        currentViewModel?.statusText ?? "CFLS: not connected",
+        `CFLS coordination (${vm.paths.length} path(s)):`,
+        { modal: true, detail: lines.join("\n") },
       );
     }),
     vscode.commands.registerCommand("cfls.reconnectLocalAgent", () => {

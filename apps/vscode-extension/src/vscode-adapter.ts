@@ -124,8 +124,17 @@ export class StatusBarRenderer {
 
   render(vm: CoordinationViewModel): void {
     const icon = vm.offline ? "$(cloud-offline)" : vm.stale ? "$(sync)" : "$(check)";
-    this.item.text = `${icon} CFLS: ${vm.statusText}`;
-    this.item.tooltip = `${vm.paths.length} coordinated path(s), ${vm.plannedFileCreations.length} planned creation(s).`;
+    // When teammates are active, surface the count right in the status bar so
+    // coordination is visible at a glance; otherwise show the plain state.
+    const summary =
+      !vm.offline && !vm.stale && vm.paths.length > 0
+        ? `${vm.paths.length} file(s) in play`
+        : vm.statusText;
+    this.item.text = `${icon} CFLS: ${summary}`;
+    this.item.tooltip =
+      vm.paths.length === 0 && vm.plannedFileCreations.length === 0
+        ? "No teammates editing tracked files. Run 'CFLS: Show Coordination Status' for details."
+        : `${vm.paths.length} coordinated path(s), ${vm.plannedFileCreations.length} planned creation(s). Run 'CFLS: Show Coordination Status' for details.`;
   }
 
   dispose(): void {

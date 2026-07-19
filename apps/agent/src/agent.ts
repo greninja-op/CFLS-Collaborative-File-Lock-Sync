@@ -125,6 +125,9 @@ export class CoordinationAgent extends EventEmitter {
   /** Scopes this agent currently holds, re-asserted on reconnect (Req 9.6). */
   private readonly heldScopes = new Set<string>();
 
+  /** Repository-relative paths currently open/being edited in this agent's editors. */
+  private readonly openScopes = new Set<string>();
+
   constructor(config: CoordinationAgentConfig) {
     super();
     this.config = config;
@@ -232,8 +235,16 @@ export class CoordinationAgent extends EventEmitter {
         ? { enableNamedPipe: this.config.enableNamedPipe }
         : {}),
       handlers: {
-        request: (method, params) =>
-          dispatchLocalRequest(this.port!, method, params).then((env) => env),
+        request: (method, params) => {
+          // Editor activity (open/edit/close/rename/delete) from the extension
+          // is translated into host presence + soft-lock coordination so
+          // teammates see it live (not only on file save via the watcher).
+          if (method === "editor_event") {
+            this.handleEditorEvent(params);
+            return Promise.resolve({ ok: true });
+          }
+          return dispatchLocalRequest(this.port!, method, params).then((env) => env);
+        },
         subscribe: (params, push) =>
           Promise.resolve(
             this.port!.subscribeToCoordinationUpdates(
@@ -305,6 +316,66 @@ export class CoordinationAgent extends EventEmitter {
       } else {
         this.heldScopes.delete(update.path);
       }
+    }
+  }
+
+  /**
+   * Translate an Editor_Event from the extension into live host coordination:
+   * opening/editing a file reports editing presence and claims a soft lock on
+   * that path (once), closing it reports end-of-editing and releases the lock,
+   * and renames/deletions are forwarded as path changes. This is what makes a
+   * teammate's live editing visible to others without waiting for a save.
+   */
+  private handleEditorEvent(event: unknown): void {
+    const connection = this.connection;
+    if (connection === undefined || !connection.isOnline()) {
+      return;
+    }
+    const e = (event ?? {}) as { kind?: string; path?: string; oldPath?: string };
+    const path = typeof e.path === "string" ? e.path : undefined;
+
+    switch (e.kind) {
+      case "file_opened":
+      case "active_editor_changed":
+      case "editing_started":
+      case "file_saved": {
+        if (path === undefined || path.length === 0) {
+          return;
+        }
+        // Only announce the first time a path becomes active, to avoid a flood
+        // of presence/lock messages on every keystroke (Req 34 spirit).
+        if (!this.openScopes.has(path)) {
+          this.openScopes.add(path);
+          connection.send("presence.report", { path, state: "editing" });
+          connection.send("lock.acquire", { scope: path, scopeKind: "file", mode: "soft" });
+        }
+        return;
+      }
+      case "file_closed": {
+        if (path === undefined || path.length === 0) {
+          return;
+        }
+        if (this.openScopes.delete(path)) {
+          connection.send("presence.report", { path, state: "stopped" });
+          connection.send("lock.release", { scope: path });
+        }
+        return;
+      }
+      case "file_renamed": {
+        if (typeof e.oldPath === "string" && path !== undefined) {
+          connection.send("path.renamed", { fromPath: e.oldPath, toPath: path });
+        }
+        return;
+      }
+      case "file_deleted": {
+        if (path !== undefined) {
+          connection.send("path.deleted", { path });
+        }
+        return;
+      }
+      default:
+        // workspace_opened and unknown kinds need no host coordination.
+        return;
     }
   }
 
