@@ -73,6 +73,28 @@ importers:
         specifier: ^8.18.1
         version: 8.18.1
 
+  apps/cli:
+    dependencies:
+      '@cfls/agent':
+        specifier: workspace:*
+        version: link:../agent
+      '@cfls/core-state':
+        specifier: workspace:*
+        version: link:../../packages/core-state
+      '@cfls/host':
+        specifier: workspace:*
+        version: link:../host
+      '@cfls/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@cfls/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+    devDependencies:
+      '@cfls/test-utils':
+        specifier: workspace:*
+        version: link:../../packages/test-utils
+
   apps/host:
     dependencies:
       '@cfls/core-state':

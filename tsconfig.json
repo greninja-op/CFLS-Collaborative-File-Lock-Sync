@@ -8,6 +8,7 @@
     { "path": "./packages/mcp-server" },
     { "path": "./apps/host" },
     { "path": "./apps/agent" },
+    { "path": "./apps/cli" },
     { "path": "./apps/vscode-extension" }
   ]
 }

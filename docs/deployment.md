@@ -32,6 +32,59 @@ graph LR
 - Relocating the host (laptop → VPS) is purely a matter of reconfiguring `Host_URL` and
   supplying the matching TLS certificate.
 
+## Running the host with the `cfls` CLI
+
+The `cfls` CLI (`@cfls/cli`) wraps `startHost` for real onboarding. See
+[onboarding.md](./onboarding.md) for the full admin/teammate flow. Host-relevant commands:
+
+```bash
+cfls admin-init --team my-team          # once: create the admin key + ~/.cfls/host.json
+cfls host --url wss://0.0.0.0:8730 \     # dev: self-signed TLS (warns; agents use --insecure-tls)
+          --db ~/.cfls/host.db
+cfls host --url wss://coord.company.com:8730 \
+          --cert /etc/cfls/fullchain.pem --key /etc/cfls/privkey.pem   # production
+```
+
+- `--url` sets the `Host_URL`. Bind to `0.0.0.0` to accept LAN/WAN connections; the printed
+  URL shows `<this-machine-ip>` as a reminder to advertise the reachable address to teammates.
+- `--cert` / `--key` (or `CFLS_TLS_CERT` / `CFLS_TLS_KEY`) supply a **real** certificate for
+  production. Without them the host generates a **development self-signed** certificate and
+  warns; teammates must then pass `cfls agent --insecure-tls`.
+- `--db` sets the SQLite path (durable; survives restarts). Defaults to `host.db` in the cwd.
+- `cfls host` registers the repo's session from git (or `--repo <url>`) with the authorized
+  admin public keys from `~/.cfls/host.json`, then runs until Ctrl+C (SIGINT stops cleanly).
+
+## Deploying the host on a VPS (always-on)
+
+For a team that is not all online at once, run the host on an always-on VPS or company server:
+
+1. **Provision & open the port.** Install Node ≥ 20, copy the built host (or the CLI), and
+   open the chosen WSS port (e.g. `8730`) in the VPS firewall / security group. Only the
+   single WSS port needs to be reachable.
+2. **Real TLS certificate.** Obtain a certificate for the host's DNS name (e.g. via Let's
+   Encrypt) and pass `--cert`/`--key`. This gives agents a verifiable identity — do **not**
+   use `devSelfSigned`/`--insecure-tls` in production.
+3. **Configurable `Host_URL`.** Set `--url wss://coord.company.com:8730` (or `CFLS_HOST_URL`).
+   Teammates dial this exact URL via `cfls join --host wss://coord.company.com:8730`.
+4. **Keep it always-on.** Run under a process supervisor (systemd, pm2, or a container with a
+   restart policy) so it restarts on crash/reboot. State is restored from the SQLite DB on
+   restart, and the revision counter resumes above every persisted revision.
+5. **Persistent storage.** Point `--db`/`CFLS_DB_PATH` at durable disk (backed up) so
+   coordination history survives host restarts.
+
+## Laptop host: reachability caveats
+
+A laptop-hosted host works for co-located/short sessions but has real limits:
+
+- The laptop must stay **powered on, awake, and reachable** for teammates to coordinate; if it
+  sleeps or disconnects, agents drop to Offline_State (they keep serving the cached view and
+  reconnect automatically when the host returns).
+- On a home/office NAT you must **port-forward** the WSS port to the laptop (and account for a
+  changing public IP) so remote teammates can connect. On the same LAN, teammates use the
+  laptop's LAN IP.
+- Because the binary and configuration are identical, moving from a laptop to a VPS later is
+  just a change of `Host_URL` and TLS material — no code change.
+
 ## Hosting Notes
 
 - **Storage:** SQLite for the laptop MVP (zero setup, durable enough for MVP team sizes;
@@ -55,6 +108,7 @@ collaborative-file-lock-sync/
 ├─ apps/
 │  ├─ host/                 # CoordinationHost server (WSS, ingest, authority)
 │  ├─ agent/                # CoordinationAgent (WSS client, Local_API, watcher, cache)
+│  ├─ cli/                  # `cfls` onboarding CLI (admin-init/host/id/invite/join/connect/agent)
 │  └─ vscode-extension/     # VS Code Editor_Extension
 ├─ packages/
 │  ├─ protocol/             # envelope, message catalog, DTOs, error codes, JSON schemas, version

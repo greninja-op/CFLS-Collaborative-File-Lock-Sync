@@ -17,23 +17,28 @@ import {
   type EditorEventKind,
   type EditorHost,
 } from "./editor-host";
+import {
+  resolveLocalApiSettings,
+  type LocalApiSettings,
+  type RawLocalApiConfig,
+} from "./local-api-settings";
 import type { CoordinationViewModel } from "./view-model";
 
-/** The Local_API connection settings read from workspace configuration. */
-export interface LocalApiSettings {
-  url: string;
-  token: string;
-  heartbeatIntervalMs: number;
-}
+export type { LocalApiSettings } from "./local-api-settings";
 
-/** Read the extension's Local_API settings from VS Code configuration. */
+/**
+ * Read the extension's Local_API settings from VS Code configuration, falling
+ * back to the `cfls agent` discovery file when no token is configured.
+ */
 export function readLocalApiSettings(): LocalApiSettings {
   const config = vscode.workspace.getConfiguration("cfls");
-  return {
+  const raw: RawLocalApiConfig = {
     url: config.get<string>("localApi.url", "ws://127.0.0.1:8750"),
     token: config.get<string>("localApi.token", ""),
     heartbeatIntervalMs: config.get<number>("heartbeat.intervalMs", 10_000),
   };
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  return resolveLocalApiSettings(raw, workspaceFolder);
 }
 
 /** Convert an absolute editor URI to a repository-relative path (Req 10.3). */

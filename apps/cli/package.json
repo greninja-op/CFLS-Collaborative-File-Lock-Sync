@@ -1,0 +1,26 @@
+{
+  "name": "@cfls/cli",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "cfls": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsup",
+    "typecheck": "tsc -b",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@cfls/agent": "workspace:*",
+    "@cfls/core-state": "workspace:*",
+    "@cfls/host": "workspace:*",
+    "@cfls/protocol": "workspace:*",
+    "@cfls/security": "workspace:*"
+  },
+  "devDependencies": {
+    "@cfls/test-utils": "workspace:*"
+  }
+}
