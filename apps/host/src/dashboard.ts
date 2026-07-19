@@ -198,30 +198,32 @@ export function renderDashboardHtml(): string {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
-    <meta name="theme-color" content="#0b1114">
+    <meta name="theme-color" content="#060c12">
     <title>CFLS Coordination Dashboard</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='17' fill='%23d6f54a'/%3E%3Cpath d='m18 32 25-15M18 32l25 15' stroke='%2305090b' stroke-width='6' stroke-linecap='round'/%3E%3Ccircle cx='18' cy='32' r='8' fill='%2305090b'/%3E%3Ccircle cx='45' cy='16' r='8' fill='%2305090b'/%3E%3Ccircle cx='45' cy='48' r='8' fill='%2305090b'/%3E%3C/svg%3E">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
       :root {
         color-scheme: dark;
-        --canvas: #0b1114;
-        --canvas-deep: #070b0d;
-        --surface: #111a1e;
-        --surface-raised: #162126;
-        --surface-code: #0b1418;
-        --line: rgba(196, 219, 220, .12);
-        --line-strong: rgba(196, 219, 220, .22);
-        --text: #edf5f3;
-        --muted: #9badaa;
-        --dim: #657674;
-        --signal: #c4f36d;
-        --signal-bright: #ddff9b;
-        --cyan: #62e6e0;
-        --amber: #ffc267;
-        --red: #ff8d86;
-        --violet: #b89eff;
+        --canvas: #060c12;
+        --canvas-deep: #010101;
+        --surface: #0a1218;
+        --surface-raised: #111b22;
+        --surface-code: #04090d;
+        --line: rgba(184, 202, 210, .16);
+        --line-strong: rgba(214, 227, 232, .28);
+        --text: #fefefe;
+        --muted: #b3bfc5;
+        --dim: #7c8b93;
+        --ink: #05090b;
+        --signal: #d6f54a;
+        --signal-bright: #eeff91;
+        --cyan: #58d5d0;
+        --amber: #ffc168;
+        --red: #ff837d;
+        --violet: #b9a8ff;
         --sans: "Manrope", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
         --shadow-lg: 0 30px 80px rgba(0, 0, 0, .32);
@@ -241,8 +243,8 @@ export function renderDashboardHtml(): string {
         overflow-x: hidden;
         color: var(--text);
         background:
-          radial-gradient(circle at 49% -15%, rgba(91, 164, 157, .13), transparent 38rem),
-          radial-gradient(circle at 93% 28%, rgba(81, 120, 162, .08), transparent 32rem),
+          radial-gradient(circle at 49% -15%, rgba(214, 245, 74, .11), transparent 38rem),
+          radial-gradient(circle at 93% 28%, rgba(88, 213, 208, .055), transparent 32rem),
           var(--canvas);
         font-family: var(--sans);
         line-height: 1.5;
@@ -313,7 +315,7 @@ export function renderDashboardHtml(): string {
         border-radius: 9px;
         background: var(--signal);
         box-shadow:
-          0 0 0 5px rgba(196, 243, 109, .06),
+          0 0 0 5px rgba(214, 245, 74, .08),
           0 8px 20px rgba(0, 0, 0, .22);
       }
       .brand-mark svg { width: 21px; height: 21px; }
@@ -348,7 +350,7 @@ export function renderDashboardHtml(): string {
         flex: 0 0 auto;
         border-radius: 50%;
         background: var(--signal);
-        box-shadow: 0 0 0 5px rgba(196, 243, 109, .1);
+        box-shadow: 0 0 0 5px rgba(214, 245, 74, .1);
         animation: host-pulse 2.2s ease-in-out infinite;
       }
       .connection.is-reconnecting .status-dot {
@@ -420,10 +422,10 @@ export function renderDashboardHtml(): string {
         align-items: center;
         gap: 13px;
         padding: 16px 17px;
-        border: 1px solid rgba(196, 243, 109, .22);
+        border: 1px solid rgba(214, 245, 74, .22);
         border-radius: 14px;
         background:
-          linear-gradient(135deg, rgba(196, 243, 109, .1), transparent 64%),
+          linear-gradient(135deg, rgba(214, 245, 74, .1), transparent 64%),
           rgba(17, 26, 30, .78);
         box-shadow: var(--shadow-sm);
       }
@@ -434,9 +436,9 @@ export function renderDashboardHtml(): string {
         flex: 0 0 auto;
         place-items: center;
         color: var(--signal);
-        border: 1px solid rgba(196, 243, 109, .27);
+        border: 1px solid rgba(214, 245, 74, .27);
         border-radius: 10px;
-        background: rgba(196, 243, 109, .07);
+        background: rgba(214, 245, 74, .07);
       }
       .host-pulse-mark svg { width: 20px; height: 20px; }
       .pulse-label {
@@ -481,9 +483,9 @@ export function renderDashboardHtml(): string {
         flex: 0 0 auto;
         place-items: center;
         color: var(--signal);
-        border: 1px solid rgba(196, 243, 109, .24);
+        border: 1px solid rgba(214, 245, 74, .24);
         border-radius: 9px;
-        background: rgba(196, 243, 109, .07);
+        background: rgba(214, 245, 74, .07);
         font-family: var(--mono);
         font-size: .61rem;
         font-weight: 700;
@@ -710,9 +712,9 @@ export function renderDashboardHtml(): string {
         gap: 6px;
         padding: 5px 8px;
         color: #cbe1dd;
-        border: 1px solid rgba(196, 243, 109, .17);
+        border: 1px solid rgba(214, 245, 74, .17);
         border-radius: 7px;
-        background: rgba(196, 243, 109, .045);
+        background: rgba(214, 245, 74, .045);
         font-size: .68rem;
       }
       .device-chip code {
@@ -726,7 +728,7 @@ export function renderDashboardHtml(): string {
         flex: 0 0 auto;
         border-radius: 50%;
         background: var(--signal);
-        box-shadow: 0 0 7px rgba(196, 243, 109, .7);
+        box-shadow: 0 0 7px rgba(214, 245, 74, .7);
       }
       .no-devices {
         color: var(--muted);
@@ -747,9 +749,9 @@ export function renderDashboardHtml(): string {
         background: rgba(7, 14, 16, .28);
       }
       .work-panel--locks {
-        border-color: rgba(196, 243, 109, .2);
+        border-color: rgba(214, 245, 74, .2);
         background:
-          linear-gradient(135deg, rgba(196, 243, 109, .06), transparent 38%),
+          linear-gradient(135deg, rgba(214, 245, 74, .06), transparent 38%),
           rgba(8, 17, 19, .48);
       }
       .signal-column {
@@ -772,9 +774,9 @@ export function renderDashboardHtml(): string {
         flex: 0 0 auto;
         place-items: center;
         color: var(--signal);
-        border: 1px solid rgba(196, 243, 109, .2);
+        border: 1px solid rgba(214, 245, 74, .2);
         border-radius: 6px;
-        background: rgba(196, 243, 109, .06);
+        background: rgba(214, 245, 74, .06);
         font-family: var(--mono);
         font-size: .53rem;
         font-weight: 700;
@@ -807,9 +809,9 @@ export function renderDashboardHtml(): string {
         justify-content: center;
         padding: 3px 6px;
         color: var(--signal);
-        border: 1px solid rgba(196, 243, 109, .2);
+        border: 1px solid rgba(214, 245, 74, .2);
         border-radius: 6px;
-        background: rgba(196, 243, 109, .06);
+        background: rgba(214, 245, 74, .06);
         font-family: var(--mono);
         font-size: .61rem;
         font-weight: 700;
@@ -874,7 +876,7 @@ export function renderDashboardHtml(): string {
         letter-spacing: .025em;
         white-space: nowrap;
       }
-      .mode-soft { color: #d7f79b; background: rgba(196, 243, 109, .12); }
+      .mode-soft { color: #eeff91; background: rgba(214, 245, 74, .12); }
       .mode-coordinate { color: #ffe3ac; background: rgba(255, 194, 103, .13); }
       .mode-hard { color: #ffc0bb; background: rgba(255, 141, 134, .13); }
       .lock-revision {
@@ -949,9 +951,9 @@ export function renderDashboardHtml(): string {
         flex: 0 0 auto;
         place-items: center;
         color: var(--signal);
-        border: 1px solid rgba(196, 243, 109, .26);
+        border: 1px solid rgba(214, 245, 74, .26);
         border-radius: 50%;
-        background: rgba(196, 243, 109, .06);
+        background: rgba(214, 245, 74, .06);
       }
       .loading-orbit::after {
         width: 12px;
@@ -982,8 +984,8 @@ export function renderDashboardHtml(): string {
       }
 
       @keyframes host-pulse {
-        0%, 100% { box-shadow: 0 0 0 5px rgba(196, 243, 109, .1); }
-        50% { box-shadow: 0 0 0 8px rgba(196, 243, 109, .035); }
+        0%, 100% { box-shadow: 0 0 0 5px rgba(214, 245, 74, .1); }
+        50% { box-shadow: 0 0 0 8px rgba(214, 245, 74, .035); }
       }
       @keyframes loading-spin { to { transform: rotate(1turn); } }
 
@@ -1076,10 +1078,10 @@ export function renderDashboardHtml(): string {
         width: 34px;
         height: 34px;
         place-items: center;
-        color: #071012;
+        color: var(--ink);
         border-radius: 10px;
         background: var(--signal);
-        box-shadow: 0 0 0 5px rgba(196, 243, 109, .06), 0 8px 20px rgba(0, 0, 0, .2);
+        box-shadow: 0 0 0 5px rgba(214, 245, 74, .08), 0 8px 20px rgba(0, 0, 0, .26);
       }
       .brand-mark svg { width: 21px; height: 21px; }
       .brand-wordmark { white-space: nowrap; }
@@ -1285,9 +1287,9 @@ export function renderDashboardHtml(): string {
         flex: 0 0 auto;
         place-items: center;
         color: var(--signal);
-        border: 1px solid rgba(196, 243, 109, .26);
+        border: 1px solid rgba(214, 245, 74, .26);
         border-radius: 7px;
-        background: rgba(196, 243, 109, .07);
+        background: rgba(214, 245, 74, .07);
         font-family: var(--mono);
         font-size: .67rem;
         font-weight: 700;
@@ -1311,8 +1313,8 @@ export function renderDashboardHtml(): string {
         border-top: 1px solid rgba(204, 231, 229, .07);
         border-bottom: 1px solid rgba(204, 231, 229, .07);
         background:
-          linear-gradient(90deg, rgba(196, 243, 109, .024) 1px, transparent 1px),
-          linear-gradient(rgba(196, 243, 109, .024) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(214, 245, 74, .024) 1px, transparent 1px),
+          linear-gradient(rgba(214, 245, 74, .024) 1px, transparent 1px),
           #0d1619;
         background-size: 48px 48px;
       }
@@ -1424,8 +1426,8 @@ export function renderDashboardHtml(): string {
         padding: clamp(24px, 4vw, 48px) clamp(18px, 5vw, 60px);
         background:
           radial-gradient(circle at 50% 49%, rgba(98, 230, 224, .075), transparent 14rem),
-          linear-gradient(rgba(196, 243, 109, .02) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(196, 243, 109, .02) 1px, transparent 1px),
+          linear-gradient(rgba(214, 245, 74, .02) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(214, 245, 74, .02) 1px, transparent 1px),
           #091215;
         background-size: auto, 32px 32px, 32px 32px, auto;
       }
@@ -1441,7 +1443,7 @@ export function renderDashboardHtml(): string {
         box-shadow: 0 18px 35px rgba(0, 0, 0, .24);
       }
       .live-window--devices { grid-area: devices; }
-      .live-window--locks { grid-area: locks; border-color: rgba(196, 243, 109, .25); }
+      .live-window--locks { grid-area: locks; border-color: rgba(214, 245, 74, .25); }
       .live-window--editing { grid-area: editing; }
       .live-window--planned { grid-area: planned; }
       .live-window-bar {
@@ -1461,7 +1463,7 @@ export function renderDashboardHtml(): string {
       .window-dots i { display: block; width: 5px; height: 5px; border-radius: 50%; background: #556567; }
       .window-dots i:first-child { background: #ff8d86; }
       .window-dots i:nth-child(2) { background: #ffc267; }
-      .window-dots i:nth-child(3) { background: #c4f36d; }
+      .window-dots i:nth-child(3) { background: #d6f54a; }
       .live-window-name { overflow: hidden; color: #afc2bf; text-overflow: ellipsis; white-space: nowrap; }
       .live-window-count {
         display: grid;
@@ -1471,7 +1473,7 @@ export function renderDashboardHtml(): string {
         place-items: center;
         color: var(--signal);
         border-radius: 5px;
-        background: rgba(196, 243, 109, .1);
+        background: rgba(214, 245, 74, .1);
         font-family: var(--mono);
         font-size: .55rem;
         font-weight: 700;
@@ -1532,7 +1534,7 @@ export function renderDashboardHtml(): string {
         font-size: .69rem;
       }
       .live-demo-footer span { display: inline-flex; align-items: center; gap: 7px; }
-      .live-demo-footer .footer-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 8px rgba(196, 243, 109, .75); }
+      .live-demo-footer .footer-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 8px rgba(214, 245, 74, .75); }
       .live-demo-footer code { color: var(--muted); font-size: .9em; }
       .loading-state, .empty-state, .connection-state {
         max-width: none;
@@ -1746,8 +1748,8 @@ export function renderDashboardHtml(): string {
       }
       .summary-card--lime .summary-card-index {
         color: var(--signal);
-        border-color: rgba(196, 243, 109, .25);
-        background: rgba(196, 243, 109, .07);
+        border-color: rgba(214, 245, 74, .25);
+        background: rgba(214, 245, 74, .07);
       }
       .summary-card--violet .summary-card-index {
         color: var(--violet);
@@ -1828,9 +1830,9 @@ export function renderDashboardHtml(): string {
       .session-tab:focus-visible,
       .session-tab.is-active {
         color: var(--text);
-        border-color: rgba(196, 243, 109, .4);
+        border-color: rgba(214, 245, 74, .4);
         outline: none;
-        background: rgba(196, 243, 109, .075);
+        background: rgba(214, 245, 74, .075);
       }
       .session-tab.is-active small { color: var(--signal); }
 
@@ -1998,13 +2000,13 @@ export function renderDashboardHtml(): string {
         gap: 5px;
         padding: 4px 7px;
         color: #cbe1dd;
-        border: 1px solid rgba(196, 243, 109, .16);
+        border: 1px solid rgba(214, 245, 74, .16);
         border-radius: 6px;
-        background: rgba(196, 243, 109, .045);
+        background: rgba(214, 245, 74, .045);
         font-size: .62rem;
       }
       .device-chip code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .device-dot { width: 5px; height: 5px; flex: 0 0 auto; border-radius: 50%; background: var(--signal); box-shadow: 0 0 7px rgba(196, 243, 109, .7); }
+      .device-dot { width: 5px; height: 5px; flex: 0 0 auto; border-radius: 50%; background: var(--signal); box-shadow: 0 0 7px rgba(214, 245, 74, .7); }
       .no-devices { color: var(--muted); font-size: .68rem; }
       .session-panels {
         display: grid;
@@ -2018,7 +2020,7 @@ export function renderDashboardHtml(): string {
         padding: 13px 15px;
         background: rgba(10, 19, 22, .93);
       }
-      .data-panel--locks { background: linear-gradient(145deg, rgba(196, 243, 109, .055), rgba(10, 19, 22, .96) 52%); }
+      .data-panel--locks { background: linear-gradient(145deg, rgba(214, 245, 74, .055), rgba(10, 19, 22, .96) 52%); }
       .data-panel--editing { background: linear-gradient(145deg, rgba(98, 230, 224, .045), rgba(10, 19, 22, .96) 52%); }
       .data-panel--planned { background: linear-gradient(145deg, rgba(184, 158, 255, .045), rgba(10, 19, 22, .96) 52%); }
       .data-panel-head {
@@ -2047,9 +2049,9 @@ export function renderDashboardHtml(): string {
         height: 23px;
         place-items: center;
         color: var(--signal);
-        border: 1px solid rgba(196, 243, 109, .2);
+        border: 1px solid rgba(214, 245, 74, .2);
         border-radius: 6px;
-        background: rgba(196, 243, 109, .06);
+        background: rgba(214, 245, 74, .06);
         font-family: var(--mono);
         font-size: .61rem;
       }
@@ -2104,7 +2106,7 @@ export function renderDashboardHtml(): string {
         font-size: .52rem;
         font-weight: 700;
       }
-      .mode-soft { color: var(--signal); background: rgba(196, 243, 109, .08); }
+      .mode-soft { color: var(--signal); background: rgba(214, 245, 74, .08); }
       .mode-coordinate { color: var(--amber); background: rgba(255, 194, 103, .08); }
       .mode-hard { color: var(--red); background: rgba(255, 141, 134, .08); }
       .lock-revision { color: var(--dim); font-family: var(--mono); font-size: .53rem; }
@@ -2148,7 +2150,7 @@ export function renderDashboardHtml(): string {
         font-size: .62rem;
       }
       .session-footer span { display: inline-flex; align-items: center; gap: 6px; }
-      .session-footer i { width: 6px; height: 6px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 8px rgba(196, 243, 109, .72); }
+      .session-footer i { width: 6px; height: 6px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 8px rgba(214, 245, 74, .72); }
       .session-footer code { color: var(--muted); font-size: .9em; }
       .dashboard-message {
         display: flex;
@@ -2207,10 +2209,10 @@ export function renderDashboardHtml(): string {
         <div class="brand">
           <span class="brand-mark" aria-hidden="true">
             <svg viewBox="0 0 36 36" fill="none">
-              <path d="M9.5 11.5h8.3M18.2 24.5h8.3M18.1 11.5l7.3 13" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
-              <circle cx="8.5" cy="11.5" r="3.3" fill="currentColor"/>
-              <circle cx="27.5" cy="24.5" r="3.3" fill="currentColor"/>
-              <circle cx="19" cy="11.5" r="3.3" fill="currentColor"/>
+              <path d="m11 18 13-8M11 18l13 8" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/>
+              <circle cx="10.5" cy="18" r="4.4" fill="currentColor"/>
+              <circle cx="25.2" cy="9.2" r="4.4" fill="currentColor"/>
+              <circle cx="25.2" cy="26.8" r="4.4" fill="currentColor"/>
             </svg>
           </span>
           <div class="brand-copy">

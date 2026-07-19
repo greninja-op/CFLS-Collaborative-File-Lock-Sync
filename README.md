@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="./assets/readme/cfls-hero.png" width="1280" alt="CFLS overview: Alice's local Agent sends a signed work signal to the CFLS Host, then Bob sees the shared context before editing an overlapping file." />
+  <img src="./assets/brand/cfls-banner.png" width="1280" alt="CFLS is a coordination layer for the tools your team uses: the CFLS Host coordinates System A and System B while .cfls metadata stays local." />
 </p>
 
 <h1 align="center">CFLS — Collaborative File Lock Sync</h1>
@@ -88,7 +88,7 @@ flowchart LR
   BE -. "normal Git workflow" .-> G
 
   classDef local fill:#142126,stroke:#62e6e0,color:#edf5f3
-  classDef host fill:#1c2417,stroke:#c4f36d,color:#edf5f3
+  classDef host fill:#11180e,stroke:#d6f54a,color:#fefefe
   classDef git fill:#191b20,stroke:#9badaa,color:#edf5f3
   class AE,AA,AF,BA,BE local
   class H,DB host

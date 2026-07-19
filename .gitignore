@@ -19,6 +19,7 @@ out/
 *.log
 .cache/
 coverage/
+__pycache__/
 
 # OS / editor
 .DS_Store

@@ -27,11 +27,6 @@ def is_lime(pixel: tuple[int, int, int, int]) -> bool:
     return green > 135 and red > 85 and blue < 180 and green > red + 28
 
 
-def is_outer_dark(pixel: tuple[int, int, int, int]) -> bool:
-    red, green, blue, _ = pixel
-    return max(red, green, blue) < 42 and max(red, green, blue) - min(red, green, blue) < 24
-
-
 def lime_bounds(image: Image.Image) -> tuple[int, int, int, int]:
     pixels = image.load()
     left, top, right, bottom = image.width, image.height, -1, -1
@@ -54,46 +49,9 @@ def lime_bounds(image: Image.Image) -> tuple[int, int, int, int]:
     )
 
 
-def remove_outer_dark_corners(image: Image.Image) -> Image.Image:
-    """Make only border-connected dark pixels transparent.
-
-    The black share glyph is fully enclosed by the lime rounded square, so it
-    remains opaque while the source image's large black background disappears.
-    """
-
-    result = image.convert("RGBA")
-    pixels = result.load()
-    width, height = result.size
-    seen = bytearray(width * height)
-    queue: deque[tuple[int, int]] = deque()
-
-    def enqueue(x: int, y: int) -> None:
-        index = y * width + x
-        if seen[index] or not is_outer_dark(pixels[x, y]):
-            return
-        seen[index] = 1
-        queue.append((x, y))
-
-    for x in range(width):
-        enqueue(x, 0)
-        enqueue(x, height - 1)
-    for y in range(height):
-        enqueue(0, y)
-        enqueue(width - 1, y)
-
-    while queue:
-        x, y = queue.popleft()
-        red, green, blue, _ = pixels[x, y]
-        pixels[x, y] = (red, green, blue, 0)
-        for next_x, next_y in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
-            if 0 <= next_x < width and 0 <= next_y < height:
-                enqueue(next_x, next_y)
-    return result
-
-
 def clean_mark(source: Path) -> Image.Image:
     original = Image.open(source).convert("RGBA")
-    cropped = remove_outer_dark_corners(original.crop(lime_bounds(original)))
+    cropped = original.crop(lime_bounds(original))
 
     # The supplied mark has subtle generated-image grain. Preserve its exact
     # share-glyph silhouette, but render it in the banner's flat, canonical
@@ -101,11 +59,43 @@ def clean_mark(source: Path) -> Image.Image:
     glyph = Image.new("L", cropped.size, 0)
     source_pixels = cropped.load()
     glyph_pixels = glyph.load()
-    for y in range(cropped.height):
-        for x in range(cropped.width):
-            red, green, blue, alpha = source_pixels[x, y]
-            if alpha and max(red, green, blue) < 72:
-                glyph_pixels[x, y] = 255
+
+    def is_glyph_pixel(x: int, y: int) -> bool:
+        red, green, blue, alpha = source_pixels[x, y]
+        return alpha > 0 and max(red, green, blue) < 88
+
+    # Start inside the left/root node and trace only its connected dark
+    # component. This prevents the baked black background from becoming part
+    # of the new flat mark.
+    center_x = round(cropped.width * 0.3)
+    center_y = round(cropped.height * 0.5)
+    seed: tuple[int, int] | None = None
+    for radius in range(0, round(min(cropped.size) * 0.12), 8):
+        for offset_x, offset_y in ((0, 0), (radius, 0), (-radius, 0), (0, radius), (0, -radius)):
+            x, y = center_x + offset_x, center_y + offset_y
+            if 0 <= x < cropped.width and 0 <= y < cropped.height and is_glyph_pixel(x, y):
+                seed = (x, y)
+                break
+        if seed:
+            break
+    if seed is None:
+        raise ValueError("Could not isolate the dark CFLS share glyph in the supplied logo.")
+
+    visited: set[tuple[int, int]] = {seed}
+    queue: deque[tuple[int, int]] = deque([seed])
+    while queue:
+        x, y = queue.popleft()
+        glyph_pixels[x, y] = 255
+        for next_x, next_y in ((x - 1, y), (x + 1, y), (x, y - 1), (x, y + 1)):
+            point = (next_x, next_y)
+            if (
+                0 <= next_x < cropped.width
+                and 0 <= next_y < cropped.height
+                and point not in visited
+                and is_glyph_pixel(next_x, next_y)
+            ):
+                visited.add(point)
+                queue.append(point)
 
     glyph = glyph.resize((OUTPUT_MARK_SIZE, OUTPUT_MARK_SIZE), Image.Resampling.LANCZOS)
     result = Image.new("RGBA", (OUTPUT_MARK_SIZE, OUTPUT_MARK_SIZE), (0, 0, 0, 0))
@@ -125,7 +115,24 @@ def clean_mark(source: Path) -> Image.Image:
 
 def clean_banner(source: Path) -> Image.Image:
     original = Image.open(source).convert("RGB")
-    # Preserve the supplied composition and text. Only normalize nearly-black
+    # Remove the large export matte around the actual rounded banner panel.
+    # The panel has a visible slate border/grid, while the surrounding export
+    # frame is near-black.
+    source_pixels = original.load()
+    left, top, right, bottom = original.width, original.height, -1, -1
+    for y in range(original.height):
+        for x in range(original.width):
+            red, green, blue = source_pixels[x, y]
+            if max(red, green, blue) > 42:
+                left = min(left, x)
+                top = min(top, y)
+                right = max(right, x)
+                bottom = max(bottom, y)
+    if right < left or bottom < top:
+        raise ValueError("Could not find the CFLS banner panel in the supplied image.")
+    original = original.crop((left, top, right + 1, bottom + 1))
+
+    # Preserve the supplied copy and composition. Only normalize nearly-black
     # background noise and apply a restrained contrast/sharpen pass.
     pixels = original.load()
     for y in range(original.height):
@@ -154,6 +161,7 @@ def main() -> None:
     repo = args.repo.resolve()
     assets = repo / "assets" / "brand"
     website_assets = repo / "website" / "assets"
+    extension = repo / "apps" / "vscode-extension"
 
     mark_path = assets / "cfls-mark.png"
     banner_path = assets / "cfls-banner.png"
@@ -163,6 +171,8 @@ def main() -> None:
     website_assets.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(mark_path, website_assets / "cfls-mark.png")
     shutil.copyfile(banner_path, website_assets / "cfls-banner.png")
+    shutil.copyfile(mark_path, extension / "icon.png")
+    shutil.copyfile(mark_path, extension / "vsix-pkg" / "icon.png")
 
     favicon = Image.open(mark_path).convert("RGBA").resize((256, 256), Image.Resampling.LANCZOS)
     save_png(favicon, repo / "website" / "favicon.png")
@@ -172,6 +182,8 @@ def main() -> None:
     print(f"Wrote {(website_assets / 'cfls-mark.png').relative_to(repo)}")
     print(f"Wrote {(website_assets / 'cfls-banner.png').relative_to(repo)}")
     print(f"Wrote {(repo / 'website' / 'favicon.png').relative_to(repo)}")
+    print(f"Wrote {(extension / 'icon.png').relative_to(repo)}")
+    print(f"Wrote {(extension / 'vsix-pkg' / 'icon.png').relative_to(repo)}")
 
 
 if __name__ == "__main__":
