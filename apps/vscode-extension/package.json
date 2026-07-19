@@ -58,6 +58,7 @@
     "ws": "^8.21.1"
   },
   "devDependencies": {
+    "@vscode/vsce": "3.9.2",
     "@cfls/test-utils": "workspace:*",
     "@types/vscode": "^1.85.0",
     "@types/ws": "^8.18.1"

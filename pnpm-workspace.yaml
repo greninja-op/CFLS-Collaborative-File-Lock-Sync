@@ -7,7 +7,9 @@ packages:
 # Allow esbuild (used by tsup) to run its post-install so it can fetch its
 # platform binary. Without this, pnpm blocks the build script.
 allowBuilds:
+  '@vscode/vsce-sign': false
   esbuild: true
+  keytar: false
 
 onlyBuiltDependencies:
   - esbuild
