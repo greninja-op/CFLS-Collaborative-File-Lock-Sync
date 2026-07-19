@@ -49,6 +49,10 @@ export const DEFAULT_IGNORED_DIRS: readonly string[] = [
   "vendor",
   ".venv",
   "venv",
+  // The agent's own local encrypted cache and the editor's settings live inside
+  // the watched folder but are not project source — never coordinate on them.
+  ".cfls-cache",
+  ".vscode",
 ];
 
 /** Options for a {@link FolderWatcher}. */
