@@ -234,7 +234,13 @@ export class CoordinationServer {
   }
 
   private sendHtml(res: ServerResponse, status: number, html: string): void {
-    res.writeHead(status, { "content-type": "text/html; charset=utf-8" });
+    // The dashboard is a standalone client shell. Never let a browser reuse an
+    // earlier shell after the Host has been rebuilt; its live API polling alone
+    // cannot update old markup, styling, or branding.
+    res.writeHead(status, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+    });
     res.end(html);
   }
 

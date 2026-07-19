@@ -154,7 +154,9 @@ describe("dashboard HTTP", () => {
     const page = await getHttp("/dashboard");
     expect(root.statusCode).toBe(200);
     expect(String(root.headers["content-type"])).toMatch(/^text\/html/);
+    expect(root.headers["cache-control"]).toBe("no-store");
     expect(page.statusCode).toBe(200);
+    expect(page.headers["cache-control"]).toBe("no-store");
     expect(page.body).toContain("CFLS Coordination Dashboard");
 
     const client = await TestClient.open(url());
