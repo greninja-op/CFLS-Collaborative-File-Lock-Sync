@@ -62,7 +62,7 @@ export interface DashboardSession {
   plannedCreations: DashboardPlannedCreation[];
 }
 
-/** The serializable payload returned from `/api/coordination`. */
+/** The serializable payload returned from the coordination dashboard API. */
 export interface DashboardState {
   uptimeSeconds: number;
   generatedAt: string;
@@ -202,7 +202,7 @@ export function escapeDashboardHtml(value: unknown): string {
 
 /**
  * Render the standalone live dashboard. All data is fetched client-side from
- * `/api/coordination`; no host state is interpolated into this document.
+ * the coordination dashboard API; no host state is interpolated into this page.
  */
 export function renderDashboardHtml(): string {
   const escapeMap = JSON.stringify(HTML_ESCAPES);
@@ -213,176 +213,1481 @@ export function renderDashboardHtml(): string {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="color-scheme" content="dark">
+    <meta name="theme-color" content="#0b1114">
     <title>CFLS Coordination Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
       :root {
         color-scheme: dark;
-        --canvas: #09111f;
-        --surface: #101b2e;
-        --surface-strong: #15243c;
-        --line: #273a57;
-        --muted: #93a8c7;
-        --text: #edf5ff;
-        --blue: #69b9ff;
-        --cyan: #46dbc6;
-        --green: #58dc91;
-        --amber: #f3bb5c;
-        --red: #fb7f8d;
-        --shadow: 0 18px 55px rgba(0, 0, 0, .26);
+        --canvas: #0b1114;
+        --canvas-deep: #070b0d;
+        --surface: #111a1e;
+        --surface-raised: #162126;
+        --surface-code: #0b1418;
+        --line: rgba(196, 219, 220, .12);
+        --line-strong: rgba(196, 219, 220, .22);
+        --text: #edf5f3;
+        --muted: #9badaa;
+        --dim: #657674;
+        --signal: #c4f36d;
+        --signal-bright: #ddff9b;
+        --cyan: #62e6e0;
+        --amber: #ffc267;
+        --red: #ff8d86;
+        --violet: #b89eff;
+        --sans: "Manrope", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        --shadow-lg: 0 30px 80px rgba(0, 0, 0, .32);
+        --shadow-sm: 0 14px 35px rgba(0, 0, 0, .18);
       }
 
       * { box-sizing: border-box; }
-      html { background: var(--canvas); }
+      html {
+        min-width: 320px;
+        background: var(--canvas);
+        scroll-behavior: smooth;
+      }
       body {
         min-width: 320px;
+        min-height: 100vh;
         margin: 0;
+        overflow-x: hidden;
         color: var(--text);
         background:
-          radial-gradient(circle at 10% -10%, rgba(57, 119, 218, .27), transparent 36rem),
-          radial-gradient(circle at 95% 5%, rgba(34, 183, 165, .12), transparent 32rem),
+          radial-gradient(circle at 49% -15%, rgba(91, 164, 157, .13), transparent 38rem),
+          radial-gradient(circle at 93% 28%, rgba(81, 120, 162, .08), transparent 32rem),
           var(--canvas);
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family: var(--sans);
+        line-height: 1.5;
       }
-      code, .mono { font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace; }
-      .shell { width: min(1440px, calc(100% - 2rem)); margin: 0 auto; }
-      .topbar {
+      button, a { -webkit-tap-highlight-color: transparent; }
+      code, .mono { font-family: var(--mono); }
+      .site-grid {
+        position: fixed;
+        z-index: 0;
+        pointer-events: none;
+        inset: 0;
+        opacity: .36;
+        background-image:
+          linear-gradient(rgba(214, 245, 241, .034) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(214, 245, 241, .034) 1px, transparent 1px);
+        background-size: 52px 52px;
+        mask-image: linear-gradient(to bottom, black, transparent 68%);
+      }
+      .skip-link {
+        position: fixed;
+        z-index: 30;
+        top: 12px;
+        left: 12px;
+        padding: 10px 14px;
+        color: var(--canvas-deep);
+        border-radius: 8px;
+        background: var(--signal);
+        font-weight: 800;
+        text-decoration: none;
+        transform: translateY(-150%);
+        transition: transform 160ms ease;
+      }
+      .skip-link:focus { transform: translateY(0); }
+      .shell {
+        width: min(1180px, calc(100% - 48px));
+        margin-inline: auto;
+      }
+
+      .app-header {
+        position: sticky;
+        z-index: 10;
+        top: 0;
+        border-bottom: 1px solid var(--line);
+        background: rgba(11, 17, 20, .92);
+        box-shadow: 0 1px 0 rgba(0, 0, 0, .2);
+        backdrop-filter: blur(18px);
+      }
+      .header-inner {
         display: flex;
         align-items: center;
         justify-content: space-between;
-        gap: 1rem;
-        padding: 1.2rem 0 1rem;
-        border-bottom: 1px solid rgba(147, 168, 199, .16);
+        gap: 20px;
+        min-height: 68px;
       }
-      .brand { display: flex; align-items: center; gap: .78rem; min-width: 0; }
+      .brand {
+        display: inline-flex;
+        min-width: 0;
+        align-items: center;
+        gap: 11px;
+      }
       .brand-mark {
         display: grid;
-        width: 2.25rem;
-        height: 2.25rem;
+        width: 33px;
+        height: 33px;
+        flex: 0 0 auto;
         place-items: center;
-        border: 1px solid rgba(105, 185, 255, .5);
-        border-radius: .72rem;
-        color: var(--blue);
-        background: linear-gradient(140deg, rgba(105, 185, 255, .19), rgba(70, 219, 198, .10));
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
-        font-weight: 800;
+        color: var(--canvas-deep);
+        border-radius: 9px;
+        background: var(--signal);
+        box-shadow:
+          0 0 0 5px rgba(196, 243, 109, .06),
+          0 8px 20px rgba(0, 0, 0, .22);
       }
-      .brand-title { margin: 0; font-size: 1rem; letter-spacing: .01em; }
-      .brand-subtitle { margin: .12rem 0 0; color: var(--muted); font-size: .8rem; }
+      .brand-mark svg { width: 21px; height: 21px; }
+      .brand-copy { min-width: 0; }
+      .brand-title {
+        margin: 0;
+        color: var(--text);
+        font-size: .88rem;
+        font-weight: 800;
+        letter-spacing: -.025em;
+      }
+      .brand-context {
+        margin: 1px 0 0;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .6rem;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+      }
       .connection {
         display: inline-flex;
         align-items: center;
-        gap: .48rem;
-        flex: 0 0 auto;
+        gap: 9px;
+        min-width: 0;
         color: var(--muted);
-        font-size: .85rem;
+        font-size: .74rem;
       }
-      .status-dot, .device-dot {
-        display: inline-block;
-        width: .58rem;
-        height: .58rem;
+      .status-dot {
+        width: 8px;
+        height: 8px;
+        flex: 0 0 auto;
         border-radius: 50%;
-        background: var(--green);
-        box-shadow: 0 0 0 4px rgba(88, 220, 145, .12);
+        background: var(--signal);
+        box-shadow: 0 0 0 5px rgba(196, 243, 109, .1);
+        animation: host-pulse 2.2s ease-in-out infinite;
       }
-      .connection.is-reconnecting .status-dot { background: var(--amber); box-shadow: 0 0 0 4px rgba(243, 187, 92, .12); }
-      main { padding: 1.5rem 0 3rem; }
-      .intro { display: flex; justify-content: space-between; gap: 1rem; align-items: end; margin-bottom: 1.25rem; }
-      .eyebrow { margin: 0 0 .35rem; color: var(--cyan); font-size: .72rem; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
-      h1 { margin: 0; font-size: clamp(1.65rem, 3vw, 2.45rem); letter-spacing: -.035em; }
-      .last-updated { margin: 0; color: var(--muted); font-size: .84rem; text-align: right; }
-      .totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .8rem; margin-bottom: 1.4rem; }
-      .metric, .session-card, .empty-state {
-        border: 1px solid var(--line);
-        background: linear-gradient(145deg, rgba(21, 36, 60, .96), rgba(16, 27, 46, .92));
-        box-shadow: var(--shadow);
+      .connection.is-reconnecting .status-dot {
+        background: var(--amber);
+        box-shadow: 0 0 0 5px rgba(255, 194, 103, .1);
+        animation: none;
       }
-      .metric { border-radius: 1rem; padding: 1rem 1.1rem; }
-      .metric-label { display: block; color: var(--muted); font-size: .78rem; font-weight: 650; letter-spacing: .04em; text-transform: uppercase; }
-      .metric-value { display: block; margin-top: .28rem; color: var(--text); font-size: 1.7rem; font-weight: 760; letter-spacing: -.04em; }
-      .sessions { display: grid; gap: 1rem; }
-      .session-card { overflow: hidden; border-radius: 1rem; }
-      .session-head {
+      .connection-copy { display: grid; gap: 1px; min-width: 0; }
+      .connection-label {
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .56rem;
+        font-weight: 700;
+        letter-spacing: .09em;
+        text-transform: uppercase;
+      }
+      #connection-text {
+        overflow: hidden;
+        font-weight: 700;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      main { position: relative; z-index: 1; padding-bottom: 70px; }
+      .dashboard-hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(245px, .38fr);
+        gap: clamp(28px, 7vw, 90px);
+        align-items: end;
+        padding: clamp(43px, 7vw, 78px) 0 34px;
+      }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 13px;
+        color: var(--signal);
+        font-family: var(--mono);
+        font-size: .62rem;
+        font-weight: 700;
+        letter-spacing: .11em;
+        text-transform: uppercase;
+      }
+      .eyebrow::before {
+        width: 6px;
+        height: 6px;
+        content: "";
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: 0 0 13px currentColor;
+      }
+      .dashboard-hero h1 {
+        max-width: 750px;
+        margin: 0;
+        font-size: clamp(2rem, 4vw, 3.35rem);
+        letter-spacing: -.065em;
+        line-height: 1.04;
+      }
+      .dashboard-hero h1 span { color: var(--signal); }
+      .hero-lede {
+        max-width: 650px;
+        margin: 18px 0 0;
+        color: var(--muted);
+        font-size: clamp(.92rem, 1.45vw, 1.03rem);
+        line-height: 1.7;
+      }
+      .host-pulse {
         display: flex;
-        justify-content: space-between;
-        gap: 1rem;
-        align-items: start;
-        padding: 1.05rem 1.15rem;
-        border-bottom: 1px solid var(--line);
-        background: rgba(8, 17, 31, .24);
+        align-items: center;
+        gap: 13px;
+        padding: 16px 17px;
+        border: 1px solid rgba(196, 243, 109, .22);
+        border-radius: 14px;
+        background:
+          linear-gradient(135deg, rgba(196, 243, 109, .1), transparent 64%),
+          rgba(17, 26, 30, .78);
+        box-shadow: var(--shadow-sm);
       }
-      .repo { min-width: 0; margin: 0; font-size: 1rem; }
-      .repo code { overflow-wrap: anywhere; color: #dbeeff; font-size: .93rem; }
-      .session-meta { display: flex; flex-wrap: wrap; gap: .45rem; margin: .5rem 0 0; color: var(--muted); font-size: .82rem; }
-      .tag { padding: .2rem .48rem; border: 1px solid rgba(147, 168, 199, .25); border-radius: 99px; background: rgba(147, 168, 199, .08); }
-      .revision { flex: 0 0 auto; color: var(--muted); font-size: .82rem; text-align: right; }
-      .revision strong { display: block; margin-top: .12rem; color: var(--blue); font-size: 1.02rem; }
-      .devices { display: flex; flex-wrap: wrap; align-items: center; gap: .45rem; padding: .8rem 1.15rem; border-bottom: 1px solid var(--line); }
-      .devices-label { color: var(--muted); font-size: .78rem; font-weight: 650; }
-      .device { display: inline-flex; max-width: 100%; align-items: center; gap: .38rem; padding: .28rem .5rem; border: 1px solid rgba(88, 220, 145, .22); border-radius: .48rem; background: rgba(88, 220, 145, .07); font-size: .76rem; }
-      .device code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-      .device-dot { width: .42rem; height: .42rem; box-shadow: none; }
-      .no-devices { color: var(--muted); font-size: .82rem; }
-      .session-grid { display: grid; grid-template-columns: 1.38fr 1fr 1fr; gap: 0; }
-      .panel { min-width: 0; padding: 1rem 1.15rem 1.2rem; }
-      .panel + .panel { border-left: 1px solid var(--line); }
-      .panel h3 { margin: 0 0 .8rem; font-size: .86rem; letter-spacing: -.01em; }
-      .table-wrap { overflow-x: auto; }
-      table { width: 100%; border-collapse: collapse; font-size: .8rem; }
-      th { padding: 0 0 .48rem; color: var(--muted); font-size: .67rem; font-weight: 700; letter-spacing: .07em; text-align: left; text-transform: uppercase; }
-      td { padding: .55rem .38rem .55rem 0; border-top: 1px solid rgba(147, 168, 199, .13); vertical-align: middle; }
-      td code { color: #dbeeff; overflow-wrap: anywhere; }
-      .mode { display: inline-flex; padding: .18rem .4rem; border-radius: .35rem; font-size: .69rem; font-weight: 720; white-space: nowrap; }
-      .mode-soft { color: #a9c8f2; background: rgba(105, 185, 255, .14); }
-      .mode-coordinate { color: #ffdd9b; background: rgba(243, 187, 92, .15); }
-      .mode-hard { color: #ffadb6; background: rgba(251, 127, 141, .15); }
-      .activity-list { display: grid; gap: .55rem; margin: 0; padding: 0; list-style: none; }
-      .activity-item { display: grid; gap: .12rem; padding: .58rem .64rem; border: 1px solid rgba(147, 168, 199, .14); border-radius: .58rem; background: rgba(9, 17, 31, .28); }
-      .activity-member { color: #e7f2ff; font-size: .79rem; font-weight: 670; }
-      .activity-path { color: var(--muted); font-size: .74rem; overflow-wrap: anywhere; }
-      .empty-copy { margin: 0; color: var(--muted); font-size: .83rem; line-height: 1.55; }
-      .empty-state { padding: 2.4rem 1.25rem; border-radius: 1rem; text-align: center; }
-      .empty-state h2 { margin: 0 0 .5rem; font-size: 1.1rem; }
-      .empty-state p { max-width: 38rem; margin: 0 auto; color: var(--muted); line-height: 1.55; }
-      @media (max-width: 980px) {
-        .session-grid { grid-template-columns: 1fr 1fr; }
-        .panel:nth-child(3) { grid-column: 1 / -1; border-top: 1px solid var(--line); border-left: 0; }
+      .host-pulse-mark {
+        display: grid;
+        width: 36px;
+        height: 36px;
+        flex: 0 0 auto;
+        place-items: center;
+        color: var(--signal);
+        border: 1px solid rgba(196, 243, 109, .27);
+        border-radius: 10px;
+        background: rgba(196, 243, 109, .07);
+      }
+      .host-pulse-mark svg { width: 20px; height: 20px; }
+      .pulse-label {
+        margin: 0 0 2px;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .58rem;
+        font-weight: 700;
+        letter-spacing: .1em;
+        text-transform: uppercase;
+      }
+      .last-updated {
+        margin: 0;
+        color: var(--text);
+        font-size: .74rem;
+        font-weight: 700;
+        line-height: 1.45;
+      }
+
+      .overview {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        margin-bottom: clamp(35px, 5vw, 54px);
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        border-radius: 15px;
+        background: rgba(13, 23, 26, .72);
+        box-shadow: var(--shadow-sm);
+      }
+      .metric {
+        display: flex;
+        align-items: center;
+        gap: 13px;
+        min-width: 0;
+        padding: 18px 22px;
+      }
+      .metric + .metric { border-left: 1px solid var(--line); }
+      .metric-index {
+        display: grid;
+        width: 30px;
+        height: 30px;
+        flex: 0 0 auto;
+        place-items: center;
+        color: var(--signal);
+        border: 1px solid rgba(196, 243, 109, .24);
+        border-radius: 9px;
+        background: rgba(196, 243, 109, .07);
+        font-family: var(--mono);
+        font-size: .61rem;
+        font-weight: 700;
+      }
+      .metric--cyan .metric-index {
+        color: var(--cyan);
+        border-color: rgba(98, 230, 224, .24);
+        background: rgba(98, 230, 224, .07);
+      }
+      .metric--amber .metric-index {
+        color: var(--amber);
+        border-color: rgba(255, 194, 103, .24);
+        background: rgba(255, 194, 103, .07);
+      }
+      .metric-copy { display: grid; gap: 1px; min-width: 0; }
+      .metric-label {
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .6rem;
+        font-weight: 700;
+        letter-spacing: .09em;
+        text-transform: uppercase;
+      }
+      .metric-value {
+        color: var(--text);
+        font-size: 1.45rem;
+        font-weight: 800;
+        letter-spacing: -.055em;
+        line-height: 1.1;
+      }
+      .metric-detail {
+        overflow: hidden;
+        color: var(--muted);
+        font-size: .72rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .workspace-section { display: grid; gap: 18px; }
+      .workspace-section-head {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 20px;
+      }
+      .section-kicker {
+        margin: 0 0 5px;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .6rem;
+        font-weight: 700;
+        letter-spacing: .1em;
+        text-transform: uppercase;
+      }
+      .workspace-section h2 {
+        margin: 0;
+        font-size: clamp(1.18rem, 2vw, 1.48rem);
+        letter-spacing: -.045em;
+      }
+      .section-note {
+        margin: 0;
+        color: var(--muted);
+        font-size: .73rem;
+        text-align: right;
+      }
+      .section-note strong { color: var(--signal); }
+      .sessions { display: grid; gap: 16px; }
+      .workspace-card {
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        border-radius: 16px;
+        background:
+          linear-gradient(125deg, rgba(27, 43, 43, .52), transparent 48%),
+          rgba(13, 23, 26, .82);
+        box-shadow: var(--shadow-lg);
+      }
+      .workspace-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 24px 26px 20px;
+        border-bottom: 1px solid var(--line);
+      }
+      .repo-intro {
+        display: flex;
+        min-width: 0;
+        align-items: flex-start;
+        gap: 13px;
+      }
+      .repo-mark {
+        display: grid;
+        width: 33px;
+        height: 33px;
+        flex: 0 0 auto;
+        place-items: center;
+        color: var(--cyan);
+        border: 1px solid rgba(98, 230, 224, .24);
+        border-radius: 10px;
+        background: rgba(98, 230, 224, .07);
+      }
+      .repo-mark svg { width: 18px; height: 18px; }
+      .repo-kicker {
+        margin: 0 0 4px;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .57rem;
+        font-weight: 700;
+        letter-spacing: .1em;
+        text-transform: uppercase;
+      }
+      .repo {
+        min-width: 0;
+        margin: 0;
+        font-size: clamp(.98rem, 1.7vw, 1.13rem);
+        letter-spacing: -.035em;
+      }
+      .repo code {
+        overflow-wrap: anywhere;
+        color: var(--text);
+        font-size: .88em;
+      }
+      .session-meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        margin: 11px 0 0;
+      }
+      .tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        max-width: 100%;
+        padding: 4px 7px;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, .018);
+        font-family: var(--mono);
+        font-size: .61rem;
+        overflow-wrap: anywhere;
+      }
+      .tag b {
+        color: var(--dim);
+        font-size: .55rem;
+        font-weight: 700;
+        letter-spacing: .06em;
+      }
+      .session-health {
+        display: grid;
+        flex: 0 0 auto;
+        gap: 9px;
+        min-width: 130px;
+        text-align: right;
+      }
+      .session-state {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+        color: var(--signal);
+        font-size: .7rem;
+        font-weight: 800;
+      }
+      .session-state::before {
+        width: 6px;
+        height: 6px;
+        content: "";
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: 0 0 10px currentColor;
+      }
+      .session-revision {
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .58rem;
+        font-weight: 700;
+        letter-spacing: .06em;
+        text-transform: uppercase;
+      }
+      .session-revision strong {
+        display: block;
+        margin-top: 1px;
+        color: var(--text);
+        font-size: .85rem;
+        letter-spacing: 0;
+        text-transform: none;
+      }
+      .participant-rail {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 13px 26px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(7, 11, 13, .22);
+      }
+      .participant-label {
+        display: grid;
+        flex: 0 0 auto;
+        gap: 1px;
+      }
+      .participant-label span {
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .57rem;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+      }
+      .participant-label b {
+        color: var(--text);
+        font-size: .72rem;
+      }
+      .device-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        min-width: 0;
+      }
+      .device-chip {
+        display: inline-flex;
+        max-width: min(100%, 13rem);
+        align-items: center;
+        gap: 6px;
+        padding: 5px 8px;
+        color: #cbe1dd;
+        border: 1px solid rgba(196, 243, 109, .17);
+        border-radius: 7px;
+        background: rgba(196, 243, 109, .045);
+        font-size: .68rem;
+      }
+      .device-chip code {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .device-dot {
+        width: 5px;
+        height: 5px;
+        flex: 0 0 auto;
+        border-radius: 50%;
+        background: var(--signal);
+        box-shadow: 0 0 7px rgba(196, 243, 109, .7);
+      }
+      .no-devices {
+        color: var(--muted);
+        font-size: .76rem;
+      }
+
+      .workspace-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.34fr) minmax(290px, .78fr);
+        gap: 14px;
+        padding: 17px;
+      }
+      .work-panel {
+        min-width: 0;
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: rgba(7, 14, 16, .28);
+      }
+      .work-panel--locks {
+        border-color: rgba(196, 243, 109, .2);
+        background:
+          linear-gradient(135deg, rgba(196, 243, 109, .06), transparent 38%),
+          rgba(8, 17, 19, .48);
+      }
+      .signal-column {
+        display: grid;
+        gap: 14px;
+        align-content: start;
+      }
+      .panel-heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 15px;
+      }
+      .panel-heading-main { display: flex; align-items: flex-start; gap: 9px; }
+      .panel-index {
+        display: grid;
+        width: 22px;
+        height: 22px;
+        flex: 0 0 auto;
+        place-items: center;
+        color: var(--signal);
+        border: 1px solid rgba(196, 243, 109, .2);
+        border-radius: 6px;
+        background: rgba(196, 243, 109, .06);
+        font-family: var(--mono);
+        font-size: .53rem;
+        font-weight: 700;
+      }
+      .signal-column .panel-index {
+        color: var(--cyan);
+        border-color: rgba(98, 230, 224, .2);
+        background: rgba(98, 230, 224, .06);
+      }
+      .signal-column .work-panel + .work-panel .panel-index {
+        color: var(--violet);
+        border-color: rgba(184, 158, 255, .22);
+        background: rgba(184, 158, 255, .06);
+      }
+      .panel-heading h3 {
+        margin: 0;
+        font-size: .87rem;
+        letter-spacing: -.025em;
+      }
+      .panel-heading p {
+        margin: 2px 0 0;
+        color: var(--muted);
+        font-size: .7rem;
+        line-height: 1.45;
+      }
+      .panel-count {
+        display: inline-flex;
+        align-items: center;
+        min-width: 24px;
+        justify-content: center;
+        padding: 3px 6px;
+        color: var(--signal);
+        border: 1px solid rgba(196, 243, 109, .2);
+        border-radius: 6px;
+        background: rgba(196, 243, 109, .06);
+        font-family: var(--mono);
+        font-size: .61rem;
+        font-weight: 700;
+      }
+      .signal-column .panel-count {
+        color: var(--muted);
+        border-color: var(--line);
+        background: rgba(255, 255, 255, .02);
+      }
+
+      .lock-list, .activity-list {
+        display: grid;
+        gap: 8px;
+        padding: 0;
+        margin: 0;
+        list-style: none;
+      }
+      .lock-row {
+        display: grid;
+        grid-template-columns: 3px minmax(0, 1fr) auto;
+        gap: 11px;
+        align-items: center;
+        min-width: 0;
+        padding: 10px 0;
+        border-top: 1px solid rgba(196, 219, 220, .09);
+      }
+      .lock-row:first-child { padding-top: 0; border-top: 0; }
+      .lock-rail {
+        width: 3px;
+        align-self: stretch;
+        min-height: 27px;
+        border-radius: 999px;
+      }
+      .lock-rail.mode-soft { background: var(--signal); }
+      .lock-rail.mode-coordinate { background: var(--amber); }
+      .lock-rail.mode-hard { background: var(--red); }
+      .lock-main { display: grid; gap: 3px; min-width: 0; }
+      .lock-main code {
+        overflow-wrap: anywhere;
+        color: var(--text);
+        font-size: .76rem;
+        line-height: 1.45;
+      }
+      .lock-holder {
+        color: var(--muted);
+        font-size: .68rem;
+      }
+      .lock-holder b { color: #dbece8; font-weight: 750; }
+      .lock-side {
+        display: grid;
+        justify-items: end;
+        gap: 4px;
+        padding-left: 5px;
+      }
+      .mode {
+        display: inline-flex;
+        padding: 3px 5px;
+        border-radius: 5px;
+        font-family: var(--mono);
+        font-size: .55rem;
+        font-weight: 700;
+        letter-spacing: .025em;
+        white-space: nowrap;
+      }
+      .mode-soft { color: #d7f79b; background: rgba(196, 243, 109, .12); }
+      .mode-coordinate { color: #ffe3ac; background: rgba(255, 194, 103, .13); }
+      .mode-hard { color: #ffc0bb; background: rgba(255, 141, 134, .13); }
+      .lock-revision {
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .55rem;
+        font-weight: 700;
+      }
+      .activity-row {
+        display: grid;
+        grid-template-columns: 28px minmax(0, 1fr);
+        gap: 9px;
+        align-items: center;
+        min-width: 0;
+        padding: 8px 0;
+        border-top: 1px solid rgba(196, 219, 220, .09);
+      }
+      .activity-row:first-child { padding-top: 0; border-top: 0; }
+      .member-avatar {
+        display: grid;
+        width: 28px;
+        height: 28px;
+        place-items: center;
+        color: #08201f;
+        border-radius: 8px;
+        background: var(--cyan);
+        font-family: var(--mono);
+        font-size: .61rem;
+        font-weight: 800;
+      }
+      .member-avatar--planning {
+        color: #201808;
+        background: var(--violet);
+      }
+      .activity-copy { display: grid; min-width: 0; gap: 1px; }
+      .activity-title { display: flex; gap: 5px; min-width: 0; align-items: baseline; }
+      .activity-member {
+        overflow: hidden;
+        color: var(--text);
+        font-size: .72rem;
+        font-weight: 750;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .activity-verb { color: var(--dim); font-size: .64rem; }
+      .activity-path {
+        overflow-wrap: anywhere;
+        color: var(--muted);
+        font-size: .65rem;
+        line-height: 1.45;
+      }
+      .empty-copy {
+        margin: 0;
+        color: var(--muted);
+        font-size: .73rem;
+        line-height: 1.6;
+      }
+      .loading-state, .empty-state, .connection-state {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        padding: 29px;
+        border: 1px solid var(--line-strong);
+        border-radius: 15px;
+        background: rgba(13, 23, 26, .72);
+        box-shadow: var(--shadow-sm);
+      }
+      .loading-orbit, .empty-orbit {
+        display: grid;
+        width: 42px;
+        height: 42px;
+        flex: 0 0 auto;
+        place-items: center;
+        color: var(--signal);
+        border: 1px solid rgba(196, 243, 109, .26);
+        border-radius: 50%;
+        background: rgba(196, 243, 109, .06);
+      }
+      .loading-orbit::after {
+        width: 12px;
+        height: 12px;
+        content: "";
+        border: 2px solid currentColor;
+        border-right-color: transparent;
+        border-radius: 50%;
+        animation: loading-spin .95s linear infinite;
+      }
+      .empty-orbit svg { width: 20px; height: 20px; }
+      .loading-state h2, .empty-state h2, .connection-state h2 {
+        margin: 0 0 3px;
+        font-size: .94rem;
+        letter-spacing: -.025em;
+      }
+      .loading-state p, .empty-state p, .connection-state p {
+        margin: 0;
+        color: var(--muted);
+        font-size: .75rem;
+        line-height: 1.55;
+      }
+      .connection-state { border-color: rgba(255, 194, 103, .22); }
+      .connection-state .loading-orbit {
+        color: var(--amber);
+        border-color: rgba(255, 194, 103, .28);
+        background: rgba(255, 194, 103, .06);
+      }
+
+      @keyframes host-pulse {
+        0%, 100% { box-shadow: 0 0 0 5px rgba(196, 243, 109, .1); }
+        50% { box-shadow: 0 0 0 8px rgba(196, 243, 109, .035); }
+      }
+      @keyframes loading-spin { to { transform: rotate(1turn); } }
+
+      @media (max-width: 880px) {
+        .dashboard-hero { grid-template-columns: 1fr; gap: 22px; }
+        .host-pulse { max-width: 410px; }
+        .workspace-grid { grid-template-columns: 1fr; }
+        .signal-column { grid-template-columns: 1fr 1fr; }
       }
       @media (max-width: 650px) {
-        .shell { width: min(100% - 1rem, 1440px); }
-        .topbar, .intro, .session-head { align-items: start; flex-direction: column; }
-        .last-updated, .revision { text-align: left; }
-        .totals, .session-grid { grid-template-columns: 1fr; }
-        .panel + .panel, .panel:nth-child(3) { border-top: 1px solid var(--line); border-left: 0; }
+        .shell { width: min(100% - 24px, 1180px); }
+        .header-inner { min-height: 60px; }
+        .brand-context, .connection-label { display: none; }
+        .connection { font-size: .68rem; }
+        .dashboard-hero { padding: 40px 0 27px; }
+        .dashboard-hero h1 { font-size: clamp(1.9rem, 10vw, 2.65rem); }
+        .hero-lede { margin-top: 14px; font-size: .87rem; }
+        .overview { grid-template-columns: 1fr; }
+        .metric { padding: 15px 17px; }
+        .metric + .metric { border-top: 1px solid var(--line); border-left: 0; }
+        .workspace-section-head, .workspace-header, .participant-rail {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+        .section-note { text-align: left; }
+        .workspace-header { gap: 17px; padding: 20px 18px 17px; }
+        .session-health { text-align: left; }
+        .session-state { justify-content: flex-start; }
+        .participant-rail { gap: 9px; padding: 13px 18px; }
+        .workspace-grid { gap: 11px; padding: 11px; }
+        .work-panel { padding: 16px; }
+        .signal-column { grid-template-columns: 1fr; gap: 11px; }
+        .lock-row { grid-template-columns: 3px minmax(0, 1fr); }
+        .lock-side {
+          grid-column: 2;
+          justify-items: start;
+          grid-auto-flow: column;
+          justify-content: start;
+          padding-left: 0;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after {
+          scroll-behavior: auto !important;
+          animation-duration: .01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: .01ms !important;
+        }
+      }
+
+      /* The dashboard intentionally uses the landing page's component language:
+         header, hero, trust strip, split section heading, and walkthrough canvas. */
+      .site-noise {
+        position: fixed;
+        z-index: 0;
+        inset: 0;
+        pointer-events: none;
+        opacity: .18;
+        background-image: radial-gradient(rgba(219, 244, 240, .33) .55px, transparent .55px);
+        background-size: 5px 5px;
+        mask-image: linear-gradient(to bottom, black, transparent 72%);
+      }
+      .site-header {
+        position: sticky;
+        z-index: 20;
+        top: 0;
+        border-bottom: 1px solid var(--line);
+        background: rgba(11, 17, 20, .86);
+        backdrop-filter: blur(18px);
+      }
+      .nav-shell {
+        display: flex;
+        min-height: 74px;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+      }
+      .brand {
+        display: inline-flex;
+        align-items: center;
+        gap: 10px;
+        color: var(--text);
+        font-size: .98rem;
+        font-weight: 800;
+        letter-spacing: -.04em;
+        text-decoration: none;
+      }
+      .brand-mark {
+        display: grid;
+        width: 34px;
+        height: 34px;
+        place-items: center;
+        color: #071012;
+        border-radius: 10px;
+        background: var(--signal);
+        box-shadow: 0 0 0 5px rgba(196, 243, 109, .06), 0 8px 20px rgba(0, 0, 0, .2);
+      }
+      .brand-mark svg { width: 21px; height: 21px; }
+      .brand-wordmark { white-space: nowrap; }
+      .header-context {
+        margin-left: 5px;
+        padding-left: 15px;
+        color: var(--dim);
+        border-left: 1px solid var(--line);
+        font-family: var(--mono);
+        font-size: .63rem;
+        font-weight: 700;
+        letter-spacing: .09em;
+        text-transform: uppercase;
+      }
+      .nav-shell .brand-copy { display: contents; }
+      .nav-shell .brand-title {
+        margin: 0;
+        color: var(--text);
+        font-size: .98rem;
+        font-weight: 800;
+        letter-spacing: -.04em;
+      }
+      .nav-shell .brand-context {
+        display: inline-block;
+        margin: 0 0 0 5px;
+        padding-left: 15px;
+        color: var(--dim);
+        border-left: 1px solid var(--line);
+        font-family: var(--mono);
+        font-size: .63rem;
+        font-weight: 700;
+        letter-spacing: .09em;
+        text-transform: uppercase;
+      }
+      .host-connection {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        min-height: 38px;
+        padding: 0 13px;
+        color: var(--text);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: rgba(7, 14, 16, .45);
+        font-size: .72rem;
+        font-weight: 700;
+      }
+      .host-connection .status-dot {
+        width: 7px;
+        height: 7px;
+        margin: 0;
+      }
+      .host-connection.is-reconnecting { color: var(--amber); }
+      .host-connection.is-reconnecting .status-dot {
+        background: var(--amber);
+        box-shadow: 0 0 0 5px rgba(255, 194, 103, .1);
+      }
+      .host-connection .connection-copy { display: block; min-width: 0; }
+      .host-connection .connection-label { display: none; }
+      main { position: relative; z-index: 1; padding: 0 0 0; }
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(235px, .55fr);
+        gap: clamp(38px, 8vw, 112px);
+        align-items: center;
+        min-height: 480px;
+        padding: clamp(72px, 10vw, 126px) 0 clamp(52px, 7vw, 86px);
+      }
+      .hero-copy { max-width: 760px; }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 18px;
+        color: var(--signal);
+        font-family: var(--mono);
+        font-size: .71rem;
+        font-weight: 700;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+      }
+      .eyebrow::before { content: none; }
+      .eyebrow-pulse {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: var(--signal);
+        box-shadow: 0 0 13px var(--signal);
+        animation: host-pulse 2.2s ease-in-out infinite;
+      }
+      .hero h1 {
+        max-width: 730px;
+        margin: 0;
+        color: var(--text);
+        font-size: clamp(2.85rem, 5.2vw, 5.25rem);
+        font-weight: 800;
+        letter-spacing: -.07em;
+        line-height: .98;
+      }
+      .hero h1 span { color: var(--signal); }
+      .hero-lede {
+        max-width: 635px;
+        margin: 23px 0 0;
+        color: var(--muted);
+        font-size: clamp(1rem, 1.5vw, 1.12rem);
+        line-height: 1.75;
+      }
+      .hero-host-scene {
+        position: relative;
+        display: grid;
+        min-height: 292px;
+        place-items: center;
+      }
+      .hero-host-scene::before,
+      .hero-host-scene::after {
+        position: absolute;
+        width: 84px;
+        height: 1px;
+        content: "";
+        background: repeating-linear-gradient(90deg, rgba(98, 230, 224, .52) 0 5px, transparent 5px 10px);
+      }
+      .hero-host-scene::before { left: 0; top: 43%; }
+      .hero-host-scene::after { right: 0; bottom: 32%; }
+      .hero-host-orbit {
+        position: absolute;
+        width: 240px;
+        height: 240px;
+        border: 1px solid rgba(98, 230, 224, .12);
+        border-radius: 50%;
+        box-shadow: inset 0 0 45px rgba(98, 230, 224, .025);
+      }
+      .hero-host-orbit::before,
+      .hero-host-orbit::after {
+        position: absolute;
+        content: "";
+        border: 1px solid rgba(98, 230, 224, .18);
+        border-radius: 50%;
+      }
+      .hero-host-orbit::before { inset: 29px; }
+      .hero-host-orbit::after { inset: 57px; }
+      .hero-host {
+        position: relative;
+        z-index: 1;
+        display: grid;
+        min-height: 154px;
+        place-items: center;
+        color: var(--cyan);
+      }
+      .host-core {
+        position: relative;
+        display: grid;
+        width: 90px;
+        height: 90px;
+        place-items: center;
+        color: #071213;
+        border-radius: 22px;
+        background: #3b7d7b;
+        box-shadow: 0 0 0 9px rgba(98, 230, 224, .026), 0 20px 50px rgba(0, 0, 0, .26);
+      }
+      .host-core svg { width: 33px; height: 33px; margin-top: 8px; }
+      .host-core span {
+        margin-top: -12px;
+        font-family: var(--mono);
+        font-size: .51rem;
+        font-weight: 700;
+        letter-spacing: .08em;
+      }
+      .hero-host-copy {
+        position: absolute;
+        bottom: -3px;
+        width: 190px;
+        margin: 0;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .62rem;
+        line-height: 1.65;
+        text-align: center;
+      }
+      .trust-strip {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 0;
+        margin-bottom: 0;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(16, 27, 30, .64);
+      }
+      .trust-strip > article {
+        display: flex;
+        min-width: 0;
+        min-height: 111px;
+        align-items: flex-start;
+        gap: 11px;
+        padding: 24px 20px;
+        border-right: 1px solid var(--line);
+      }
+      .trust-strip > article:last-child { border-right: 0; }
+      .trust-icon {
+        display: grid;
+        width: 27px;
+        height: 27px;
+        flex: 0 0 auto;
+        place-items: center;
+        color: var(--signal);
+        border: 1px solid rgba(196, 243, 109, .26);
+        border-radius: 7px;
+        background: rgba(196, 243, 109, .07);
+        font-family: var(--mono);
+        font-size: .67rem;
+        font-weight: 700;
+      }
+      .trust-icon--cyan { color: var(--cyan); border-color: rgba(98, 230, 224, .25); background: rgba(98, 230, 224, .06); }
+      .trust-icon--amber { color: var(--amber); border-color: rgba(255, 194, 103, .25); background: rgba(255, 194, 103, .06); }
+      .trust-icon--host { color: var(--violet); border-color: rgba(184, 158, 255, .25); background: rgba(184, 158, 255, .06); }
+      .trust-strip p { display: grid; min-width: 0; gap: 3px; margin: 0; }
+      .trust-strip strong { color: var(--text); font-size: .8rem; line-height: 1.35; }
+      .trust-strip strong b { margin-right: 5px; color: var(--signal); font-family: var(--mono); font-size: 1rem; }
+      .trust-strip p > span { overflow: hidden; color: var(--dim); font-size: .72rem; line-height: 1.45; text-overflow: ellipsis; white-space: nowrap; }
+      .trust-strip .metric--cyan strong b { color: var(--cyan); }
+      .trust-strip .metric--amber strong b { color: var(--amber); }
+      .trust-strip .metric--host strong b { color: var(--violet); }
+      .section {
+        position: relative;
+        padding: clamp(92px, 10vw, 124px) 0;
+      }
+      .section--tinted {
+        margin-top: clamp(68px, 10vw, 132px);
+        border-top: 1px solid rgba(204, 231, 229, .07);
+        border-bottom: 1px solid rgba(204, 231, 229, .07);
+        background:
+          linear-gradient(90deg, rgba(196, 243, 109, .024) 1px, transparent 1px),
+          linear-gradient(rgba(196, 243, 109, .024) 1px, transparent 1px),
+          #0d1619;
+        background-size: 48px 48px;
+      }
+      .section-heading { max-width: 695px; }
+      .section-heading--split {
+        display: grid;
+        max-width: none;
+        grid-template-columns: minmax(0, 1.05fr) minmax(245px, .65fr);
+        gap: clamp(24px, 6vw, 90px);
+        align-items: end;
+      }
+      .section-heading h2 {
+        margin: 0;
+        color: var(--text);
+        font-size: clamp(2rem, 4vw, 3.55rem);
+        font-weight: 800;
+        letter-spacing: -.06em;
+        line-height: 1.05;
+      }
+      .section-heading > p {
+        margin: 0;
+        padding-bottom: 5px;
+        color: var(--muted);
+        font-size: 1rem;
+        line-height: 1.75;
+      }
+      .section-heading > p strong { color: var(--signal); font-weight: 800; }
+      .sessions { display: grid; gap: 28px; margin-top: 58px; }
+      .live-demo-card {
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        border-radius: 18px;
+        background: #0b1316;
+        box-shadow: var(--shadow-lg);
+      }
+      .live-demo-card .demo-card-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        padding: 26px 28px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, .015);
+      }
+      .live-repo-intro { display: flex; min-width: 0; align-items: flex-start; gap: 12px; }
+      .live-repo-icon {
+        display: grid;
+        width: 31px;
+        height: 31px;
+        flex: 0 0 auto;
+        place-items: center;
+        color: var(--cyan);
+        border: 1px solid rgba(98, 230, 224, .25);
+        border-radius: 8px;
+        background: rgba(98, 230, 224, .06);
+      }
+      .live-repo-icon svg { width: 17px; height: 17px; }
+      .demo-kicker { color: var(--signal); font-family: var(--mono); font-size: .66rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; }
+      .live-repo { margin: 5px 0 0; min-width: 0; color: var(--text); font-size: clamp(.96rem, 1.8vw, 1.17rem); letter-spacing: -.04em; }
+      .live-repo code { overflow-wrap: anywhere; color: inherit; font-size: .9em; }
+      .live-meta { display: flex; flex-wrap: wrap; gap: 6px; margin: 9px 0 0; }
+      .live-meta span {
+        display: inline-flex;
+        max-width: 100%;
+        gap: 5px;
+        padding: 4px 7px;
+        overflow-wrap: anywhere;
+        color: var(--muted);
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: rgba(255, 255, 255, .018);
+        font-family: var(--mono);
+        font-size: .61rem;
+      }
+      .live-meta b { color: var(--dim); font-size: .55rem; letter-spacing: .06em; }
+      .live-session-health { display: grid; flex: 0 0 auto; gap: 7px; min-width: 120px; text-align: right; }
+      .live-state { display: inline-flex; align-items: center; justify-content: flex-end; gap: 6px; color: var(--signal); font-size: .72rem; font-weight: 800; }
+      .live-state::before { width: 6px; height: 6px; content: ""; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; }
+      .live-revision { color: var(--dim); font-family: var(--mono); font-size: .58rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+      .live-revision strong { display: block; margin-top: 1px; color: var(--text); font-size: .82rem; letter-spacing: 0; text-transform: none; }
+      .live-summary {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        border-bottom: 1px solid var(--line);
+      }
+      .live-summary-item {
+        display: grid;
+        min-width: 0;
+        gap: 4px;
+        padding: 16px 19px;
+        border-right: 1px solid var(--line);
+        background: rgba(255, 255, 255, .012);
+      }
+      .live-summary-item:last-child { border-right: 0; }
+      .live-summary-item b { color: var(--signal); font-family: var(--mono); font-size: .61rem; letter-spacing: .08em; }
+      .live-summary-item span { overflow: hidden; color: var(--text); font-size: .75rem; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
+      .live-summary-item--editing b { color: var(--cyan); }
+      .live-summary-item--planned b { color: var(--violet); }
+      .live-canvas {
+        position: relative;
+        display: grid;
+        min-height: 455px;
+        grid-template-areas:
+          "devices host locks"
+          "editing host planned";
+        grid-template-columns: minmax(170px, .8fr) minmax(135px, .42fr) minmax(255px, 1.16fr);
+        gap: 16px clamp(16px, 2.6vw, 30px);
+        align-items: stretch;
+        padding: clamp(24px, 4vw, 48px) clamp(18px, 5vw, 60px);
+        background:
+          radial-gradient(circle at 50% 49%, rgba(98, 230, 224, .075), transparent 14rem),
+          linear-gradient(rgba(196, 243, 109, .02) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(196, 243, 109, .02) 1px, transparent 1px),
+          #091215;
+        background-size: auto, 32px 32px, 32px 32px, auto;
+      }
+      .live-window {
+        position: relative;
+        z-index: 2;
+        display: grid;
+        min-width: 0;
+        overflow: hidden;
+        border: 1px solid #334347;
+        border-radius: 11px;
+        background: linear-gradient(145deg, #152125, #0b1518);
+        box-shadow: 0 18px 35px rgba(0, 0, 0, .24);
+      }
+      .live-window--devices { grid-area: devices; }
+      .live-window--locks { grid-area: locks; border-color: rgba(196, 243, 109, .25); }
+      .live-window--editing { grid-area: editing; }
+      .live-window--planned { grid-area: planned; }
+      .live-window-bar {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 7px;
+        min-height: 30px;
+        padding: 0 9px;
+        color: #a4b6b3;
+        border-bottom: 1px solid rgba(196, 219, 220, .1);
+        background: rgba(27, 39, 43, .86);
+        font-family: var(--mono);
+        font-size: .55rem;
+      }
+      .window-dots { display: inline-flex; flex: 0 0 auto; gap: 3px; }
+      .window-dots i { display: block; width: 5px; height: 5px; border-radius: 50%; background: #556567; }
+      .window-dots i:first-child { background: #ff8d86; }
+      .window-dots i:nth-child(2) { background: #ffc267; }
+      .window-dots i:nth-child(3) { background: #c4f36d; }
+      .live-window-name { overflow: hidden; color: #afc2bf; text-overflow: ellipsis; white-space: nowrap; }
+      .live-window-count {
+        display: grid;
+        min-width: 18px;
+        height: 18px;
+        margin-left: auto;
+        place-items: center;
+        color: var(--signal);
+        border-radius: 5px;
+        background: rgba(196, 243, 109, .1);
+        font-family: var(--mono);
+        font-size: .55rem;
+        font-weight: 700;
+      }
+      .live-window--editing .live-window-count { color: var(--cyan); background: rgba(98, 230, 224, .1); }
+      .live-window--planned .live-window-count { color: var(--violet); background: rgba(184, 158, 255, .1); }
+      .live-window-content { min-width: 0; padding: 13px; }
+      .live-window-caption { display: block; margin: 0 0 10px; color: var(--dim); font-family: var(--mono); font-size: .57rem; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; }
+      .live-window .device-list { display: grid; gap: 6px; }
+      .live-window .device-chip { max-width: 100%; padding: 6px 7px; }
+      .live-window .device-chip code { font-size: .62rem; }
+      .live-window .lock-list, .live-window .activity-list { gap: 0; }
+      .live-window .lock-row { padding: 9px 0; }
+      .live-window .lock-main code { font-size: .72rem; }
+      .live-window .lock-holder { font-size: .66rem; }
+      .live-window .activity-row { padding: 9px 0; }
+      .live-window .activity-member { font-size: .7rem; }
+      .live-window .activity-path { font-size: .62rem; }
+      .live-window .empty-copy, .live-window .no-devices { color: var(--muted); font-size: .69rem; line-height: 1.6; }
+      .member-avatar--lime { color: #102007; background: var(--signal); }
+      .member-avatar--cyan { color: #08201f; background: var(--cyan); }
+      .member-avatar--violet { color: #1d1430; background: var(--violet); }
+      .member-avatar--amber { color: #2b1d07; background: var(--amber); }
+      .live-host {
+        position: relative;
+        z-index: 2;
+        display: grid;
+        min-height: 100%;
+        grid-area: host;
+        place-items: center;
+        color: var(--cyan);
+      }
+      .live-host::before, .live-host::after {
+        position: absolute;
+        top: 50%;
+        width: clamp(26px, 4vw, 58px);
+        height: 1px;
+        content: "";
+        background: repeating-linear-gradient(90deg, rgba(98, 230, 224, .42) 0 5px, transparent 5px 10px);
+      }
+      .live-host::before { right: calc(100% - 5px); }
+      .live-host::after { left: calc(100% - 5px); }
+      .live-host .host-rings { position: absolute; width: 126px; height: 126px; border: 1px solid rgba(98, 230, 224, .18); border-radius: 50%; }
+      .live-host .host-rings::after { position: absolute; inset: 17px; content: ""; border: 1px solid rgba(98, 230, 224, .26); border-radius: 50%; }
+      .live-host .host-core { width: 76px; height: 76px; border-radius: 19px; }
+      .live-host .host-core svg { width: 28px; height: 28px; }
+      .live-host .host-core span { font-size: .46rem; }
+      .live-host-label { position: absolute; bottom: 20px; width: 135px; margin: 0; color: var(--dim); font-family: var(--mono); font-size: .53rem; line-height: 1.45; text-align: center; }
+      .live-demo-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+        padding: 14px 20px;
+        color: var(--dim);
+        border-top: 1px solid var(--line);
+        background: rgba(7, 13, 15, .48);
+        font-size: .69rem;
+      }
+      .live-demo-footer span { display: inline-flex; align-items: center; gap: 7px; }
+      .live-demo-footer .footer-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--signal); box-shadow: 0 0 8px rgba(196, 243, 109, .75); }
+      .live-demo-footer code { color: var(--muted); font-size: .9em; }
+      .loading-state, .empty-state, .connection-state {
+        max-width: none;
+        padding: 32px;
+        border-radius: 18px;
+        background: rgba(6, 13, 15, .54);
+      }
+      @media (max-width: 900px) {
+        .hero { grid-template-columns: 1fr; gap: 34px; min-height: 0; }
+        .hero-host-scene { max-width: 340px; justify-self: center; width: 100%; }
+        .live-canvas {
+          grid-template-areas:
+            "devices host"
+            "locks locks"
+            "editing planned";
+          grid-template-columns: minmax(190px, 1fr) minmax(160px, .58fr);
+        }
+        .live-host { min-height: 185px; }
+      }
+      @media (max-width: 720px) {
+        .shell { width: min(100% - 30px, 1180px); }
+        .nav-shell { min-height: 64px; }
+        .header-context { display: none; }
+        .host-connection { padding: 0 10px; font-size: .66rem; }
+        .hero { padding-top: 62px; padding-bottom: 48px; }
+        .hero h1 { font-size: clamp(2.5rem, 12vw, 3.45rem); }
+        .hero-lede { margin-top: 17px; font-size: .96rem; }
+        .hero-host-scene::before, .hero-host-scene::after { width: 52px; }
+        .trust-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .trust-strip > article { min-height: 104px; padding: 18px 14px; }
+        .trust-strip > article:nth-child(2) { border-right: 0; }
+        .trust-strip > article:nth-child(-n + 2) { border-bottom: 1px solid var(--line); }
+        .section { padding: 78px 0; }
+        .section-heading--split { grid-template-columns: 1fr; gap: 20px; }
+        .sessions { margin-top: 42px; gap: 20px; }
+        .live-demo-card .demo-card-top { align-items: flex-start; flex-direction: column; padding: 20px 18px; }
+        .live-session-health { text-align: left; }
+        .live-state { justify-content: flex-start; }
+        .live-summary { display: flex; overflow-x: auto; }
+        .live-summary-item { min-width: 137px; flex: 1 0 auto; }
+        .live-canvas {
+          grid-template-areas: "devices" "host" "locks" "editing" "planned";
+          grid-template-columns: 1fr;
+          gap: 15px;
+          padding: 26px 16px;
+        }
+        .live-host { min-height: 165px; }
+        .live-host::before, .live-host::after { display: none; }
+        .live-host-label { bottom: 6px; }
+        .live-window-content { padding: 13px; }
+        .live-demo-footer { align-items: flex-start; flex-direction: column; padding: 14px 17px; }
+        .lock-row { grid-template-columns: 3px minmax(0, 1fr); }
+        .lock-side { grid-column: 2; justify-items: start; grid-auto-flow: column; justify-content: start; padding-left: 0; }
       }
     </style>
   </head>
   <body>
-    <div class="shell">
-      <header class="topbar">
+    <a class="skip-link" href="#main-content">Skip to dashboard content</a>
+    <div class="site-noise" aria-hidden="true"></div>
+    <div class="site-grid" aria-hidden="true"></div>
+    <header class="site-header">
+      <div class="shell nav-shell">
         <div class="brand">
-          <div class="brand-mark" aria-hidden="true">&#8596;</div>
-          <div>
-            <p class="brand-title">CFLS Coordination Dashboard</p>
-            <p class="brand-subtitle">Read-only, metadata-only team awareness</p>
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 36 36" fill="none">
+              <path d="M9.5 11.5h8.3M18.2 24.5h8.3M18.1 11.5l7.3 13" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/>
+              <circle cx="8.5" cy="11.5" r="3.3" fill="currentColor"/>
+              <circle cx="27.5" cy="24.5" r="3.3" fill="currentColor"/>
+              <circle cx="19" cy="11.5" r="3.3" fill="currentColor"/>
+            </svg>
+          </span>
+          <div class="brand-copy">
+            <p class="brand-title">CFLS</p>
+            <p class="brand-context">Coordination Host</p>
           </div>
         </div>
-        <div id="connection" class="connection" aria-live="polite">
+        <div id="connection" class="host-connection" aria-live="polite">
           <span class="status-dot" aria-hidden="true"></span>
-          <span id="connection-text">Connecting...</span>
+          <span class="connection-copy">
+            <span class="connection-label">Host connection</span>
+            <span id="connection-text">Connecting...</span>
+          </span>
         </div>
-      </header>
-      <main>
-        <div class="intro">
-          <div>
-            <p class="eyebrow">Live coordination state</p>
-            <h1>See the work already in motion.</h1>
+      </div>
+    </header>
+    <main id="main-content">
+      <section class="hero dashboard-hero shell" aria-labelledby="dashboard-title">
+        <div class="hero-copy">
+          <p class="eyebrow"><span class="eyebrow-pulse"></span> Live coordination state</p>
+          <h1 id="dashboard-title">See the work <span>already in motion.</span></h1>
+          <p class="hero-lede">A calm, read-only view of the signals your team has already shared. CFLS coordinates activity; your source code stays in Git.</p>
+        </div>
+        <aside class="hero-host-scene" aria-label="Host update state">
+          <span class="hero-host-orbit" aria-hidden="true"></span>
+          <div class="hero-host" aria-hidden="true">
+            <div class="host-core">
+              <svg viewBox="0 0 24 24" fill="none">
+                <path d="M12 2.7 19 6.5v7.7L12 18l-7-3.8V6.5L12 2.7Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+                <path d="m5.3 6.7 6.7 3.7 6.7-3.7M12 10.4V18" stroke="currentColor" stroke-width="1.6"/>
+              </svg>
+              <span>CFLS HOST</span>
+            </div>
+            <p id="last-updated" class="hero-host-copy">Waiting for host data...</p>
           </div>
-          <p id="last-updated" class="last-updated">Waiting for host data...</p>
+        </aside>
+      </section>
+
+      <section id="totals" class="trust-strip shell" aria-label="Coordination overview">
+        <article class="metric">
+          <span class="metric-index">01</span>
+          <span class="metric-copy"><span class="metric-label">Sessions</span><strong class="metric-value">–</strong><span class="metric-detail">Waiting for host state</span></span>
+        </article>
+        <article class="metric metric--cyan">
+          <span class="metric-index">02</span>
+          <span class="metric-copy"><span class="metric-label">Devices online</span><strong class="metric-value">–</strong><span class="metric-detail">Waiting for host state</span></span>
+        </article>
+        <article class="metric metric--amber">
+          <span class="metric-index">03</span>
+          <span class="metric-copy"><span class="metric-label">Active locks</span><strong class="metric-value">–</strong><span class="metric-detail">Waiting for host state</span></span>
+        </article>
+      </section>
+
+      <section class="section section--tinted dashboard-workspace" aria-labelledby="workspaces-heading">
+        <div class="shell">
+        <div class="section-heading section-heading--split">
+          <div>
+            <p class="eyebrow"><span class="eyebrow-pulse"></span> Team workspaces</p>
+            <h2 id="workspaces-heading">The live coordination signal, in one place.</h2>
+          </div>
+          <p><strong>Read-only</strong> coordination metadata only. The Host receives work signals, never copies of source files.</p>
         </div>
-        <section id="totals" class="totals" aria-label="Coordination totals"></section>
-        <section id="sessions" class="sessions" aria-live="polite" aria-busy="true"></section>
-      </main>
-    </div>
+        <section id="sessions" class="sessions" aria-live="polite" aria-busy="true">
+          <article class="loading-state">
+            <span class="loading-orbit" aria-hidden="true"></span>
+            <div><h2>Contacting the Host</h2><p>Collecting the team’s latest coordination signals.</p></div>
+          </article>
+        </section>
+        </div>
+      </section>
+    </main>
     <script>
       (() => {
         const HTML_ESCAPES = ${escapeMap};
@@ -391,6 +1696,7 @@ export function renderDashboardHtml(): string {
         const connectionElement = document.getElementById("connection");
         const connectionTextElement = document.getElementById("connection-text");
         const lastUpdatedElement = document.getElementById("last-updated");
+        let hasRendered = false;
 
         function escapeHtml(value) {
           return String(value).replace(/[&<>"']/g, (character) => HTML_ESCAPES[character] || character);
@@ -414,85 +1720,166 @@ export function renderDashboardHtml(): string {
           return Number.isNaN(date.getTime()) ? displayValue(value) : date.toLocaleString();
         }
 
+        function formatUptime(value) {
+          const seconds = Math.max(0, Math.floor(safeNumber(value, 0)));
+          const hours = Math.floor(seconds / 3600);
+          const minutes = Math.floor((seconds % 3600) / 60);
+          if (hours > 0) return hours + "h " + minutes + "m";
+          if (minutes > 0) return minutes + "m";
+          return seconds + "s";
+        }
+
         function modeClass(mode) {
           if (mode === "hard") return "mode-hard";
           if (mode === "coordination-required") return "mode-coordinate";
           return "mode-soft";
         }
 
+        function modeLabel(mode) {
+          if (mode === "hard") return "Protected";
+          if (mode === "coordination-required") return "Coordinate";
+          return "Advisory";
+        }
+
+        function memberInitial(value) {
+          return displayValue(value).trim().slice(0, 1).toUpperCase() || "?";
+        }
+
+        function shortDeviceId(value) {
+          const identifier = displayValue(value);
+          if (identifier.length <= 14) return identifier;
+          return identifier.slice(0, 8) + "..." + identifier.slice(-4);
+        }
+
+        function metricMarkup(icon, label, value, detail, tone) {
+          const iconClass = tone === "signal" ? "" : " trust-icon--" + tone;
+          return '<article class="metric metric--' + tone + '">' +
+            '<span class="trust-icon' + iconClass + '">' + icon + '</span>' +
+            '<p><strong><b>' + escapeHtml(value) + '</b> ' + label + '</strong>' +
+            '<span>' + escapeHtml(detail) + '</span></p></article>';
+        }
+
         function renderDevices(devices) {
           const items = arrayOf(devices);
           if (items.length === 0) {
-            return '<span class="no-devices">No devices connected</span>';
+            return '<span class="no-devices">No devices connected yet</span>';
           }
-          return items.map((device) =>
-            '<span class="device"><span class="device-dot" aria-hidden="true"></span><code>' +
-            escapeHtml(displayValue(device)) +
-            '</code></span>',
-          ).join("");
+          return items.map((device) => {
+            const identifier = displayValue(device);
+            return '<span class="device-chip"><span class="device-dot" aria-hidden="true"></span><code title="' +
+            escapeHtml(identifier) + '">' + escapeHtml(shortDeviceId(identifier)) +
+            '</code></span>';
+          }).join("");
         }
 
         function renderLocks(locks) {
           const items = arrayOf(locks);
           if (items.length === 0) {
-            return '<p class="empty-copy">No locks held</p>';
+            return '<p class="empty-copy">No files are currently held. This workspace is clear for a new coordination signal.</p>';
           }
-          return '<div class="table-wrap"><table><thead><tr><th scope="col">Path</th><th scope="col">Holder</th><th scope="col">Mode</th><th scope="col">Rev.</th></tr></thead><tbody>' +
-            items.map((lock) =>
-              '<tr><td><code>' + escapeHtml(displayValue(lock && lock.path)) + '</code></td>' +
-              '<td>' + escapeHtml(displayValue(lock && lock.holder)) + '</td>' +
-              '<td><span class="mode ' + modeClass(lock && lock.mode) + '">' + escapeHtml(displayValue(lock && lock.mode)) + '</span></td>' +
-              '<td class="mono">' + escapeHtml(displayValue(lock && lock.eventRevision)) + '</td></tr>',
-            ).join("") +
-            '</tbody></table></div>';
+          return '<ul class="lock-list">' + items.map((lock) => {
+            const mode = lock && lock.mode;
+            const tone = modeClass(mode);
+            return '<li class="lock-row">' +
+              '<span class="lock-rail ' + tone + '" aria-hidden="true"></span>' +
+              '<div class="lock-main"><code>' + escapeHtml(displayValue(lock && lock.path)) + '</code>' +
+              '<span class="lock-holder">held by <b>' + escapeHtml(displayValue(lock && lock.holder)) + '</b></span></div>' +
+              '<div class="lock-side"><span class="mode ' + tone + '">' + escapeHtml(modeLabel(mode)) + '</span>' +
+              '<span class="lock-revision">rev ' + escapeHtml(displayValue(lock && lock.eventRevision)) + '</span></div>' +
+              '</li>';
+          }).join("") + '</ul>';
         }
 
-        function renderActivity(items, emptyText) {
+        function memberTone(value) {
+          const identifier = displayValue(value);
+          let hash = 0;
+          for (let index = 0; index < identifier.length; index += 1) {
+            hash = (hash + identifier.charCodeAt(index)) % 4;
+          }
+          return ["lime", "cyan", "violet", "amber"][hash];
+        }
+
+        function renderActivity(items, emptyText, verb) {
           const values = arrayOf(items);
           if (values.length === 0) {
             return '<p class="empty-copy">' + escapeHtml(emptyText) + '</p>';
           }
-          return '<ul class="activity-list">' + values.map((item) =>
-            '<li class="activity-item"><span class="activity-member">' + escapeHtml(displayValue(item && item.member)) +
-            '</span><code class="activity-path">' + escapeHtml(displayValue(item && item.path)) + '</code></li>',
-          ).join("") + '</ul>';
+          return '<ul class="activity-list">' + values.map((item) => {
+            const member = displayValue(item && item.member);
+            return '<li class="activity-row"><span class="member-avatar member-avatar--' + memberTone(member) + '">' +
+              escapeHtml(memberInitial(member)) + '</span><span class="activity-copy">' +
+              '<span class="activity-title"><strong class="activity-member">' + escapeHtml(member) +
+              '</strong><span class="activity-verb">' + verb + '</span></span><code class="activity-path">' +
+              escapeHtml(displayValue(item && item.path)) + '</code></span></li>';
+          }).join("") + '</ul>';
+        }
+
+        function liveWindowMarkup(kind, title, caption, count, content) {
+          return '<section class="live-window live-window--' + kind + '">' +
+            '<div class="live-window-bar"><span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span>' +
+            '<span class="live-window-name">' + title + '</span><span class="live-window-count">' + count + '</span></div>' +
+            '<div class="live-window-content"><span class="live-window-caption">' + caption + '</span>' + content + '</div></section>';
+        }
+
+        function liveHostMarkup(revision) {
+          return '<div class="live-host" aria-label="CFLS coordination host">' +
+            '<span class="host-rings" aria-hidden="true"></span><div class="host-core" aria-hidden="true">' +
+            '<svg viewBox="0 0 24 24" fill="none"><path d="M12 2.7 19 6.5v7.7L12 18l-7-3.8V6.5L12 2.7Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>' +
+            '<path d="m5.3 6.7 6.7 3.7 6.7-3.7M12 10.4V18" stroke="currentColor" stroke-width="1.6"/></svg><span>CFLS HOST</span></div>' +
+            '<p class="live-host-label">shared state / revision r' + revision + '</p></div>';
         }
 
         function renderSession(session) {
           const locks = arrayOf(session && session.locks);
           const presence = arrayOf(session && session.presence);
           const creations = arrayOf(session && session.plannedCreations);
-          return '<article class="session-card">' +
-            '<header class="session-head"><div><h2 class="repo"><code>' + escapeHtml(displayValue(session && session.repoId)) +
-            '</code></h2><div class="session-meta"><span class="tag">team ' + escapeHtml(displayValue(session && session.teamId)) +
-            '</span><span class="tag">branch ' + escapeHtml(displayValue(session && session.branch)) +
-            '</span></div></div><div class="revision">Highest revision<strong class="mono">' +
-            escapeHtml(displayValue(session && session.highestRevision)) + '</strong></div></header>' +
-            '<div class="devices"><span class="devices-label">Connected devices</span>' + renderDevices(session && session.connectedDevices) + '</div>' +
-            '<div class="session-grid"><section class="panel"><h3>Active locks <span class="mono">(' + safeNumber(locks.length, 0) +
-            ')</span></h3>' + renderLocks(locks) + '</section><section class="panel"><h3>Editing now <span class="mono">(' + safeNumber(presence.length, 0) +
-            ')</span></h3>' + renderActivity(presence, "Nobody is actively editing") + '</section><section class="panel"><h3>Planned creations <span class="mono">(' + safeNumber(creations.length, 0) +
-            ')</span></h3>' + renderActivity(creations, "No planned file creations") + '</section></div></article>';
+          const devices = arrayOf(session && session.connectedDevices);
+          const repoId = escapeHtml(displayValue(session && session.repoId));
+          const teamId = escapeHtml(displayValue(session && session.teamId));
+          const branch = escapeHtml(displayValue(session && session.branch));
+          const revision = escapeHtml(displayValue(session && session.highestRevision));
+          return '<article class="live-demo-card">' +
+            '<header class="demo-card-top"><div class="live-repo-intro"><span class="live-repo-icon" aria-hidden="true">' +
+            '<svg viewBox="0 0 24 24" fill="none"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"/><path d="m4.4 7.7 7.6 4.3 7.6-4.3M12 12v9" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"/></svg>' +
+            '</span><div><span class="demo-kicker">Repository session</span><h3 class="live-repo"><code>' +
+            repoId + '</code></h3><div class="live-meta"><span><b>TEAM</b>' + teamId + '</span>' +
+            '<span><b>BRANCH</b>' + branch + '</span></div></div></div><div class="live-session-health"><span class="live-state">Live session</span>' +
+            '<span class="live-revision">Host revision<strong>r' + revision + '</strong></span></div></header>' +
+            '<div class="live-summary"><div class="live-summary-item"><b>FILES IN PLAY</b><span>' + locks.length + (locks.length === 1 ? " active lock" : " active locks") + '</span></div>' +
+            '<div class="live-summary-item live-summary-item--editing"><b>EDITING NOW</b><span>' + presence.length + (presence.length === 1 ? " teammate" : " teammates") + '</span></div>' +
+            '<div class="live-summary-item live-summary-item--planned"><b>EXPECTED NEXT</b><span>' + creations.length + (creations.length === 1 ? " planned file" : " planned files") + '</span></div></div>' +
+            '<div class="live-canvas">' +
+            liveWindowMarkup("devices", "connected devices", "LOCAL AGENTS", devices.length, '<div class="device-list">' + renderDevices(devices) + '</div>') +
+            liveHostMarkup(revision) +
+            liveWindowMarkup("locks", "files in play", "ACTIVE LOCKS", locks.length, renderLocks(locks)) +
+            liveWindowMarkup("editing", "editing now", "LIVE PRESENCE", presence.length, renderActivity(presence, "No one is editing in this session yet.", "editing")) +
+            liveWindowMarkup("planned", "expected next", "PLANNED CREATIONS", creations.length, renderActivity(creations, "No planned file creations in this session.", "planning")) +
+            '</div><footer class="live-demo-footer"><span><i class="footer-dot" aria-hidden="true"></i>Source stays in Git. This Host only receives coordination metadata.</span>' +
+            '<code>' + teamId + ' / ' + branch + '</code></footer></article>';
         }
 
         function render(state) {
           const sessions = arrayOf(state && state.sessions);
           const totals = state && typeof state.totals === "object" && state.totals !== null ? state.totals : {};
+          const sessionCount = safeNumber(totals.sessions, sessions.length);
+          const deviceCount = safeNumber(totals.devices, 0);
+          const lockCount = safeNumber(totals.locks, 0);
           totalsElement.innerHTML =
-            '<article class="metric"><span class="metric-label">Sessions</span><strong class="metric-value">' +
-            safeNumber(totals.sessions, sessions.length) + '</strong></article>' +
-            '<article class="metric"><span class="metric-label">Devices online</span><strong class="metric-value">' +
-            safeNumber(totals.devices, 0) + '</strong></article>' +
-            '<article class="metric"><span class="metric-label">Active locks</span><strong class="metric-value">' +
-            safeNumber(totals.locks, 0) + '</strong></article>';
-          lastUpdatedElement.textContent = "Last updated " + formatTime(state && state.generatedAt) +
-            " | host uptime " + safeNumber(state && state.uptimeSeconds, 0) + "s";
+            metricMarkup("S", "Sessions", sessionCount, sessionCount === 1 ? "one repository in view" : "repositories in view", "signal") +
+            metricMarkup("D", "Devices online", deviceCount, deviceCount === 1 ? "one team device connected" : "team devices connected", "cyan") +
+            metricMarkup("F", "Files in play", lockCount, lockCount === 0 ? "no held files right now" : "files already in motion", "amber") +
+            metricMarkup("H", "Host status", "Live", "uptime " + formatUptime(state && state.uptimeSeconds), "host");
+          lastUpdatedElement.textContent = "Updated " + formatTime(state && state.generatedAt) +
+            " / host uptime " + formatUptime(state && state.uptimeSeconds);
           if (sessions.length === 0) {
-            sessionsElement.innerHTML = '<article class="empty-state"><h2>No active sessions</h2><p>When a team member connects to a repository session, its coordination metadata will appear here.</p></article>';
+            sessionsElement.innerHTML = '<article class="empty-state"><span class="empty-orbit" aria-hidden="true">' +
+              '<svg viewBox="0 0 24 24" fill="none"><path d="M12 3v18M5.5 8.2 12 12l6.5-3.8M5.5 15.8 12 12l6.5 3.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/><circle cx="12" cy="3" r="1.5" fill="currentColor"/><circle cx="5.5" cy="8.2" r="1.5" fill="currentColor"/><circle cx="18.5" cy="8.2" r="1.5" fill="currentColor"/></svg>' +
+              '</span><div><h2>No active sessions</h2><p>When a team member connects to a repository session, its coordination metadata will appear here.</p></div></article>';
           } else {
             sessionsElement.innerHTML = sessions.map(renderSession).join("");
           }
           sessionsElement.setAttribute("aria-busy", "false");
+          hasRendered = true;
         }
 
         function setConnection(status, reconnecting) {
@@ -505,9 +1892,12 @@ export function renderDashboardHtml(): string {
             const response = await fetch("/api/coordination", { cache: "no-store" });
             if (!response.ok) throw new Error("Dashboard API returned " + response.status);
             render(await response.json());
-            setConnection("Live - refreshes every 2 seconds", false);
+            setConnection("Live / refreshes every 2 seconds", false);
           } catch {
             sessionsElement.setAttribute("aria-busy", "false");
+            if (!hasRendered) {
+              sessionsElement.innerHTML = '<article class="connection-state"><span class="loading-orbit" aria-hidden="true"></span><div><h2>Waiting for the Host</h2><p>The dashboard will reconnect automatically when the coordination service is reachable.</p></div></article>';
+            }
             setConnection("Reconnecting...", true);
           }
         }
