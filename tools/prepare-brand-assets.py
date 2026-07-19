@@ -16,6 +16,8 @@ from PIL import Image, ImageEnhance, ImageFilter
 
 
 BRAND_DARK = (4, 6, 8)
+BRAND_LIME = (214, 245, 74)
+BRAND_INK = (5, 9, 11)
 OUTPUT_BANNER_WIDTH = 2560
 OUTPUT_MARK_SIZE = 1024
 
@@ -91,10 +93,34 @@ def remove_outer_dark_corners(image: Image.Image) -> Image.Image:
 
 def clean_mark(source: Path) -> Image.Image:
     original = Image.open(source).convert("RGBA")
-    mark = original.crop(lime_bounds(original))
-    mark = remove_outer_dark_corners(mark)
-    mark = mark.resize((OUTPUT_MARK_SIZE, OUTPUT_MARK_SIZE), Image.Resampling.LANCZOS)
-    return mark.filter(ImageFilter.UnsharpMask(radius=0.7, percent=42, threshold=5))
+    cropped = remove_outer_dark_corners(original.crop(lime_bounds(original)))
+
+    # The supplied mark has subtle generated-image grain. Preserve its exact
+    # share-glyph silhouette, but render it in the banner's flat, canonical
+    # lime and ink so both assets share one clean identity.
+    glyph = Image.new("L", cropped.size, 0)
+    source_pixels = cropped.load()
+    glyph_pixels = glyph.load()
+    for y in range(cropped.height):
+        for x in range(cropped.width):
+            red, green, blue, alpha = source_pixels[x, y]
+            if alpha and max(red, green, blue) < 72:
+                glyph_pixels[x, y] = 255
+
+    glyph = glyph.resize((OUTPUT_MARK_SIZE, OUTPUT_MARK_SIZE), Image.Resampling.LANCZOS)
+    result = Image.new("RGBA", (OUTPUT_MARK_SIZE, OUTPUT_MARK_SIZE), (0, 0, 0, 0))
+    radius = round(OUTPUT_MARK_SIZE * 0.265)
+    rounded_square = Image.new("L", (OUTPUT_MARK_SIZE, OUTPUT_MARK_SIZE), 0)
+    rounded_pixels = Image.new("RGBA", (OUTPUT_MARK_SIZE, OUTPUT_MARK_SIZE), BRAND_LIME + (255,))
+    from PIL import ImageDraw
+
+    ImageDraw.Draw(rounded_square).rounded_rectangle(
+        (0, 0, OUTPUT_MARK_SIZE - 1, OUTPUT_MARK_SIZE - 1), radius=radius, fill=255
+    )
+    result.alpha_composite(Image.composite(rounded_pixels, Image.new("RGBA", result.size), rounded_square))
+    ink = Image.new("RGBA", result.size, BRAND_INK + (255,))
+    result.alpha_composite(Image.composite(ink, Image.new("RGBA", result.size), glyph))
+    return result
 
 
 def clean_banner(source: Path) -> Image.Image:
