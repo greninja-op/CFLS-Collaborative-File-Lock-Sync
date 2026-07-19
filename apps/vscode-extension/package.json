@@ -47,7 +47,9 @@
     "build": "tsup",
     "typecheck": "tsc -b",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "build:vsix": "tsup --config tsup.vsix.config.ts && node -e \"require('node:fs').mkdirSync('vsix-pkg/dist',{recursive:true});require('node:fs').copyFileSync('dist/index.js','vsix-pkg/dist/index.js')\"",
+    "package:vsix": "pnpm run build:vsix && cd vsix-pkg && vsce package --no-dependencies --allow-missing-repository -o cfls-coordination.vsix"
   },
   "dependencies": {
     "@cfls/core-state": "workspace:*",
