@@ -19,7 +19,9 @@
  * (Req 8.1) the design requires.
  */
 
-import { DatabaseSync } from "node:sqlite";
+import { createRequire } from "node:module";
+
+import type * as NodeSqlite from "node:sqlite";
 
 import { sessionKey } from "@cfls/core-state";
 import type {
@@ -29,6 +31,20 @@ import type {
   SessionId,
   SessionStateSnapshot,
 } from "@cfls/protocol";
+
+/**
+ * Load the `DatabaseSync` value from the built-in `node:sqlite` at runtime.
+ *
+ * `node:sqlite` is a **prefix-only** built-in (unlike `node:crypto`, it is NOT
+ * resolvable as a bare `sqlite` specifier). Bundlers such as esbuild strip the
+ * `node:` scheme from every built-in import, which would emit an unresolvable
+ * `import … from "sqlite"`. Loading it through a runtime `require` keeps the
+ * specifier a plain string the bundler never rewrites, while the type-only
+ * `NodeSqlite` namespace import above preserves full typing (design §5.2).
+ */
+const { DatabaseSync } = createRequire(import.meta.url)(
+  "node:sqlite",
+) as typeof NodeSqlite;
 
 /** A durably-persisted coordination event (design §5.2 `events`). */
 export interface PersistedEvent {
@@ -179,7 +195,7 @@ CREATE TABLE IF NOT EXISTS dependency_graphs (
  * Synchronous, zero-dependency, and file-durable (or `:memory:` for tests).
  */
 export class SqliteStore implements Store {
-  private readonly db: DatabaseSync;
+  private readonly db: NodeSqlite.DatabaseSync;
 
   constructor(dbPath: string) {
     try {

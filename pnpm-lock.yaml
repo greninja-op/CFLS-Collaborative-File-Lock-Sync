@@ -190,6 +190,49 @@ importers:
         specifier: ^3.23.2
         version: 3.23.2
 
+  tests/simulation:
+    dependencies:
+      '@cfls/agent':
+        specifier: workspace:*
+        version: link:../../apps/agent
+      '@cfls/core-state':
+        specifier: workspace:*
+        version: link:../../packages/core-state
+      '@cfls/dependency-analyzer':
+        specifier: workspace:*
+        version: link:../../packages/dependency-analyzer
+      '@cfls/host':
+        specifier: workspace:*
+        version: link:../../apps/host
+      '@cfls/mcp-server':
+        specifier: workspace:*
+        version: link:../../packages/mcp-server
+      '@cfls/protocol':
+        specifier: workspace:*
+        version: link:../../packages/protocol
+      '@cfls/security':
+        specifier: workspace:*
+        version: link:../../packages/security
+      ws:
+        specifier: ^8.21.1
+        version: 8.21.1
+    devDependencies:
+      '@cfls/test-utils':
+        specifier: workspace:*
+        version: link:../../packages/test-utils
+      '@types/node':
+        specifier: ^22.10.0
+        version: 22.20.1
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.2.4
+        version: 3.2.7(@types/node@22.20.1)
+
 packages:
 
   '@esbuild/aix-ppc64@0.27.7':

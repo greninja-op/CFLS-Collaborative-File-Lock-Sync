@@ -362,17 +362,17 @@ for a faster MVP); core implementation sub-tasks are never optional.
     - Cover event emission timing, update rendering, hard-stop decision, and offline banner.
     - _Requirements: 3.2, 3.3, 3.5, 3.6_
 
-- [ ] 12. `tests/simulation` — 5-agent local multi-agent simulation
+- [x] 12. `tests/simulation` — 5-agent local multi-agent simulation
   - **Goal:** Validate end-to-end coordination across one host and five in-process agents against
     the design's eight scenarios.
-  - [ ] 12.1 Build the 5-agent simulation harness
+  - [x] 12.1 Build the 5-agent simulation harness
     - Wire one CoordinationHost + five in-process simulated CoordinationAgents on a single machine.
     - _Requirements: 6.7; Design §13.4_
-  - [ ] 12.2 Implement scenarios 1–4 (presence, declared intent, direct conflict, indirect conflict)
+  - [x] 12.2 Implement scenarios 1–4 (presence, declared intent, direct conflict, indirect conflict)
     - Presence propagation to peers; declared-intent broadcast/reconciliation with saves; direct
       conflict deterministic winner by revision; indirect dependency conflict via a Dependency_Edge.
     - _Requirements: 11.1, 17.1, 21.1, 22.1; Design §13.4 (scenarios 1–4)_
-  - [ ] 12.3 Implement scenarios 5–8 (lock acquire/release, stale expiry, reconnect sync, unauthorized rejection)
+  - [x] 12.3 Implement scenarios 5–8 (lock acquire/release, stale expiry, reconnect sync, unauthorized rejection)
     - Lock acquire/release happy path; stale lock expiry after missed heartbeats; reconnect sync
       convergence from a known revision; unauthorized/revoked-device rejection.
     - _Requirements: 12.1, 26.3, 9.4, 5.4; Design §13.4 (scenarios 5–8)_

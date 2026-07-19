@@ -1,0 +1,29 @@
+{
+  "name": "@cfls/simulation",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Local 5-agent multi-agent simulation exercising the design's eight end-to-end coordination scenarios (Req 6.7; design §13.4).",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@cfls/agent": "workspace:*",
+    "@cfls/core-state": "workspace:*",
+    "@cfls/dependency-analyzer": "workspace:*",
+    "@cfls/host": "workspace:*",
+    "@cfls/mcp-server": "workspace:*",
+    "@cfls/protocol": "workspace:*",
+    "@cfls/security": "workspace:*",
+    "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "@cfls/test-utils": "workspace:*",
+    "@types/node": "^22.10.0",
+    "@types/ws": "^8.18.1",
+    "typescript": "^5.7.2",
+    "vitest": "^3.2.4"
+  }
+}

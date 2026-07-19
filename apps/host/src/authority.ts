@@ -540,11 +540,19 @@ export class CoordinationAuthority {
           eventRevision,
           acquiredAt: now,
         });
+        // Broadcast the CURRENT WINNER of the scope, not merely the acquiring
+        // member: a contended (losing) acquisition must inform every agent —
+        // and the losing acquirer itself — that the earlier-revision holder
+        // still owns the lock (Req 8.2, 8.4, 12.4). The event's own (monotonic)
+        // Event_Revision is used so the coordination event log stays strictly
+        // ordered while the winner's identity converges everywhere. For an
+        // uncontended acquisition the winner is the acquirer, so this is a
+        // no-op change.
         broadcasts.push({
           entryType: "soft_lock",
           op: "added",
-          path: outcome.lock.scope,
-          member,
+          path: outcome.winner.scope,
+          member: outcome.winner.holder,
           eventRevision,
         });
         return undefined;
