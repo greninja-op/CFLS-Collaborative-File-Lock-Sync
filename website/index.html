@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CFLS — Collaborative File Lock Sync · Coordination for AI coding agents</title>
+  <meta name="description" content="A real-time coordination layer that tells every teammate's editor and AI agent which files others are editing now, plan to change, or are indirectly at risk — so collisions are prevented before code is written." />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="CFLS — Collaborative File Lock Sync" />
+  <meta property="og:description" content="Stop code collisions before they happen. Real-time file coordination for AI agents and the humans who love them." />
+  <meta property="og:type" content="website" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: "#0a0b12",
+            panel: "#12141f",
+            brand: {
+              50: "#eef2ff", 100: "#e0e7ff", 300: "#a5b4fc",
+              400: "#818cf8", 500: "#6366f1", 600: "#4f46e5", 700: "#4338ca",
+            },
+            teal: { 400: "#2dd4bf", 500: "#14b8a6" },
+            amber: { 400: "#fbbf24" },
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+          },
+        },
+      },
+    };
+  </script>
+  <link rel="stylesheet" href="./styles.css" />
+</head>
+
+<body class="bg-ink text-slate-200 font-sans antialiased selection:bg-brand-500/30">
+
+  <!-- ambient background -->
+  <div class="bg-aurora" aria-hidden="true"></div>
+  <div class="bg-grid" aria-hidden="true"></div>
+
+  <!-- ============ NAV ============ -->
+  <header class="fixed top-0 inset-x-0 z-50">
+    <nav class="mx-auto max-w-6xl px-5">
+      <div class="mt-4 flex items-center justify-between rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl px-4 py-3">
+        <a href="#top" class="flex items-center gap-2.5 font-bold text-white">
+          <span class="logo-badge">C</span>
+          <span>CFLS</span>
+        </a>
+        <div class="hidden md:flex items-center gap-7 text-sm text-slate-300">
+          <a href="#problem" class="hover:text-white transition">Why</a>
+          <a href="#how" class="hover:text-white transition">How it works</a>
+          <a href="#install" class="hover:text-white transition">Install</a>
+          <a href="#demo" class="hover:text-white transition">Demo</a>
+          <a href="#features" class="hover:text-white transition">Features</a>
+        </div>
+        <a href="https://github.com/greninja-op/multi-agentic-workflow" target="_blank" rel="noopener"
+           class="btn-ghost text-sm">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M12 .5A11.5 11.5 0 0 0 .5 12a11.5 11.5 0 0 0 7.86 10.92c.58.1.79-.25.79-.56v-2c-3.2.7-3.88-1.54-3.88-1.54-.53-1.34-1.3-1.7-1.3-1.7-1.05-.72.08-.71.08-.71 1.17.08 1.78 1.2 1.78 1.2 1.04 1.78 2.73 1.27 3.4.97.1-.75.4-1.27.73-1.56-2.55-.29-5.24-1.28-5.24-5.69 0-1.26.45-2.28 1.19-3.09-.12-.29-.52-1.46.11-3.05 0 0 .97-.31 3.18 1.18a11 11 0 0 1 5.8 0c2.2-1.49 3.17-1.18 3.17-1.18.63 1.59.23 2.76.11 3.05.74.81 1.19 1.83 1.19 3.09 0 4.42-2.69 5.39-5.25 5.68.41.35.78 1.05.78 2.12v3.14c0 .31.21.67.8.56A11.5 11.5 0 0 0 23.5 12 11.5 11.5 0 0 0 12 .5Z"/></svg>
+          GitHub
+        </a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="top">
+    <!-- ============ HERO ============ -->
+    <section class="relative mx-auto max-w-6xl px-5 pt-36 pb-24 md:pt-44">
+      <div class="text-center max-w-3xl mx-auto" data-reveal>
+        <span class="pill">
+          <span class="pulse-dot"></span>
+          Built for AI coding agents &amp; their humans
+        </span>
+        <h1 class="mt-6 text-4xl md:text-6xl font-black tracking-tight text-white leading-[1.05]">
+          Stop code collisions
+          <span class="text-gradient">before they happen.</span>
+        </h1>
+        <p class="mt-6 text-lg md:text-xl text-slate-300/90 leading-relaxed">
+          CFLS is a real-time coordination layer that tells every teammate's editor and agent
+          which files others are <em class="not-italic text-white font-semibold">editing now</em>,
+          <em class="not-italic text-white font-semibold">plan to change</em>, or are
+          <em class="not-italic text-white font-semibold">indirectly at risk</em> — so two agents
+          never clobber the same file.
+        </p>
+        <div class="mt-9 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <a href="#install" class="btn-primary">Install it</a>
+          <a href="#demo" class="btn-ghost">See the demo</a>
+        </div>
+        <p class="mt-5 text-xs text-slate-500 font-mono">metadata only · your code still moves through git · per-device keys · TLS</p>
+      </div>
+
+      <!-- floating editor mock -->
+      <div class="mt-16 md:mt-20 relative" data-reveal>
+        <div id="hero-editor" class="editor-window mx-auto max-w-4xl">
+          <div class="editor-bar">
+            <span class="dot bg-red-400/80"></span><span class="dot bg-amber-400/80"></span><span class="dot bg-green-400/80"></span>
+            <span class="ml-3 text-xs text-slate-400 font-mono">payments.ts — cfls coordinated</span>
+            <span class="ml-auto statusbar-chip"><span class="pulse-dot"></span> 3 online</span>
+          </div>
+          <div class="editor-body font-mono text-[13px] leading-6">
+            <div class="ln"><span class="tok-key">export function</span> <span class="tok-fn">capturePayment</span>(order) {</div>
+            <div class="ln pl-6"><span class="tok-key">const</span> total = order.<span class="tok-fn">subtotal</span>() + tax;</div>
+            <div class="ln lock-line pl-6" id="hero-lockline">
+              <span class="tok-key">return</span> gateway.<span class="tok-fn">charge</span>(total);
+              <span class="inline-lock">🔒 Alice editing</span>
+            </div>
+            <div class="ln">}</div>
+          </div>
+        </div>
+        <div class="hero-toast" id="hero-toast">
+          <span class="text-amber-400">⚠ Coordination required</span>
+          <span class="text-slate-300">Alice is editing <span class="font-mono">payments.ts</span> — hold off or coordinate.</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ PROBLEM / BEFORE-AFTER ============ -->
+    <section id="problem" class="mx-auto max-w-6xl px-5 py-24">
+      <div class="text-center max-w-2xl mx-auto" data-reveal>
+        <h2 class="section-title">Two agents, one file, zero awareness</h2>
+        <p class="section-sub">When multiple people — or multiple AI agents — touch the same repo,
+          they collide silently and you find out at merge time. CFLS makes that awareness real-time.</p>
+      </div>
+
+      <div class="mt-14 grid md:grid-cols-2 gap-6">
+        <!-- before -->
+        <div class="compare-card border-red-500/20" data-reveal>
+          <div class="compare-head">
+            <span class="compare-tag bg-red-500/15 text-red-300">Without CFLS</span>
+            <span class="text-slate-500 text-sm">silent clobbering</span>
+          </div>
+          <ul class="compare-list">
+            <li><span class="x">✕</span> Alice &amp; Bob both edit <code>payments.ts</code> — nobody knows</li>
+            <li><span class="x">✕</span> Agents overwrite each other's uncommitted work</li>
+            <li><span class="x">✕</span> Collisions surface as painful merge conflicts</li>
+            <li><span class="x">✕</span> No idea a change indirectly breaks a teammate's file</li>
+          </ul>
+          <div class="mini-diff mt-5">
+            <div class="mini-diff-row del">- return gateway.charge(total);</div>
+            <div class="mini-diff-row add">+ return gateway.charge(total, currency); <span class="opacity-60">// Alice</span></div>
+            <div class="mini-diff-row add">+ return gateway.capture(total); <span class="opacity-60">// Bob 💥</span></div>
+          </div>
+        </div>
+
+        <!-- after -->
+        <div class="compare-card border-teal-500/25" data-reveal>
+          <div class="compare-head">
+            <span class="compare-tag bg-teal-500/15 text-teal-300">With CFLS</span>
+            <span class="text-slate-500 text-sm">coordinated in real time</span>
+          </div>
+          <ul class="compare-list">
+            <li><span class="ok">✓</span> Bob's editor shows <b>Alice is editing</b> the moment she starts</li>
+            <li><span class="ok">✓</span> Hot files can be <b>hard-locked</b> — a second edit is blocked</li>
+            <li><span class="ok">✓</span> Dependency-aware <b>risk warnings</b> catch indirect breakage</li>
+            <li><span class="ok">✓</span> Optional auto-sync moves work over git, conflict-free</li>
+          </ul>
+          <div class="mini-diff mt-5">
+            <div class="mini-diff-row ok-row">🔒 payments.ts — locked by Alice</div>
+            <div class="mini-diff-row ok-row">🟢 Bob notified · waits or coordinates</div>
+            <div class="mini-diff-row ok-row">✓ no collision · clean history</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ HOW IT WORKS ============ -->
+    <section id="how" class="mx-auto max-w-6xl px-5 py-24">
+      <div class="text-center max-w-2xl mx-auto" data-reveal>
+        <h2 class="section-title">How it works</h2>
+        <p class="section-sub">A tiny agent on each machine talks to one coordination host. Your editor
+          (and any MCP-connected AI agent) reads the shared picture. Files still travel through git.</p>
+      </div>
+
+      <div class="mt-14 grid sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div class="step-card" data-reveal>
+          <div class="step-num">1</div>
+          <h3>Host</h3>
+          <p>One person (or a small VPS) runs the coordination host — the single source of truth about who's touching what.</p>
+        </div>
+        <div class="step-card" data-reveal>
+          <div class="step-num">2</div>
+          <h3>Agent</h3>
+          <p>Each teammate runs a lightweight agent that watches their folder and exposes a loopback API.</p>
+        </div>
+        <div class="step-card" data-reveal>
+          <div class="step-num">3</div>
+          <h3>Editor + MCP</h3>
+          <p>The VS Code / Kiro extension shows live presence, locks and risk. AI agents read the same data over MCP.</p>
+        </div>
+        <div class="step-card" data-reveal>
+          <div class="step-num">4</div>
+          <h3>Git</h3>
+          <p>CFLS shares <b>metadata only</b>. Actual file bytes move through git — optionally auto-synced per user.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ INSTALL ============ -->
+    <section id="install" class="mx-auto max-w-4xl px-5 py-24">
+      <div class="text-center max-w-2xl mx-auto" data-reveal>
+        <h2 class="section-title">Install</h2>
+        <p class="section-sub">Grab the editor extension and the CLI. Pick your editor below —
+          copy the command, paste it into your terminal.</p>
+      </div>
+
+      <div class="mt-12" data-reveal>
+        <div class="tabs" role="tablist">
+          <button class="tab is-active" data-tab="vscode" role="tab">VS Code</button>
+          <button class="tab" data-tab="kiro" role="tab">Kiro</button>
+          <button class="tab" data-tab="cli" role="tab">CLI (Windows)</button>
+          <button class="tab" data-tab="source" role="tab">From source</button>
+        </div>
+
+        <!-- VS Code -->
+        <div class="tab-panel is-active" data-panel="vscode">
+          <p class="panel-hint">1 · Download <a class="link" href="#download">cfls-coordination.vsix</a>.  2 · Open a terminal and run:</p>
+          <div class="cmd"><code>code --install-extension cfls-coordination.vsix --force</code><button class="copy-btn" data-copy="code --install-extension cfls-coordination.vsix --force">Copy</button></div>
+          <p class="panel-note">Then open your repo — the CFLS status bar appears automatically once the agent is running.</p>
+        </div>
+
+        <!-- Kiro -->
+        <div class="tab-panel" data-panel="kiro">
+          <p class="panel-hint">1 · Download <a class="link" href="#download">cfls-coordination.vsix</a>.  2 · Run:</p>
+          <div class="cmd"><code>kiro --install-extension cfls-coordination.vsix --force</code><button class="copy-btn" data-copy="kiro --install-extension cfls-coordination.vsix --force">Copy</button></div>
+          <p class="panel-note">Same extension, same command — Kiro is VS Code-compatible.</p>
+        </div>
+
+        <!-- CLI -->
+        <div class="tab-panel" data-panel="cli">
+          <p class="panel-hint">Download <a class="link" href="#download">cfls.exe</a> (no Node install needed). Then:</p>
+          <div class="cmd"><code>cfls.exe admin-init --team myteam</code><button class="copy-btn" data-copy="cfls.exe admin-init --team myteam">Copy</button></div>
+          <div class="cmd"><code>cfls.exe host --url wss://0.0.0.0:8730</code><button class="copy-btn" data-copy="cfls.exe host --url wss://0.0.0.0:8730">Copy</button></div>
+          <div class="cmd"><code>cfls.exe agent --insecure-tls</code><button class="copy-btn" data-copy="cfls.exe agent --insecure-tls">Copy</button></div>
+          <p class="panel-note">First run of an unsigned build may show a Windows SmartScreen prompt — choose “Run anyway”.</p>
+        </div>
+
+        <!-- source -->
+        <div class="tab-panel" data-panel="source">
+          <p class="panel-hint">Build everything from the repo (Node 20+ &amp; pnpm):</p>
+          <div class="cmd"><code>git clone https://github.com/greninja-op/multi-agentic-workflow</code><button class="copy-btn" data-copy="git clone https://github.com/greninja-op/multi-agentic-workflow">Copy</button></div>
+          <div class="cmd"><code>pnpm install &amp;&amp; pnpm -r build</code><button class="copy-btn" data-copy="pnpm install && pnpm -r build">Copy</button></div>
+          <div class="cmd"><code>pnpm -C apps/cli package:win</code><button class="copy-btn" data-copy="pnpm -C apps/cli package:win">Copy</button></div>
+          <p class="panel-note">Produces <span class="font-mono">apps/cli/dist-exe/cfls.exe</span>. Package the extension with <span class="font-mono">pnpm -C apps/vscode-extension package:vsix</span>.</p>
+        </div>
+      </div>
+
+      <!-- downloads -->
+      <div id="download" class="mt-10 grid sm:grid-cols-2 gap-4" data-reveal>
+        <a href="https://github.com/greninja-op/multi-agentic-workflow/releases" target="_blank" rel="noopener" class="dl-card">
+          <div class="dl-ico">🧩</div>
+          <div>
+            <div class="font-semibold text-white">cfls-coordination.vsix</div>
+            <div class="text-sm text-slate-400">Editor extension · ~33 KB</div>
+          </div>
+          <span class="dl-arrow">↓ download</span>
+        </a>
+        <a href="https://github.com/greninja-op/multi-agentic-workflow/releases" target="_blank" rel="noopener" class="dl-card">
+          <div class="dl-ico">⚙️</div>
+          <div>
+            <div class="font-semibold text-white">cfls.exe</div>
+            <div class="text-sm text-slate-400">Standalone CLI · Windows · ~89 MB</div>
+          </div>
+          <span class="dl-arrow">↓ download</span>
+        </a>
+      </div>
+      <p class="mt-3 text-center text-xs text-slate-500">Downloads are served from GitHub Releases.</p>
+    </section>
+
+    <!-- ============ SETUP GUIDE ============ -->
+    <section id="setup" class="mx-auto max-w-5xl px-5 py-24">
+      <div class="text-center max-w-2xl mx-auto" data-reveal>
+        <h2 class="section-title">Team setup in 5 minutes</h2>
+        <p class="section-sub">One admin sets up the host and invites devices. Each teammate joins with their own key.</p>
+      </div>
+
+      <div class="mt-14 grid md:grid-cols-2 gap-6">
+        <div class="guide-card" data-reveal>
+          <h3 class="guide-title"><span class="guide-badge">Admin</span> once per team</h3>
+          <div class="terminal">
+            <div class="term-bar"><span class="dot bg-red-400/80"></span><span class="dot bg-amber-400/80"></span><span class="dot bg-green-400/80"></span><span class="term-title">powershell</span></div>
+            <pre class="term-body"><span class="prompt">PS&gt;</span> cfls admin-init --team myteam
+<span class="term-dim">✓ admin key created &amp; stored securely</span>
+<span class="prompt">PS&gt;</span> cfls host --url wss://0.0.0.0:8730
+<span class="term-dim">✓ CoordinationHost listening</span>
+<span class="prompt">PS&gt;</span> cfls invite bob &lt;bob-public-key&gt;
+<span class="term-dim">→ send the invitation string to Bob</span></pre>
+          </div>
+        </div>
+
+        <div class="guide-card" data-reveal>
+          <h3 class="guide-title"><span class="guide-badge badge-teal">Teammate</span> on each laptop</h3>
+          <div class="terminal">
+            <div class="term-bar"><span class="dot bg-red-400/80"></span><span class="dot bg-amber-400/80"></span><span class="dot bg-green-400/80"></span><span class="term-title">powershell</span></div>
+            <pre class="term-body"><span class="prompt">PS&gt;</span> cfls clone &lt;repo-url&gt; --host wss://HOST-IP:8730 --name bob
+<span class="prompt">PS&gt;</span> cfls id            <span class="term-dim"># share this key with admin</span>
+<span class="prompt">PS&gt;</span> cfls connect &lt;invitation&gt;
+<span class="prompt">PS&gt;</span> cfls agent --insecure-tls
+<span class="term-dim">✓ Online — open the repo in VS Code / Kiro</span></pre>
+          </div>
+        </div>
+      </div>
+      <p class="mt-6 text-center text-sm text-slate-400">Full walkthrough in
+        <a class="link" href="https://github.com/greninja-op/multi-agentic-workflow/blob/main/docs/onboarding.md" target="_blank" rel="noopener">docs/onboarding.md</a>.</p>
+    </section>
+
+    <!-- ============ LIVE DEMO ============ -->
+    <section id="demo" class="mx-auto max-w-6xl px-5 py-24">
+      <div class="text-center max-w-2xl mx-auto" data-reveal>
+        <h2 class="section-title">See it live</h2>
+        <p class="section-sub">Alice and Bob open the same repo. Watch Bob's editor react the instant Alice
+          starts editing — then auto-sync moves the work across, conflict-free.</p>
+      </div>
+
+      <div class="mt-14 demo-stage" data-reveal>
+        <!-- Alice -->
+        <div class="demo-pane" id="pane-alice">
+          <div class="pane-head"><span class="who who-alice">A</span> Alice · VS Code <span class="ml-auto statusbar-chip"><span class="pulse-dot"></span> online</span></div>
+          <div class="pane-body font-mono text-[12.5px] leading-6">
+            <div class="ln"><span class="tok-key">function</span> <span class="tok-fn">refund</span>(id) {</div>
+            <div class="ln pl-5" id="alice-typing"><span class="tok-key">return</span> gateway.<span class="tok-fn">reverse</span>(id);<span class="caret" id="alice-caret"></span></div>
+            <div class="ln">}</div>
+          </div>
+        </div>
+
+        <!-- center flow -->
+        <div class="demo-flow" aria-hidden="true">
+          <div class="flow-line"></div>
+          <div class="flow-packet" id="flow-packet"></div>
+          <div class="flow-host">HOST</div>
+        </div>
+
+        <!-- Bob -->
+        <div class="demo-pane" id="pane-bob">
+          <div class="pane-head"><span class="who who-bob">B</span> Bob · Kiro <span class="ml-auto statusbar-chip"><span class="pulse-dot"></span> online</span></div>
+          <div class="pane-body font-mono text-[12.5px] leading-6 relative">
+            <div class="ln"><span class="tok-key">function</span> <span class="tok-fn">refund</span>(id) {</div>
+            <div class="ln pl-5 lock-line" id="bob-lockline">
+              <span class="tok-key">return</span> gateway.<span class="tok-fn">reverse</span>(id);
+              <span class="inline-lock" id="bob-lock">🔒 Alice</span>
+            </div>
+            <div class="ln">}</div>
+            <div class="demo-toast" id="demo-toast">⚠ Alice is editing this file</div>
+            <div class="demo-sync" id="demo-sync">✓ alice published 2 commits · merged cleanly</div>
+          </div>
+        </div>
+      </div>
+
+      <p class="mt-8 text-center text-sm text-slate-400">
+        Want the real thing? Run <span class="font-mono text-slate-300">pnpm playground</span> to launch a host + 3 agents on one machine.
+      </p>
+    </section>
+
+    <!-- ============ FEATURES ============ -->
+    <section id="features" class="mx-auto max-w-6xl px-5 py-24">
+      <div class="text-center max-w-2xl mx-auto" data-reveal>
+        <h2 class="section-title">Everything in the box</h2>
+        <p class="section-sub">Coordination, safety, and optional automation — all metadata-only and secure by default.</p>
+      </div>
+
+      <div class="mt-14 grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div class="feat" data-reveal><div class="feat-ic">🟢</div><h3>Live presence</h3><p>See who's editing what the moment they start — before anyone saves.</p></div>
+        <div class="feat" data-reveal><div class="feat-ic">🔒</div><h3>Soft &amp; hard locks</h3><p>Friendly warnings by default; opt-in hard-stop blocks a second edit on hot files.</p></div>
+        <div class="feat" data-reveal><div class="feat-ic">🚦</div><h3>Risk levels</h3><p>Every file reads as go / coordinate / stop — turning presence into a clear signal.</p></div>
+        <div class="feat" data-reveal><div class="feat-ic">🕸️</div><h3>Dependency awareness</h3><p>Warns when your change indirectly affects a file a teammate holds.</p></div>
+        <div class="feat" data-reveal><div class="feat-ic">🤖</div><h3>MCP for AI agents</h3><p>Agents read the same coordination view over the Model Context Protocol.</p></div>
+        <div class="feat" data-reveal><div class="feat-ic">🔄</div><h3>Opt-in auto git-sync</h3><p>Per-user branches auto-commit &amp; push; teammates fetch &amp; merge conflict-free.</p></div>
+        <div class="feat" data-reveal><div class="feat-ic">⚠️</div><h3>Live-edit pre-warning</h3><p>Defers an auto-merge that would touch a file someone is editing right now.</p></div>
+        <div class="feat" data-reveal><div class="feat-ic">🧰</div><h3>In-editor conflict resolve</h3><p><span class="font-mono text-xs">cfls sync merge --resolve</span> opens the 3-way merge editor for you.</p></div>
+        <div class="feat" data-reveal><div class="feat-ic">🛡️</div><h3>Secure by default</h3><p>Per-device keys, signed invitations, TLS everywhere, offline-safe cache.</p></div>
+      </div>
+    </section>
+
+    <!-- ============ CTA ============ -->
+    <section class="mx-auto max-w-4xl px-5 py-16">
+      <div class="cta" data-reveal>
+        <h2 class="text-2xl md:text-3xl font-black text-white">Coordinate your agents. Ship without collisions.</h2>
+        <p class="mt-3 text-slate-300">Free, open source, and built for the OpenAI Hackathon — Developer Tools track.</p>
+        <div class="mt-7 flex flex-col sm:flex-row items-center justify-center gap-3">
+          <a href="#install" class="btn-primary">Get started</a>
+          <a href="https://github.com/greninja-op/multi-agentic-workflow" target="_blank" rel="noopener" class="btn-ghost">Star on GitHub</a>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ============ FOOTER ============ -->
+  <footer class="border-t border-white/10 mt-10">
+    <div class="mx-auto max-w-6xl px-5 py-10 flex flex-col sm:flex-row items-center justify-between gap-4 text-sm text-slate-400">
+      <div class="flex items-center gap-2.5 font-semibold text-white">
+        <span class="logo-badge">C</span> CFLS — Collaborative File Lock Sync
+      </div>
+      <div class="flex items-center gap-6">
+        <a class="hover:text-white transition" href="https://github.com/greninja-op/multi-agentic-workflow" target="_blank" rel="noopener">GitHub</a>
+        <a class="hover:text-white transition" href="https://github.com/greninja-op/multi-agentic-workflow/blob/main/docs/features.md" target="_blank" rel="noopener">Docs</a>
+        <a class="hover:text-white transition" href="#top">Back to top</a>
+      </div>
+    </div>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
+  <script src="./main.js" defer></script>
+</body>
+</html>
