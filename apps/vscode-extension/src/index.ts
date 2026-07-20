@@ -1,18 +1,10 @@
 /**
- * @cfls/vscode-extension — the VS Code Editor_Extension entrypoint.
+ * @cfls/vscode-extension - the VS Code Editor_Extension entrypoint.
  *
- * It talks ONLY to the local CoordinationAgent through the Local_API (Req 3.1),
- * emits the eight editor events within 2s (Req 3.2), renders coordination state
- * and the offline/stale indicator (Req 3.3, 3.4, 3.6), enforces cooperative
- * hard-stop for hard-locked paths (Req 3.5, 14), and sends periodic heartbeats to
- * the agent (Req 26.6).
- *
- * All coordination logic lives in the pure modules (`local-api-client`,
- * `editor-host`, `view-model`, `hard-stop`); this file only wires them to the
- * `vscode` runtime via the thin adapter, so the test suite runs without VS Code.
+ * The entrypoint owns the extension lifecycle and coordination refresh loop.
+ * Every VS Code API call lives in `vscode-adapter`; pure presentation rules live
+ * in `presence-ui`, so this module can remain a small orchestration boundary.
  */
-
-import * as vscode from "vscode";
 
 import { ALL_SOFT_CONFIG, type RepositoryRulesConfig } from "@cfls/core-state";
 import type {
@@ -24,19 +16,22 @@ import type {
 import type { SessionId } from "@cfls/protocol";
 
 import { EditorEventForwarder } from "./editor-host";
+import { enforceHardStop } from "./hard-stop";
 import { LocalApiClient } from "./local-api-client";
+import { buildCoordinationStatusDetail } from "./presence-ui";
 import { WebSocketFrameTransport } from "./transport";
 import {
-  buildCoordinationViewModel,
-  type CoordinationViewModel,
-} from "./view-model";
-import { enforceHardStop } from "./hard-stop";
-import {
+  CoordinationUiController,
+  onWillSaveTextDocument,
   readLocalApiSettings,
-  StatusBarRenderer,
-  toRepoRelativePath,
+  registerCommand,
+  showErrorMessage,
+  showInformationMessage,
+  showWarningMessage,
+  type VsCodeExtensionContext,
   VsCodeEditorHost,
 } from "./vscode-adapter";
+import { buildCoordinationViewModel, type CoordinationViewModel } from "./view-model";
 
 /** Package identifier. */
 export const APP_NAME = "@cfls/vscode-extension";
@@ -46,7 +41,7 @@ interface Runtime {
   client: LocalApiClient;
   editorHost: VsCodeEditorHost;
   forwarder: EditorEventForwarder;
-  renderer: StatusBarRenderer;
+  ui: CoordinationUiController;
   refreshTimer: ReturnType<typeof setInterval>;
 }
 
@@ -56,8 +51,8 @@ let currentSession: SessionId | undefined;
 let rules: RepositoryRulesConfig = ALL_SOFT_CONFIG;
 const selfMemberId = "self";
 
-/** Fetch the latest Risk_Map + connection snapshots and re-render (Req 3.3). */
-async function refresh(client: LocalApiClient, renderer: StatusBarRenderer): Promise<void> {
+/** Fetch the latest Risk_Map + connection snapshots and update every UI cue. */
+async function refresh(client: LocalApiClient, ui: CoordinationUiController): Promise<void> {
   if (currentSession === undefined) {
     return;
   }
@@ -72,10 +67,10 @@ async function refresh(client: LocalApiClient, renderer: StatusBarRenderer): Pro
     connection: envelope.connection,
     staleness: envelope.staleness,
   });
-  renderer.render(currentViewModel);
+  ui.render(currentViewModel);
 }
 
-/** Resolve the Repository_Session from the agent (Req 10). */
+/** Resolve the Repository_Session from the local CoordinationAgent. */
 async function resolveSession(client: LocalApiClient): Promise<void> {
   const envelope = (await client.request("get_project_session_status", {})) as McpEnvelope<{
     session: {
@@ -98,8 +93,8 @@ function offlineSnapshot(): { connection: ConnectionSnapshot; staleness: Stalene
   };
 }
 
-/** VS Code entrypoint. */
-export async function activate(context: vscode.ExtensionContext): Promise<void> {
+/** VS Code entrypoint. All runtime VS Code calls are delegated to the adapter. */
+export async function activate(context: VsCodeExtensionContext): Promise<void> {
   const settings = readLocalApiSettings();
   const transport = new WebSocketFrameTransport(settings.url);
   const client = new LocalApiClient({
@@ -109,93 +104,73 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   });
 
   const editorHost = new VsCodeEditorHost();
-  const forwarder = new EditorEventForwarder(editorHost, (event) =>
-    client.sendEditorEvent(event),
-  );
-  const renderer = new StatusBarRenderer();
+  const forwarder = new EditorEventForwarder(editorHost, (event) => client.sendEditorEvent(event));
+  const ui = new CoordinationUiController({ selfMemberId });
+  ui.register(context.subscriptions);
 
-  // Seed an offline view model so the indicator shows immediately (Req 3.6).
+  // Seed an offline model so the status chip and all empty UI states are ready
+  // before the first successful local-Agent request.
   currentViewModel = buildCoordinationViewModel({
     riskMap: { paths: [], plannedFileCreations: [], highestRevision: 0 },
     ...offlineSnapshot(),
   });
-  renderer.render(currentViewModel);
+  ui.render(currentViewModel);
 
   try {
     await client.authenticate();
     await resolveSession(client);
     if (currentSession !== undefined) {
       await client.subscribe({ session: currentSession }, () => {
-        void refresh(client, renderer);
+        void refresh(client, ui);
       });
     }
-    await refresh(client, renderer);
+    await refresh(client, ui);
   } catch {
     // Remain in the offline view until connectivity is restored.
   }
 
   const refreshTimer = setInterval(() => {
-    void refresh(client, renderer);
+    void refresh(client, ui);
   }, 2_000);
   refreshTimer.unref?.();
 
-  // Cooperative hard-stop: reject saves to a hard-locked path held by another
-  // member (Req 3.5, 14). Enforcement is cooperative, never OS-level (Req 14.2).
+  // Cooperative hard-stop: reject a save to a hard-locked path held by another
+  // member. It remains a clear error message, never an OS-level file lock.
   context.subscriptions.push(
-    vscode.workspace.onWillSaveTextDocument((e) => {
+    onWillSaveTextDocument((path) => {
       if (currentViewModel === undefined) {
         return;
       }
-      const path = toRepoRelativePath(e.document.uri);
       const decision = enforceHardStop(currentViewModel, rules, path, selfMemberId);
       if (!decision.allowed) {
-        void vscode.window.showErrorMessage(decision.message);
+        showErrorMessage(decision.message);
       } else if (decision.reason === "offline-manual-coordination") {
-        void vscode.window.showWarningMessage(
-          `${decision.message} (${path})`,
-        );
+        showWarningMessage(`${decision.message} (${path})`);
       }
     }),
-    vscode.commands.registerCommand("cfls.showCoordinationStatus", () => {
+    registerCommand("cfls.showCoordinationStatus", () => {
       const vm = currentViewModel;
       if (vm === undefined || vm.offline) {
-        void vscode.window.showWarningMessage(
-          "CFLS: Offline — the local coordination agent is not reachable. Is the host running?",
+        showWarningMessage(
+          "CFLS: Offline - the local coordination agent is not reachable. Is the host running?",
         );
         return;
       }
       if (vm.paths.length === 0 && vm.plannedFileCreations.length === 0) {
-        void vscode.window.showInformationMessage(
-          "CFLS: Online. No teammates are currently editing tracked files.",
-        );
+        showInformationMessage("CFLS: Online. No teammates are currently editing tracked files.");
         return;
       }
-      const lines: string[] = [];
-      for (const p of vm.paths) {
-        const who: string[] = [
-          ...p.presenceMembers.map((m) => `${m} editing`),
-          ...p.softLockMembers.map((m) => `${m} holds lock`),
-          ...p.coordinationRequiredMembers.map((m) => `${m} coordination-required`),
-          ...p.hardLockMembers.map((m) => `${m} hard-lock`),
-          ...p.intentMembers.map((m) => `${m} plans to change`),
-          ...p.dependencyRiskMembers.map((m) => `${m} (dependency)`),
-        ];
-        lines.push(`• ${p.path} [${p.riskLevel}]${who.length > 0 ? ` — ${who.join(", ")}` : ""}`);
-      }
-      for (const pfc of vm.plannedFileCreations) {
-        lines.push(`• ${pfc.path} — planned new file by ${pfc.memberId}`);
-      }
-      void vscode.window.showInformationMessage(
-        `CFLS coordination (${vm.paths.length} path(s)):`,
-        { modal: true, detail: lines.join("\n") },
-      );
+      showInformationMessage(`CFLS coordination (${vm.paths.length} path(s)):`, {
+        modal: true,
+        detail: buildCoordinationStatusDetail(vm, selfMemberId),
+      });
     }),
-    vscode.commands.registerCommand("cfls.reconnectLocalAgent", () => {
-      void refresh(client, renderer);
+    registerCommand("cfls.reconnectLocalAgent", () => {
+      void refresh(client, ui);
     }),
   );
 
-  runtime = { client, editorHost, forwarder, renderer, refreshTimer };
+  runtime = { client, editorHost, forwarder, ui, refreshTimer };
 }
 
 /** VS Code teardown. */
@@ -206,7 +181,7 @@ export function deactivate(): void {
   clearInterval(runtime.refreshTimer);
   runtime.forwarder.dispose();
   runtime.editorHost.dispose();
-  runtime.renderer.dispose();
+  runtime.ui.dispose();
   runtime.client.close();
   runtime = undefined;
 }

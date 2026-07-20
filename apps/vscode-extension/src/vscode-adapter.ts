@@ -9,6 +9,7 @@
  * vitest without the VS Code runtime.
  */
 
+import type { RiskLevel } from "@cfls/protocol";
 import * as vscode from "vscode";
 
 import {
@@ -22,9 +23,67 @@ import {
   type LocalApiSettings,
   type RawLocalApiConfig,
 } from "./local-api-settings";
+import {
+  buildHoverMarkdown,
+  buildStatusTooltip,
+  decorateForPath,
+  fileBadgeForPath,
+} from "./presence-ui";
 import type { CoordinationViewModel } from "./view-model";
 
 export type { LocalApiSettings } from "./local-api-settings";
+
+/**
+ * The small structural subset of VS Code's subscription collection that the
+ * adapter needs. Keeping this structural lets `index.ts` use the UI controller
+ * without importing the `vscode` module itself.
+ */
+export interface SubscriptionCollection {
+  push(...disposables: Array<{ dispose(): void }>): unknown;
+}
+
+/**
+ * The extension-context shape consumed by the adapter wiring. It deliberately
+ * exposes only subscriptions, so the entrypoint can stay free of a `vscode`
+ * import while still accepting VS Code's real ExtensionContext at runtime.
+ */
+export interface VsCodeExtensionContext {
+  subscriptions: SubscriptionCollection;
+}
+
+/** Options shared by the status bar and richer editor coordination cues. */
+export interface CoordinationUiOptions {
+  /** The local member id; never show this member as someone else coordinating. */
+  selfMemberId?: string;
+}
+
+/** The current extension member id until per-device identities are wired in. */
+const DEFAULT_SELF_MEMBER_ID = "self";
+
+/**
+ * Risk colours deliberately use the same language in the editor and Explorer:
+ * soft is informational blue, coordination-required is amber, and hard is red.
+ */
+const RISK_PRESENTATION: Record<
+  RiskLevel,
+  { editorColor: string; editorBackground: string; themeColor: string }
+> = {
+  soft: {
+    editorColor: "#4d9fff",
+    editorBackground: "rgba(77, 159, 255, 0.08)",
+    themeColor: "charts.blue",
+  },
+  "coordination-required": {
+    editorColor: "#d99a22",
+    editorBackground: "rgba(217, 154, 34, 0.10)",
+    themeColor: "problemsWarningIcon.foreground",
+  },
+  hard: {
+    editorColor: "#e05252",
+    editorBackground: "rgba(224, 82, 82, 0.10)",
+    themeColor: "problemsErrorIcon.foreground",
+  },
+};
 
 /**
  * Read the extension's Local_API settings from VS Code configuration, falling
@@ -44,6 +103,43 @@ export function readLocalApiSettings(): LocalApiSettings {
 /** Convert an absolute editor URI to a repository-relative path (Req 10.3). */
 export function toRepoRelativePath(uri: vscode.Uri): string {
   return vscode.workspace.asRelativePath(uri, false);
+}
+
+/** The small, VS Code-independent shape used by extension notification calls. */
+export interface NotificationOptions {
+  modal?: boolean;
+  detail?: string;
+}
+
+/** Register a save observer and expose only its repository-relative path. */
+export function onWillSaveTextDocument(listener: (path: string) => void): vscode.Disposable {
+  return vscode.workspace.onWillSaveTextDocument((event) => {
+    listener(toRepoRelativePath(event.document.uri));
+  });
+}
+
+/** Register a no-argument command without leaking the VS Code API to callers. */
+export function registerCommand(command: string, callback: () => void): vscode.Disposable {
+  return vscode.commands.registerCommand(command, callback);
+}
+
+/** Surface a deliberate blocking coordination error through VS Code. */
+export function showErrorMessage(message: string): void {
+  void vscode.window.showErrorMessage(message);
+}
+
+/** Surface a non-blocking coordination warning through VS Code. */
+export function showWarningMessage(message: string): void {
+  void vscode.window.showWarningMessage(message);
+}
+
+/** Surface an explicit, user-requested coordination detail message. */
+export function showInformationMessage(message: string, options?: NotificationOptions): void {
+  if (options === undefined) {
+    void vscode.window.showInformationMessage(message);
+    return;
+  }
+  void vscode.window.showInformationMessage(message, options);
 }
 
 /**
@@ -114,35 +210,295 @@ export class VsCodeEditorHost implements EditorHost {
   }
 }
 
-/** Renders the coordination view model's offline/stale status into a status bar. */
+/**
+ * Renders the coordination view model into the small, always-visible status
+ * chip. The renderer remains independently usable for backwards compatibility,
+ * while {@link CoordinationUiController} owns it in the richer UI path.
+ */
 export class StatusBarRenderer {
   private readonly item: vscode.StatusBarItem;
+  private readonly selfMemberId: string;
 
-  constructor() {
-    this.item = vscode.window.createStatusBarItem(
-      vscode.StatusBarAlignment.Left,
-      100,
-    );
+  constructor(options: CoordinationUiOptions = {}) {
+    this.selfMemberId = options.selfMemberId ?? DEFAULT_SELF_MEMBER_ID;
+    this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
     this.item.command = "cfls.showCoordinationStatus";
     this.item.show();
   }
 
   render(vm: CoordinationViewModel): void {
+    const coordinatedPaths = vm.paths.filter(
+      (path) => decorateForPath(vm, path.path, this.selfMemberId) !== null,
+    );
+    const hasActiveCoordination = !vm.offline && !vm.stale && coordinatedPaths.length > 0;
     const icon = vm.offline ? "$(cloud-offline)" : vm.stale ? "$(sync)" : "$(check)";
-    // When teammates are active, surface the count right in the status bar so
-    // coordination is visible at a glance; otherwise show the plain state.
-    const summary =
-      !vm.offline && !vm.stale && vm.paths.length > 0
-        ? `${vm.paths.length} file(s) in play`
-        : vm.statusText;
-    this.item.text = `${icon} CFLS: ${summary}`;
-    this.item.tooltip =
-      vm.paths.length === 0 && vm.plannedFileCreations.length === 0
-        ? "No teammates editing tracked files. Run 'CFLS: Show Coordination Status' for details."
-        : `${vm.paths.length} coordinated path(s), ${vm.plannedFileCreations.length} planned creation(s). Run 'CFLS: Show Coordination Status' for details.`;
+    const summary = hasActiveCoordination
+      ? `${coordinatedPaths.length} file(s) in play`
+      : vm.statusText;
+    this.item.text = `${hasActiveCoordination ? "$(warning)" : icon} CFLS: ${summary}`;
+    this.item.backgroundColor = hasActiveCoordination
+      ? new vscode.ThemeColor("statusBarItem.warningBackground")
+      : undefined;
+
+    const tooltip = new vscode.MarkdownString(buildStatusTooltip(vm, this.selfMemberId));
+    tooltip.isTrusted = false;
+    this.item.tooltip = tooltip;
   }
 
   dispose(): void {
     this.item.dispose();
+  }
+}
+
+/**
+ * Explorer decorations are intentionally kept adapter-only: the pure UI layer
+ * decides whether a badge exists, while this provider converts it to VS Code's
+ * `FileDecoration` API and re-emits changes on every view-model refresh.
+ */
+class CoordinationFileDecorationProvider
+  implements vscode.FileDecorationProvider, vscode.Disposable
+{
+  private readonly emitter = new vscode.EventEmitter<vscode.Uri | vscode.Uri[] | undefined>();
+  private viewModel: CoordinationViewModel | undefined;
+
+  readonly onDidChangeFileDecorations = this.emitter.event;
+
+  constructor(private readonly selfMemberId: string) {}
+
+  setViewModel(viewModel: CoordinationViewModel | undefined): void {
+    this.viewModel = viewModel;
+    // An undefined URI asks VS Code to re-query every visible resource. This is
+    // important because a refresh can remove a badge as well as add one.
+    this.emitter.fire(undefined);
+  }
+
+  provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
+    if (uri.scheme !== "file" || this.viewModel === undefined) {
+      return undefined;
+    }
+    const cue = fileBadgeForPath(this.viewModel, toRepoRelativePath(uri), this.selfMemberId);
+    if (cue === null) {
+      return undefined;
+    }
+    return new vscode.FileDecoration(
+      cue.badge,
+      cue.tooltip,
+      new vscode.ThemeColor(RISK_PRESENTATION[cue.riskLevel].themeColor),
+    );
+  }
+
+  dispose(): void {
+    this.emitter.dispose();
+  }
+}
+
+/**
+ * Adapter-owned in-editor coordination UI. It intentionally takes only pure
+ * view-model data from the extension entrypoint; all hover, decoration, Explorer
+ * and status-bar calls to the VS Code runtime stay inside this module.
+ *
+ * Call {@link register} once from activation, then {@link render} after each
+ * view-model refresh. The controller owns all of its registration disposables.
+ */
+export class CoordinationUiController implements vscode.Disposable {
+  readonly statusBar: StatusBarRenderer;
+
+  private readonly selfMemberId: string;
+  private readonly decorationTypes: Record<RiskLevel, vscode.TextEditorDecorationType>;
+  private readonly fileDecorationProvider: CoordinationFileDecorationProvider;
+  private readonly disposables: vscode.Disposable[] = [];
+  private viewModel: CoordinationViewModel | undefined;
+  private decoratedEditor: vscode.TextEditor | undefined;
+  private registered = false;
+  private disposed = false;
+  private addedToSubscriptions = false;
+
+  constructor(options: CoordinationUiOptions = {}) {
+    this.selfMemberId = options.selfMemberId ?? DEFAULT_SELF_MEMBER_ID;
+    this.statusBar = new StatusBarRenderer({ selfMemberId: this.selfMemberId });
+    this.fileDecorationProvider = new CoordinationFileDecorationProvider(this.selfMemberId);
+    this.decorationTypes = {
+      soft: this.createDecorationType("soft"),
+      "coordination-required": this.createDecorationType("coordination-required"),
+      hard: this.createDecorationType("hard"),
+    };
+  }
+
+  /**
+   * Register the hover, active-editor and Explorer integrations. Passing
+   * `context.subscriptions` is optional but recommended; it needs no `vscode`
+   * import at the call site because {@link SubscriptionCollection} is structural.
+   */
+  register(subscriptions?: SubscriptionCollection): void {
+    if (this.disposed) {
+      return;
+    }
+    if (!this.registered) {
+      this.registered = true;
+      this.disposables.push(
+        vscode.languages.registerHoverProvider(
+          { scheme: "file" },
+          {
+            provideHover: (document) => this.provideHover(document),
+          },
+        ),
+        vscode.window.registerFileDecorationProvider(this.fileDecorationProvider),
+        vscode.window.onDidChangeActiveTextEditor(() => {
+          this.applyActiveEditorDecoration();
+        }),
+      );
+    }
+    if (subscriptions !== undefined && !this.addedToSubscriptions) {
+      subscriptions.push(this);
+      this.addedToSubscriptions = true;
+    }
+  }
+
+  /**
+   * Render a fresh model into every rich cue. This is safe to call on the
+   * extension's two-second poll as well as on subscription updates.
+   */
+  render(viewModel: CoordinationViewModel): void {
+    if (this.disposed) {
+      return;
+    }
+    this.viewModel = viewModel;
+    this.statusBar.render(viewModel);
+    this.fileDecorationProvider.setViewModel(viewModel);
+    this.applyActiveEditorDecoration();
+  }
+
+  /** Alias for integrations that describe a refresh as a view-model update. */
+  update(viewModel: CoordinationViewModel): void {
+    this.render(viewModel);
+  }
+
+  private createDecorationType(riskLevel: RiskLevel): vscode.TextEditorDecorationType {
+    const presentation = RISK_PRESENTATION[riskLevel];
+    return vscode.window.createTextEditorDecorationType({
+      isWholeLine: true,
+      backgroundColor: presentation.editorBackground,
+      overviewRulerColor: presentation.editorColor,
+      overviewRulerLane: vscode.OverviewRulerLane.Right,
+      after: {
+        color: presentation.editorColor,
+        fontStyle: "italic",
+        margin: "0 0 0 1.5em",
+      },
+    });
+  }
+
+  private provideHover(document: vscode.TextDocument): vscode.Hover | undefined {
+    if (this.viewModel === undefined) {
+      return undefined;
+    }
+    const markdown = buildHoverMarkdown(
+      this.viewModel,
+      toRepoRelativePath(document.uri),
+      this.selfMemberId,
+    );
+    if (markdown === null) {
+      return undefined;
+    }
+    const contents = new vscode.MarkdownString(markdown);
+    contents.isTrusted = false;
+    return new vscode.Hover(contents);
+  }
+
+  private applyActiveEditorDecoration(): void {
+    const editor = vscode.window.activeTextEditor;
+    if (this.decoratedEditor !== undefined && this.decoratedEditor !== editor) {
+      this.clearEditorDecoration(this.decoratedEditor);
+      this.decoratedEditor = undefined;
+    }
+    if (editor === undefined || editor.document.uri.scheme !== "file") {
+      return;
+    }
+
+    this.clearEditorDecoration(editor);
+    if (this.viewModel === undefined) {
+      return;
+    }
+    // A decoration must use a non-empty range. There is no useful first-line
+    // annotation for a completely empty document, so leave it clear.
+    if (editor.document.getText().length === 0) {
+      return;
+    }
+
+    const cue = decorateForPath(
+      this.viewModel,
+      toRepoRelativePath(editor.document.uri),
+      this.selfMemberId,
+    );
+    if (cue === null) {
+      return;
+    }
+
+    const firstLine = editor.document.lineAt(0);
+    const range = firstLine.range.isEmpty ? firstLine.rangeIncludingLineBreak : firstLine.range;
+    if (range.isEmpty) {
+      return;
+    }
+    const presentation = RISK_PRESENTATION[cue.riskLevel];
+    const decoration: vscode.DecorationOptions = {
+      range,
+      renderOptions: {
+        after: {
+          contentText: `  ${cue.message}`,
+          color: presentation.editorColor,
+          margin: "0 0 0 1.5em",
+        },
+      },
+    };
+    const hover = this.createHoverMarkdown(editor.document.uri);
+    if (hover !== undefined) {
+      decoration.hoverMessage = hover;
+    }
+    editor.setDecorations(this.decorationTypes[cue.riskLevel], [decoration]);
+    this.decoratedEditor = editor;
+  }
+
+  private createHoverMarkdown(uri: vscode.Uri): vscode.MarkdownString | undefined {
+    if (this.viewModel === undefined) {
+      return undefined;
+    }
+    const markdown = buildHoverMarkdown(this.viewModel, toRepoRelativePath(uri), this.selfMemberId);
+    if (markdown === null) {
+      return undefined;
+    }
+    const contents = new vscode.MarkdownString(markdown);
+    contents.isTrusted = false;
+    return contents;
+  }
+
+  dispose(): void {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
+    this.clearActiveEditorDecoration();
+    for (const disposable of this.disposables) {
+      disposable.dispose();
+    }
+    this.disposables.length = 0;
+    this.fileDecorationProvider.dispose();
+    for (const decorationType of Object.values(this.decorationTypes)) {
+      decorationType.dispose();
+    }
+    this.statusBar.dispose();
+  }
+
+  private clearActiveEditorDecoration(): void {
+    if (this.decoratedEditor === undefined) {
+      return;
+    }
+    this.clearEditorDecoration(this.decoratedEditor);
+    this.decoratedEditor = undefined;
+  }
+
+  private clearEditorDecoration(editor: vscode.TextEditor): void {
+    for (const decorationType of Object.values(this.decorationTypes)) {
+      editor.setDecorations(decorationType, []);
+    }
   }
 }
