@@ -2363,6 +2363,45 @@ export function renderDashboardHtml(): string {
       .session-footer { min-height: 28px; padding: 6px 11px; font-size: .56rem; }
       .session-footer i { width: 5px; height: 5px; }
 
+      /* The dashboard opens directly on the live workspace board. The brand
+         header, overview strip, and all marketing-style top content belong to
+         the landing page, not this operational view. */
+      .site-header,
+      .dashboard-control,
+      .metric-grid { display: none; }
+      .dashboard-main {
+        min-height: 100vh;
+        padding: 0;
+      }
+      .workspace-board {
+        padding: clamp(58px, 7vw, 94px) 0 clamp(58px, 7vw, 94px);
+      }
+      .workspace-board .shell { width: min(1180px, calc(100% - 48px)); }
+      .workspace-stage-heading {
+        display: grid;
+        grid-template-columns: minmax(0, 1.05fr) minmax(245px, .65fr);
+        gap: clamp(24px, 6vw, 90px);
+        align-items: end;
+      }
+      .workspace-stage-heading .eyebrow { margin-bottom: 13px; }
+      .workspace-stage-heading h2 {
+        margin: 0;
+        color: var(--text);
+        font-size: clamp(2rem, 4vw, 3.55rem);
+        font-weight: 800;
+        letter-spacing: -.06em;
+        line-height: 1.05;
+      }
+      .workspace-stage-heading > p {
+        margin: 0;
+        padding-bottom: 5px;
+        color: var(--muted);
+        font-size: 1rem;
+        line-height: 1.75;
+      }
+      .workspace-stage-heading > p strong { color: var(--signal); font-weight: 800; }
+      .workspace-board .sessions { gap: 28px; margin-top: 58px; }
+
       @media (max-width: 900px) {
         .session-panels { grid-template-columns: repeat(2, minmax(0, 1fr)); height: auto; }
         .data-panel { min-height: 185px; }
@@ -2391,6 +2430,11 @@ export function renderDashboardHtml(): string {
         .data-panel { min-height: 0; padding: 13px 12px; }
         .panel-content { max-height: 205px; }
         .session-footer { align-items: flex-start; flex-direction: column; padding: 9px 12px; }
+        .dashboard-main { padding: 0; }
+        .workspace-board { padding: 54px 0 64px; }
+        .workspace-board .shell { width: min(100% - 30px, 1180px); }
+        .workspace-stage-heading { grid-template-columns: 1fr; gap: 20px; }
+        .workspace-board .sessions { gap: 20px; margin-top: 42px; }
       }
       @media (max-width: 430px) {
         .metric-grid { grid-template-columns: 1fr; }
@@ -2466,6 +2510,13 @@ export function renderDashboardHtml(): string {
 
       <section class="workspace-board" aria-label="Active workspace">
         <div class="shell">
+          <header class="workspace-stage-heading">
+            <div>
+              <p class="eyebrow"><span class="eyebrow-pulse" aria-hidden="true"></span>Team workspaces</p>
+              <h2>The live coordination<br>signal, in one place.</h2>
+            </div>
+            <p><strong>Read-only</strong> coordination metadata only. The Host receives work signals, never copies of source files.</p>
+          </header>
           <section id="sessions" class="sessions" aria-live="polite" aria-busy="true">
           <article class="loading-state">
             <span class="loading-orbit" aria-hidden="true"></span>
@@ -2749,7 +2800,7 @@ export function renderDashboardHtml(): string {
               '</span><div><h2>No active sessions</h2><p>When a team member connects to a repository session, its coordination metadata will appear here.</p></div></article>';
           } else {
             renderSessionSwitcher(sessions, selected);
-            sessionsElement.innerHTML = renderCompactSession(selected);
+            sessionsElement.innerHTML = renderSession(selected);
           }
           sessionsElement.setAttribute("aria-busy", "false");
           lastState = state;

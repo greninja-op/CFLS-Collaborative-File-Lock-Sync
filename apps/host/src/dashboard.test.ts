@@ -4,11 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import type { SessionId, SessionStateSnapshot } from "@cfls/protocol";
 
-import {
-  buildDashboardState,
-  escapeDashboardHtml,
-  renderDashboardHtml,
-} from "./dashboard";
+import { buildDashboardState, escapeDashboardHtml, renderDashboardHtml } from "./dashboard";
 
 function session(overrides: Partial<SessionId> = {}): SessionId {
   return {
@@ -201,9 +197,7 @@ describe("buildDashboardState", () => {
   it("escapes dynamic paths before the client inserts dashboard state into HTML", () => {
     const path = "src/a-<script>alert(1)</script>.ts";
 
-    expect(escapeDashboardHtml(path)).toBe(
-      "src/a-&lt;script&gt;alert(1)&lt;/script&gt;.ts",
-    );
+    expect(escapeDashboardHtml(path)).toBe("src/a-&lt;script&gt;alert(1)&lt;/script&gt;.ts");
   });
 });
 
@@ -216,8 +210,8 @@ describe("renderDashboardHtml", () => {
     expect(html).toContain("No active sessions");
     expect(html).toContain("Reconnecting...");
     expect(html).toContain("function escapeHtml");
-    expect(html).toContain('class="dashboard-control shell"');
-    expect(html).toContain("Connected devices");
+    expect(html).toContain("The live coordination");
+    expect(html).toContain('class="live-demo-card"');
     expect(html).not.toContain("See the work already in motion");
   });
 });
