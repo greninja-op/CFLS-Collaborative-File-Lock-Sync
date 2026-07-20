@@ -216,5 +216,8 @@ describe("renderDashboardHtml", () => {
     expect(html).toContain("No active sessions");
     expect(html).toContain("Reconnecting...");
     expect(html).toContain("function escapeHtml");
+    expect(html).toContain('class="dashboard-control shell"');
+    expect(html).toContain("Connected devices");
+    expect(html).not.toContain("See the work already in motion");
   });
 });

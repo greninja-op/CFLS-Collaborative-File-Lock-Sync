@@ -2167,13 +2167,213 @@ export function renderDashboardHtml(): string {
       .dashboard-message .empty-orbit,
       .dashboard-message .loading-orbit { color: var(--cyan); }
 
+      /* Dense desktop mode: this is a monitoring surface, not a landing-page
+         hero. The selected workspace stays visible above the fold. */
+      .visually-hidden {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+      .nav-shell { min-height: 56px; }
+      .dashboard-main {
+        min-height: calc(100vh - 56px);
+        padding: 12px 0 20px;
+      }
+      .site-header .shell,
+      .dashboard-main .shell { width: min(1720px, calc(100% - 48px)); }
+      .dashboard-control {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 16px;
+        min-height: 34px;
+        margin-bottom: 8px;
+      }
+      .control-context {
+        display: flex;
+        min-width: 0;
+        align-items: center;
+        gap: 9px;
+      }
+      .control-live {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        color: var(--signal);
+        font-family: var(--mono);
+        font-size: .6rem;
+        font-weight: 700;
+        letter-spacing: .08em;
+        text-transform: uppercase;
+      }
+      .control-live i {
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: currentColor;
+        box-shadow: 0 0 9px currentColor;
+      }
+      .control-divider { width: 1px; height: 13px; background: var(--line); }
+      .control-hint {
+        overflow: hidden;
+        color: var(--dim);
+        font-size: .68rem;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .dashboard-host-status {
+        min-width: 0;
+        padding: 5px 8px;
+        border-radius: 8px;
+        background: rgba(7, 14, 16, .42);
+        box-shadow: none;
+      }
+      .host-status-icon {
+        width: 23px;
+        height: 23px;
+        border-radius: 6px;
+      }
+      .host-status-icon svg { width: 14px; height: 14px; }
+      .dashboard-host-status strong { font-size: .64rem; }
+      .dashboard-host-status #last-updated { max-width: 260px; font-size: .54rem; }
+
+      .metric-grid {
+        gap: 8px;
+        margin: 0 auto 9px;
+      }
+      .summary-card {
+        gap: 9px;
+        min-height: 59px;
+        padding: 8px 10px;
+        border-radius: 9px;
+        background: linear-gradient(145deg, rgba(20, 34, 37, .7), rgba(11, 20, 23, .78));
+        box-shadow: none;
+      }
+      .summary-card-index {
+        width: 24px;
+        height: 24px;
+        border-radius: 6px;
+        font-size: .56rem;
+      }
+      .summary-card b { font-size: .5rem; }
+      .summary-card strong { font-size: 1rem; }
+      .summary-card small { font-size: .6rem; }
+
+      .workspace-board-head {
+        min-height: 28px;
+        margin: 0 0 6px;
+      }
+      .workspace-label {
+        margin: 0;
+        color: var(--dim);
+        font-family: var(--mono);
+        font-size: .56rem;
+        font-weight: 700;
+        letter-spacing: .1em;
+        text-transform: uppercase;
+      }
+      .session-switcher { justify-content: center; gap: 5px; }
+      .session-count,
+      .session-tab { padding: 4px 7px; border-radius: 6px; }
+      .session-tab { max-width: 185px; }
+      .session-tab span { font-size: .55rem; }
+      .session-tab small { font-size: .53rem; }
+
+      .session-card { border-radius: 11px; box-shadow: var(--shadow-sm); }
+      .session-card-header {
+        gap: 14px;
+        min-height: 56px;
+        padding: 8px 12px;
+      }
+      .session-repo { align-items: center; gap: 8px; }
+      .session-repo-icon {
+        width: 26px;
+        height: 26px;
+        border-radius: 7px;
+      }
+      .session-repo-icon svg { width: 15px; height: 15px; }
+      .session-kicker { margin: 0 0 1px; font-size: .5rem; }
+      .session-repo h3 { font-size: .84rem; }
+      .session-tags { gap: 4px; margin: 4px 0 0; }
+      .session-tags span { padding: 2px 5px; font-size: .53rem; }
+      .session-tags b { font-size: .48rem; }
+      .session-health { min-width: 94px; gap: 3px; font-size: .5rem; }
+      .session-health strong { font-size: .68rem; }
+      .session-live { font-size: .61rem; }
+      .session-live::before { width: 5px; height: 5px; }
+
+      .session-snapshot > div { padding: 6px 12px; }
+      .session-snapshot span,
+      .session-devices p span { font-size: .5rem; }
+      .session-snapshot strong { font-size: .8rem; }
+      .session-snapshot small { font-size: .58rem; }
+      .session-devices {
+        min-height: 41px;
+        gap: 10px;
+        padding: 6px 12px;
+      }
+      .session-devices p { min-width: 114px; }
+      .session-devices p strong { font-size: .61rem; }
+      .device-list { gap: 4px; }
+      .device-chip { max-width: 160px; padding: 3px 6px; font-size: .57rem; }
+
+      .session-panels {
+        grid-template-columns: minmax(290px, 1.34fr) minmax(260px, 1.12fr) minmax(235px, .98fr) minmax(210px, .82fr);
+        height: min(42dvh, 400px);
+      }
+      .data-panel {
+        display: flex;
+        min-height: 0;
+        flex-direction: column;
+        padding: 10px 11px;
+      }
+      .data-panel--devices { background: linear-gradient(145deg, rgba(88, 213, 208, .045), rgba(10, 19, 22, .96) 52%); }
+      .data-panel--devices .data-panel-head p { color: var(--cyan); }
+      .data-panel--devices .data-panel-head b { color: var(--cyan); border-color: rgba(88, 213, 208, .2); background: rgba(88, 213, 208, .06); }
+      .data-panel-head { padding-bottom: 7px; }
+      .data-panel-head p { font-size: .56rem; }
+      .data-panel-head span { margin-top: 1px; font-size: .58rem; }
+      .data-panel-head b {
+        min-width: 20px;
+        height: 20px;
+        border-radius: 5px;
+        font-size: .56rem;
+      }
+      .panel-content { min-height: 0; flex: 1; max-height: none; padding-top: 7px; }
+      .data-panel--devices .device-list { display: grid; gap: 5px; }
+      .data-panel--devices .device-chip { width: 100%; max-width: none; }
+      .lock-row { gap: 7px; padding: 6px 0; }
+      .lock-rail { min-height: 24px; }
+      .lock-main code,
+      .activity-path { font-size: .61rem; }
+      .lock-holder,
+      .activity-verb { font-size: .57rem; }
+      .mode { padding: 2px 4px; font-size: .48rem; }
+      .lock-revision { font-size: .48rem; }
+      .activity-row { gap: 7px; padding: 6px 0; }
+      .member-avatar { width: 20px; height: 20px; border-radius: 5px; font-size: .55rem; }
+      .activity-member { font-size: .62rem; }
+      .empty-copy { font-size: .61rem; line-height: 1.45; }
+      .session-footer { min-height: 28px; padding: 6px 11px; font-size: .56rem; }
+      .session-footer i { width: 5px; height: 5px; }
+
       @media (max-width: 900px) {
-        .session-panels { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-        .data-panel--locks { grid-column: 1 / -1; }
+        .session-panels { grid-template-columns: repeat(2, minmax(0, 1fr)); height: auto; }
+        .data-panel { min-height: 185px; }
+        .data-panel--locks { grid-column: auto; }
       }
       @media (max-width: 700px) {
         .dashboard-main { padding-top: 18px; }
         .dashboard-main .shell { width: min(100% - 30px, 1360px); }
+        .dashboard-control { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+        .control-hint { display: none; }
+        .session-switcher { grid-column: 1 / -1; justify-content: flex-start; width: 100%; }
         .dashboard-toolbar { align-items: flex-start; min-height: 0; }
         .dashboard-host-status { display: none; }
         .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2230,12 +2430,14 @@ export function renderDashboardHtml(): string {
       </div>
     </header>
     <main id="main-content" class="dashboard-main">
-      <section class="dashboard-toolbar shell" aria-labelledby="dashboard-title">
-        <div>
-          <p class="dashboard-kicker"><span aria-hidden="true"></span> Live coordination</p>
-          <h1 id="dashboard-title">Coordination dashboard</h1>
-          <p class="dashboard-subtitle">Read-only work signals. Source code stays in Git.</p>
+      <h1 class="visually-hidden">CFLS coordination dashboard</h1>
+      <section class="dashboard-control shell" aria-label="Live coordination status">
+        <div class="control-context">
+          <span class="control-live"><i aria-hidden="true"></i>Live coordination</span>
+          <span class="control-divider" aria-hidden="true"></span>
+          <span class="control-hint">Metadata only · source stays in Git</span>
         </div>
+        <div id="session-switcher" class="session-switcher" aria-label="Choose a workspace"></div>
         <aside class="dashboard-host-status" aria-label="Host update state">
           <span class="host-status-icon" aria-hidden="true">
             <svg viewBox="0 0 24 24" fill="none">
@@ -2262,16 +2464,9 @@ export function renderDashboardHtml(): string {
         </article>
       </section>
 
-      <section class="workspace-board" aria-labelledby="workspaces-heading">
+      <section class="workspace-board" aria-label="Active workspace">
         <div class="shell">
-          <div class="workspace-board-head">
-            <div>
-              <p>TEAM WORKSPACES</p>
-              <h2 id="workspaces-heading">Active work</h2>
-            </div>
-            <div id="session-switcher" class="session-switcher" aria-label="Choose a workspace"></div>
-          </div>
-        <section id="sessions" class="sessions" aria-live="polite" aria-busy="true">
+          <section id="sessions" class="sessions" aria-live="polite" aria-busy="true">
           <article class="loading-state">
             <span class="loading-orbit" aria-hidden="true"></span>
             <div><h2>Contacting the Host</h2><p>Collecting the team’s latest coordination signals.</p></div>
@@ -2517,21 +2712,17 @@ export function renderDashboardHtml(): string {
           const teamId = escapeHtml(displayValue(session && session.teamId));
           const branch = escapeHtml(displayValue(session && session.branch));
           const revision = escapeHtml(displayValue(session && session.highestRevision));
-          const deviceLabel = devices.length === 1 ? 'device connected' : 'devices connected';
+          const deviceContent = '<div class="device-list">' + renderDevices(devices) + '</div>';
 
           return '<article class="session-card"><header class="session-card-header"><div class="session-repo"><span class="session-repo-icon" aria-hidden="true">' +
             '<svg viewBox="0 0 24 24" fill="none"><path d="M4 7.5 12 3l8 4.5v9L12 21l-8-4.5v-9Z" stroke="currentColor" stroke-width="1.65" stroke-linejoin="round"/><path d="m4.4 7.7 7.6 4.3 7.6-4.3M12 12v9" stroke="currentColor" stroke-width="1.65"/></svg></span><div><p class="session-kicker">Repository session</p><h3><code>' +
             repoId + '</code></h3><div class="session-tags"><span><b>TEAM</b>' + teamId + '</span><span><b>BRANCH</b>' +
-            branch + '</span></div></div></div><div class="session-health"><span class="session-live">Live session</span><span>HOST REVISION<strong>r' +
-            revision + '</strong></span></div></header><div class="session-snapshot"><div><span>FILES IN PLAY</span><strong>' +
-            locks.length + '</strong><small>' + (locks.length === 1 ? 'active lock' : 'active locks') + '</small></div><div><span>EDITING NOW</span><strong>' +
-            presence.length + '</strong><small>' + (presence.length === 1 ? 'teammate' : 'teammates') + '</small></div><div><span>EXPECTED NEXT</span><strong>' +
-            creations.length + '</strong><small>' + (creations.length === 1 ? 'planned file' : 'planned files') + '</small></div></div><div class="session-devices"><p><span>CONNECTED DEVICES</span><strong>' +
-            devices.length + ' ' + deviceLabel + '</strong></p><div class="device-list">' + renderDevices(devices) +
-            '</div></div><div class="session-panels">' +
+            branch + '</span><span><b>DEVICES</b>' + devices.length + '</span></div></div></div><div class="session-health"><span class="session-live">Live session</span><span>HOST REVISION<strong>r' +
+            revision + '</strong></span></div></header><div class="session-panels">' +
             panelMarkup('locks', 'Files in play', locks.length, 'Active locks and risk levels', renderLocks(locks)) +
             panelMarkup('editing', 'Editing now', presence.length, 'Live teammate presence', renderActivity(presence, 'No one is editing in this session yet.', 'editing')) +
             panelMarkup('planned', 'Expected next', creations.length, 'Planned file creation', renderActivity(creations, 'No planned file creations in this session.', 'planning')) +
+            panelMarkup('devices', 'Connected devices', devices.length, 'Local agents online', deviceContent) +
             '</div><footer class="session-footer"><span><i aria-hidden="true"></i>Source stays in Git. This Host only receives coordination metadata.</span><code>' +
             teamId + ' / ' + branch + '</code></footer></article>';
         }
