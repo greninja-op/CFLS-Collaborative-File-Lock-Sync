@@ -394,6 +394,7 @@ export class CoreStateAgentPort implements AgentPort {
           manualConfig: this.manualConfig,
         },
         authorized: this.authorized,
+        memberId: this.self.memberId,
       },
     };
   }
@@ -501,7 +502,10 @@ export class CoreStateAgentPort implements AgentPort {
     if (req.scopeKind === "glob" && isMalformedGlob(req.scope)) {
       return {
         ok: false,
-        error: { code: "FORMAT_ERROR", message: `Malformed glob: '${req.scope}'.` },
+        error: {
+          code: "FORMAT_ERROR",
+          message: `Malformed glob: '${req.scope}'.`,
+        },
       };
     }
     const eventRevision = this.revisions.next(this.session);

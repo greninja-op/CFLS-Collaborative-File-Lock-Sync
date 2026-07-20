@@ -88,7 +88,11 @@ describe(propertyTag(4, "Replay rejection leaves state unchanged"), () => {
 
           // Build up the accepted history; every event here must be accepted.
           for (const event of history) {
-            const decision = guard.acceptReplay(deviceId, event.counter, event.nonce);
+            const decision = guard.acceptReplay(
+              deviceId,
+              event.counter,
+              event.nonce,
+            );
             expect(decision.accepted).toBe(true);
           }
 
@@ -113,7 +117,11 @@ describe(propertyTag(4, "Replay rejection leaves state unchanged"), () => {
             replay = { counter: highest + 1 + (pick % 5), nonce: reusedNonce };
           }
 
-          const decision = guard.acceptReplay(deviceId, replay.counter, replay.nonce);
+          const decision = guard.acceptReplay(
+            deviceId,
+            replay.counter,
+            replay.nonce,
+          );
 
           // (a) The replayed event is rejected.
           expect(decision.accepted).toBe(false);

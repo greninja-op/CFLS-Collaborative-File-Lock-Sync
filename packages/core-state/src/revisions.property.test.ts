@@ -38,10 +38,9 @@ const baseSessionArb = fc.record({
     "example.com/x/y",
   ),
   teamId: fc.constantFrom("team-1", "team-2", "team-3"),
-  baseRevision: fc.option(
-    fc.hexaString({ minLength: 4, maxLength: 8 }),
-    { nil: null },
-  ),
+  baseRevision: fc.option(fc.hexaString({ minLength: 4, maxLength: 8 }), {
+    nil: null,
+  }),
 });
 
 /**
@@ -49,18 +48,16 @@ const baseSessionArb = fc.record({
  * labels) together with an interleaved sequence of "accepted events", each
  * naming the index of the session it targets.
  */
-const scenarioArb = fc
-  .integer({ min: 1, max: 4 })
-  .chain((numSessions) =>
-    fc.record({
-      base: baseSessionArb,
-      numSessions: fc.constant(numSessions),
-      events: fc.array(fc.integer({ min: 0, max: numSessions - 1 }), {
-        minLength: 0,
-        maxLength: 200,
-      }),
+const scenarioArb = fc.integer({ min: 1, max: 4 }).chain((numSessions) =>
+  fc.record({
+    base: baseSessionArb,
+    numSessions: fc.constant(numSessions),
+    events: fc.array(fc.integer({ min: 0, max: numSessions - 1 }), {
+      minLength: 0,
+      maxLength: 200,
     }),
-  );
+  }),
+);
 
 describe(propertyTag(1, "Event_Revision monotonicity and total order"), () => {
   it("assigns strictly increasing, unique, per-session-independent revisions that survive restart", () => {
@@ -105,7 +102,8 @@ describe(propertyTag(1, "Event_Revision monotonicity and total order"), () => {
           expect(new Set(assigned).size).toBe(assigned.length);
 
           // `highest` matches the last assigned revision (0 when none).
-          const highest = assigned.length === 0 ? 0 : assigned[assigned.length - 1]!;
+          const highest =
+            assigned.length === 0 ? 0 : assigned[assigned.length - 1]!;
           expect(counter.highest(sessions[i]!)).toBe(highest);
 
           // Simulated restart: a fresh counter resumed from the max persisted

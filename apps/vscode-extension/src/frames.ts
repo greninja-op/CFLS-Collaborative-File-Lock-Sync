@@ -71,11 +71,7 @@ export interface ErrorFrame {
 
 /** Any agent → client frame. */
 export type InboundFrame =
-  | AuthOkFrame
-  | AuthErrorFrame
-  | ResponseFrame
-  | UpdateFrame
-  | ErrorFrame;
+  AuthOkFrame | AuthErrorFrame | ResponseFrame | UpdateFrame | ErrorFrame;
 
 /** The Local_API method used to carry a periodic extension heartbeat (Req 26.6). */
 export const HEARTBEAT_METHOD = "heartbeat";

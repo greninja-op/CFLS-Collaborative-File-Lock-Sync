@@ -18,7 +18,11 @@
  * the path's mode from the rules even when no lock is currently held.
  */
 
-import { normalizePath, resolveMode, type RepositoryRulesConfig } from "@cfls/core-state";
+import {
+  normalizePath,
+  resolveMode,
+  type RepositoryRulesConfig,
+} from "@cfls/core-state";
 import type { RiskLevel } from "@cfls/protocol";
 
 import { findPathView, type CoordinationViewModel } from "./view-model";

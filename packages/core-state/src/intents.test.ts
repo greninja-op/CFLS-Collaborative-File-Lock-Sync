@@ -31,7 +31,9 @@ const otherSession: SessionId = { ...session, teamId: "team-2" };
 const alice: MemberRef = { memberId: "alice", deviceId: "alice-dev-1" };
 const bob: MemberRef = { memberId: "bob", deviceId: "bob-dev-1" };
 
-function decl(overrides: Partial<DeclareIntentRequest> = {}): DeclareIntentRequest {
+function decl(
+  overrides: Partial<DeclareIntentRequest> = {},
+): DeclareIntentRequest {
   return {
     session,
     intentId: "int-1",
@@ -77,7 +79,10 @@ describe("IntentRegistry.declare — recording (Req 16.1, 16.2)", () => {
   it("normalizes stored paths", () => {
     const registry = new IntentRegistry("case-sensitive");
     const result = registry.declare(
-      decl({ modifyPaths: ["./src/./api.ts"], createPaths: ["src/../src/new.ts"] }),
+      decl({
+        modifyPaths: ["./src/./api.ts"],
+        createPaths: ["src/../src/new.ts"],
+      }),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -92,7 +97,10 @@ describe("IntentRegistry.declare — reclassification (Req 16.5)", () => {
     registry.setTrackedFiles(session, ["src/existing.ts"]);
 
     const result = registry.declare(
-      decl({ modifyPaths: [], createPaths: ["src/existing.ts", "src/brand-new.ts"] }),
+      decl({
+        modifyPaths: [],
+        createPaths: ["src/existing.ts", "src/brand-new.ts"],
+      }),
     );
 
     expect(result.ok).toBe(true);
@@ -169,7 +177,9 @@ describe("IntentRegistry.update (Req 16.3, 16.8)", () => {
 
     expect(result).toEqual({ ok: false, code: "NOT_OWNER" });
     expect(registry.getIntent(session, "int-1")?.description).toBe("original");
-    expect(registry.getIntent(session, "int-1")?.modifyPaths).toEqual(["src/api.ts"]);
+    expect(registry.getIntent(session, "int-1")?.modifyPaths).toEqual([
+      "src/api.ts",
+    ]);
   });
 
   it("rejects an update for an unknown intent (NOT_FOUND)", () => {
@@ -191,7 +201,11 @@ describe("IntentRegistry.withdraw / complete (Req 16.4, 16.8)", () => {
   it("removes an owned intent on withdraw", () => {
     const registry = new IntentRegistry("case-sensitive");
     registry.declare(decl());
-    const result = registry.withdraw({ session, intentId: "int-1", requester: alice });
+    const result = registry.withdraw({
+      session,
+      intentId: "int-1",
+      requester: alice,
+    });
     expect(result.ok).toBe(true);
     expect(registry.allIntents(session)).toHaveLength(0);
   });
@@ -199,7 +213,11 @@ describe("IntentRegistry.withdraw / complete (Req 16.4, 16.8)", () => {
   it("removes an owned intent on complete", () => {
     const registry = new IntentRegistry("case-sensitive");
     registry.declare(decl());
-    const result = registry.complete({ session, intentId: "int-1", requester: alice });
+    const result = registry.complete({
+      session,
+      intentId: "int-1",
+      requester: alice,
+    });
     expect(result.ok).toBe(true);
     expect(registry.allIntents(session)).toHaveLength(0);
   });
@@ -207,14 +225,22 @@ describe("IntentRegistry.withdraw / complete (Req 16.4, 16.8)", () => {
   it("rejects withdraw by a non-owner and retains the intent (NOT_OWNER)", () => {
     const registry = new IntentRegistry("case-sensitive");
     registry.declare(decl());
-    const result = registry.withdraw({ session, intentId: "int-1", requester: bob });
+    const result = registry.withdraw({
+      session,
+      intentId: "int-1",
+      requester: bob,
+    });
     expect(result).toEqual({ ok: false, code: "NOT_OWNER" });
     expect(registry.getIntent(session, "int-1")).toBeDefined();
   });
 
   it("rejects withdraw for an unknown intent (NOT_FOUND)", () => {
     const registry = new IntentRegistry("case-sensitive");
-    const result = registry.withdraw({ session, intentId: "nope", requester: alice });
+    const result = registry.withdraw({
+      session,
+      intentId: "nope",
+      requester: alice,
+    });
     expect(result).toEqual({ ok: false, code: "NOT_FOUND" });
   });
 });
@@ -223,10 +249,22 @@ describe("IntentRegistry planned-file-creation collisions (Req 18.1, 18.3)", () 
   it("records the later declaration as concurrent and reports the winner", () => {
     const registry = new IntentRegistry("case-sensitive");
     registry.declare(
-      decl({ intentId: "int-a", owner: alice, modifyPaths: [], createPaths: ["src/shared.ts"], eventRevision: 1 }),
+      decl({
+        intentId: "int-a",
+        owner: alice,
+        modifyPaths: [],
+        createPaths: ["src/shared.ts"],
+        eventRevision: 1,
+      }),
     );
     const result = registry.declare(
-      decl({ intentId: "int-b", owner: bob, modifyPaths: [], createPaths: ["src/shared.ts"], eventRevision: 2 }),
+      decl({
+        intentId: "int-b",
+        owner: bob,
+        modifyPaths: [],
+        createPaths: ["src/shared.ts"],
+        eventRevision: 2,
+      }),
     );
 
     expect(result.ok).toBe(true);
@@ -243,10 +281,22 @@ describe("IntentRegistry planned-file-creation collisions (Req 18.1, 18.3)", () 
     const registry = new IntentRegistry("case-sensitive");
     // Declare the higher revision first; the earlier revision must still win.
     registry.declare(
-      decl({ intentId: "int-late", owner: bob, modifyPaths: [], createPaths: ["src/shared.ts"], eventRevision: 9 }),
+      decl({
+        intentId: "int-late",
+        owner: bob,
+        modifyPaths: [],
+        createPaths: ["src/shared.ts"],
+        eventRevision: 9,
+      }),
     );
     registry.declare(
-      decl({ intentId: "int-early", owner: alice, modifyPaths: [], createPaths: ["src/shared.ts"], eventRevision: 3 }),
+      decl({
+        intentId: "int-early",
+        owner: alice,
+        modifyPaths: [],
+        createPaths: ["src/shared.ts"],
+        eventRevision: 3,
+      }),
     );
 
     const winner = registry.creationWinner(session, "src/shared.ts", "main");
@@ -260,10 +310,22 @@ describe("IntentRegistry planned-file-creation collisions (Req 18.1, 18.3)", () 
   it("does not treat same-member re-declaration as a conflict", () => {
     const registry = new IntentRegistry("case-sensitive");
     registry.declare(
-      decl({ intentId: "int-a", owner: alice, modifyPaths: [], createPaths: ["src/shared.ts"], eventRevision: 1 }),
+      decl({
+        intentId: "int-a",
+        owner: alice,
+        modifyPaths: [],
+        createPaths: ["src/shared.ts"],
+        eventRevision: 1,
+      }),
     );
     const result = registry.declare(
-      decl({ intentId: "int-a2", owner: alice, modifyPaths: [], createPaths: ["src/shared.ts"], eventRevision: 2 }),
+      decl({
+        intentId: "int-a2",
+        owner: alice,
+        modifyPaths: [],
+        createPaths: ["src/shared.ts"],
+        eventRevision: 2,
+      }),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -273,10 +335,24 @@ describe("IntentRegistry planned-file-creation collisions (Req 18.1, 18.3)", () 
   it("does not contend across different branches", () => {
     const registry = new IntentRegistry("case-sensitive");
     registry.declare(
-      decl({ intentId: "int-a", owner: alice, branch: "main", modifyPaths: [], createPaths: ["src/shared.ts"], eventRevision: 1 }),
+      decl({
+        intentId: "int-a",
+        owner: alice,
+        branch: "main",
+        modifyPaths: [],
+        createPaths: ["src/shared.ts"],
+        eventRevision: 1,
+      }),
     );
     const result = registry.declare(
-      decl({ intentId: "int-b", owner: bob, branch: "feature/x", modifyPaths: [], createPaths: ["src/shared.ts"], eventRevision: 2 }),
+      decl({
+        intentId: "int-b",
+        owner: bob,
+        branch: "feature/x",
+        modifyPaths: [],
+        createPaths: ["src/shared.ts"],
+        eventRevision: 2,
+      }),
     );
     expect(result.ok).toBe(true);
     if (!result.ok) return;
@@ -317,17 +393,35 @@ describe("IntentRegistry reconciliation (Req 17.1–17.3, 17.5)", () => {
   it("withdraws a not-yet-created Planned_File_Creation (Req 17.5)", () => {
     const registry = new IntentRegistry("case-sensitive");
     registry.declare(
-      decl({ modifyPaths: [], createPaths: ["src/new.ts", "src/keep.ts"], eventRevision: 1 }),
+      decl({
+        modifyPaths: [],
+        createPaths: ["src/new.ts", "src/keep.ts"],
+        eventRevision: 1,
+      }),
     );
-    const result = registry.withdrawPlannedCreation(session, "int-1", "src/new.ts", alice);
+    const result = registry.withdrawPlannedCreation(
+      session,
+      "int-1",
+      "src/new.ts",
+      alice,
+    );
     expect(result.ok).toBe(true);
-    expect(registry.getIntent(session, "int-1")?.createPaths).toEqual([{ path: "src/keep.ts" }]);
+    expect(registry.getIntent(session, "int-1")?.createPaths).toEqual([
+      { path: "src/keep.ts" },
+    ]);
   });
 
   it("rejects withdrawing a Planned_File_Creation from an intent the requester does not own", () => {
     const registry = new IntentRegistry("case-sensitive");
-    registry.declare(decl({ modifyPaths: [], createPaths: ["src/new.ts"], eventRevision: 1 }));
-    const result = registry.withdrawPlannedCreation(session, "int-1", "src/new.ts", bob);
+    registry.declare(
+      decl({ modifyPaths: [], createPaths: ["src/new.ts"], eventRevision: 1 }),
+    );
+    const result = registry.withdrawPlannedCreation(
+      session,
+      "int-1",
+      "src/new.ts",
+      bob,
+    );
     expect(result).toEqual({ ok: false, code: "NOT_OWNER" });
   });
 });
@@ -338,7 +432,11 @@ describe("IntentRegistry scoped coverage (Req 32.2, 32.3, 32.5)", () => {
     registry.declare(
       decl({ scopeKind: "folder", modifyPaths: ["src/api"], eventRevision: 1 }),
     );
-    const covering = registry.intentsCovering(session, "src/api/handlers/users.ts", "main");
+    const covering = registry.intentsCovering(
+      session,
+      "src/api/handlers/users.ts",
+      "main",
+    );
     expect(covering.map((c) => c.intent.intentId)).toEqual(["int-1"]);
     expect(covering[0]?.matchedScope).toBe("src/api");
   });
@@ -346,23 +444,45 @@ describe("IntentRegistry scoped coverage (Req 32.2, 32.3, 32.5)", () => {
   it("covers a path matching a declared glob scope", () => {
     const registry = new IntentRegistry("case-sensitive");
     registry.declare(
-      decl({ scopeKind: "glob", modifyPaths: ["src/**/*.test.ts"], eventRevision: 1 }),
+      decl({
+        scopeKind: "glob",
+        modifyPaths: ["src/**/*.test.ts"],
+        eventRevision: 1,
+      }),
     );
-    const covering = registry.intentsCovering(session, "src/api/users.test.ts", "main");
+    const covering = registry.intentsCovering(
+      session,
+      "src/api/users.test.ts",
+      "main",
+    );
     expect(covering).toHaveLength(1);
   });
 
   it("does not cover a path outside a folder scope", () => {
     const registry = new IntentRegistry("case-sensitive");
-    registry.declare(decl({ scopeKind: "folder", modifyPaths: ["src/api"], eventRevision: 1 }));
-    expect(registry.intentsCovering(session, "src/db/pool.ts", "main")).toHaveLength(0);
+    registry.declare(
+      decl({ scopeKind: "folder", modifyPaths: ["src/api"], eventRevision: 1 }),
+    );
+    expect(
+      registry.intentsCovering(session, "src/db/pool.ts", "main"),
+    ).toHaveLength(0);
   });
 
   it("covers only exact paths for a file scope", () => {
     const registry = new IntentRegistry("case-sensitive");
-    registry.declare(decl({ scopeKind: "file", modifyPaths: ["src/api.ts"], eventRevision: 1 }));
-    expect(registry.intentsCovering(session, "src/api.ts", "main")).toHaveLength(1);
-    expect(registry.intentsCovering(session, "src/api.ts.bak", "main")).toHaveLength(0);
+    registry.declare(
+      decl({
+        scopeKind: "file",
+        modifyPaths: ["src/api.ts"],
+        eventRevision: 1,
+      }),
+    );
+    expect(
+      registry.intentsCovering(session, "src/api.ts", "main"),
+    ).toHaveLength(1);
+    expect(
+      registry.intentsCovering(session, "src/api.ts.bak", "main"),
+    ).toHaveLength(0);
   });
 });
 

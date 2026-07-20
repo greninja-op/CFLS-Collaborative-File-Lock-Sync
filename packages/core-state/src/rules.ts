@@ -199,7 +199,10 @@ export function globMatch(glob: string, path: string): boolean {
  * for a well-formed config and always `soft` for the fail-safe fallback
  * (Req 15.3, 15.5).
  */
-export function resolveMode(path: string, cfg: RepositoryRulesConfig): RiskLevel {
+export function resolveMode(
+  path: string,
+  cfg: RepositoryRulesConfig,
+): RiskLevel {
   const matches = cfg.rules
     .filter((rule) => globMatch(rule.glob, path))
     .map((rule) => rule.mode);
@@ -238,7 +241,10 @@ export function parseRulesConfig(raw: unknown): RulesConfigParseResult {
 
   // version: MVP supports version 1.
   if (!("version" in raw)) {
-    errors.push({ location: "version", message: "Missing required 'version' field." });
+    errors.push({
+      location: "version",
+      message: "Missing required 'version' field.",
+    });
   } else if (raw.version !== 1) {
     errors.push({
       location: "version",

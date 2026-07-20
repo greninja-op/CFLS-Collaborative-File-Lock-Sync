@@ -5,6 +5,11 @@
  * rejection.
  */
 
+// This test's frame-collection helpers intentionally use `any` for the dynamic
+// wire frames; scoping the rule off file-wide is prettier-stable (line-based
+// disables shift when the formatter rewraps).
+/* eslint-disable @typescript-eslint/no-explicit-any */
+
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { WebSocket } from "ws";
 
@@ -47,10 +52,9 @@ async function open(): Promise<{
   next: (predicate: (m: any) => boolean, timeoutMs?: number) => Promise<any>;
 }> {
   const ws = new WebSocket(wsUrl);
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const inbox: any[] = [];
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  let waiters: Array<{ p: (m: any) => boolean; resolve: (m: any) => void }> = [];
+  let waiters: Array<{ p: (m: any) => boolean; resolve: (m: any) => void }> =
+    [];
   ws.on("message", (data) => {
     const msg = JSON.parse(String(data));
     inbox.push(msg);
@@ -66,8 +70,10 @@ async function open(): Promise<{
     ws.once("open", () => resolve());
     ws.once("error", reject);
   });
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const next = (predicate: (m: any) => boolean, timeoutMs = 2000): Promise<any> => {
+  const next = (
+    predicate: (m: any) => boolean,
+    timeoutMs = 2000,
+  ): Promise<any> => {
     const existing = inbox.find((m) => predicate(m));
     if (existing !== undefined) return Promise.resolve(existing);
     return new Promise((resolve, reject) => {
@@ -104,9 +110,18 @@ describe("Local_API token authentication (Req 2.5)", () => {
     ws.send(JSON.stringify({ type: "auth", token: TOKEN }));
     const ok = await next((m) => m.type === "auth_ok");
     expect(ok.type).toBe("auth_ok");
-    ws.send(JSON.stringify({ type: "request", id: 1, method: "get_connection_status" }));
+    ws.send(
+      JSON.stringify({
+        type: "request",
+        id: 1,
+        method: "get_connection_status",
+      }),
+    );
     const response = await next((m) => m.type === "response");
-    expect(response.body).toEqual({ ok: true, method: "get_connection_status" });
+    expect(response.body).toEqual({
+      ok: true,
+      method: "get_connection_status",
+    });
     ws.close();
   });
 
@@ -138,7 +153,9 @@ describe("Local_API token authentication (Req 2.5)", () => {
     const { ws, next } = await open();
     ws.send(JSON.stringify({ type: "auth", token: TOKEN }));
     await next((m) => m.type === "auth_ok");
-    ws.send(JSON.stringify({ type: "subscribe", id: 3, params: { session: {} } }));
+    ws.send(
+      JSON.stringify({ type: "subscribe", id: 3, params: { session: {} } }),
+    );
     const response = await next((m) => m.type === "response");
     expect(response.body).toEqual({ ok: true, subscriptionId: "sub-1" });
     ws.close();

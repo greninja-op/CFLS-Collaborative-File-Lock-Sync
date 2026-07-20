@@ -54,7 +54,10 @@ describe("createSecretStore — fallback to encrypted file", () => {
   });
 
   it("uses the fallback when the OS store is explicitly disabled", async () => {
-    const store = createSecretStore({ disableOsStore: true, fileStoreDir: dir });
+    const store = createSecretStore({
+      disableOsStore: true,
+      fileStoreDir: dir,
+    });
     await store.set(DEVICE_PRIVATE_KEY_SECRET, "x");
     expect(store.backend).toBe("encrypted-file");
   });

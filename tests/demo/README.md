@@ -18,11 +18,11 @@ pnpm demo
 It walks through:
 
 1. **Presence** — Alice edits a file; Bob and Carol are notified in real time
-   (including an *indirect* reverse-dependency signal from the dependency graph).
+   (including an _indirect_ reverse-dependency signal from the dependency graph).
 2. **Direct conflict** — Bob's agent tries the file Alice locked and is told
    Alice holds it (deterministic winner by Event_Revision), so it backs off.
 3. **Declared intent** — Carol announces the files she will modify and the new
-   file she will create *before* writing code; everyone's agent sees the plan.
+   file she will create _before_ writing code; everyone's agent sees the plan.
 4. **Indirect dependency risk** — two different files that are linked in the
    dependency graph surface a coordination signal.
 5. **Release** — the lock clears and the file is safe again.

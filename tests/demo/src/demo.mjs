@@ -107,13 +107,18 @@ async function waitUntil(predicate, label, timeoutMs = 6000) {
 function printRiskMap(teammate) {
   const result = teammate.agent.agentPort().getRiskMap({ session });
   if (!result.ok) {
-    console.log(`  ${RED}${teammate.name}: ${result.error.code} ${result.error.message}${RESET}`);
+    console.log(
+      `  ${RED}${teammate.name}: ${result.error.code} ${result.error.message}${RESET}`,
+    );
     return;
   }
   const { paths, plannedFileCreations } = result.data;
   const conn = teammate.agent.agentPort().getConnection();
   const stale = teammate.agent.agentPort().getStaleness().stale;
-  const online = conn.status === "online" ? `${GREEN}online${RESET}` : `${RED}offline${RESET}`;
+  const online =
+    conn.status === "online"
+      ? `${GREEN}online${RESET}`
+      : `${RED}offline${RESET}`;
   const staleTag = stale ? ` ${RED}(stale)${RESET}` : "";
   console.log(`  ${BOLD}${teammate.name}${RESET} [${online}${staleTag}] sees:`);
 
@@ -123,13 +128,23 @@ function printRiskMap(teammate) {
   }
   for (const p of paths) {
     const color =
-      p.riskLevel === "hard" ? RED : p.riskLevel === "coordination-required" ? YELLOW : DIM;
-    const who = p.contributors.map((c) => `${c.memberId} (${c.kind})`).join(", ");
+      p.riskLevel === "hard"
+        ? RED
+        : p.riskLevel === "coordination-required"
+          ? YELLOW
+          : DIM;
+    const who = p.contributors
+      .map((c) => `${c.memberId} (${c.kind})`)
+      .join(", ");
     const kind = p.explanation.type === "indirect" ? " [indirect]" : "";
-    console.log(`    • ${color}${p.path}${RESET} — ${BOLD}${p.riskLevel}${RESET}${kind} — ${who}`);
+    console.log(
+      `    • ${color}${p.path}${RESET} — ${BOLD}${p.riskLevel}${RESET}${kind} — ${who}`,
+    );
   }
   for (const pfc of plannedFileCreations) {
-    console.log(`    • ${DIM}${pfc.path}${RESET} — ${BOLD}planned new file${RESET} — ${pfc.memberId}`);
+    console.log(
+      `    • ${DIM}${pfc.path}${RESET} — ${BOLD}planned new file${RESET} — ${pfc.memberId}`,
+    );
   }
 }
 
@@ -139,8 +154,12 @@ function printAll(teammates) {
 
 async function main() {
   banner("Collaborative File Lock Sync — single-laptop demo");
-  note("One host + three teammates (Alice, Bob, Carol), all on 127.0.0.1 over real WSS.");
-  note("Each 'teammate' is a separate CoordinationAgent — exactly like separate laptops.");
+  note(
+    "One host + three teammates (Alice, Bob, Carol), all on 127.0.0.1 over real WSS.",
+  );
+  note(
+    "Each 'teammate' is a separate CoordinationAgent — exactly like separate laptops.",
+  );
 
   const tmpRoot = mkdtempSync(join(tmpdir(), "cfls-demo-"));
   const admin = generateDeviceKey();
@@ -163,7 +182,10 @@ async function main() {
   // --- connect a teammate --------------------------------------------------
   async function connect(name) {
     const deviceKey = generateDeviceKey();
-    const member = { memberId: name, deviceId: deriveDeviceId(deviceKey.publicKey) };
+    const member = {
+      memberId: name,
+      deviceId: deriveDeviceId(deviceKey.publicKey),
+    };
     const invitation = Buffer.from(
       JSON.stringify(
         issueInvitation(
@@ -202,14 +224,21 @@ async function main() {
   const bob = await connect("Bob");
   const carol = await connect("Carol");
   const team = [alice, bob, carol];
-  note("Alice, Bob, and Carol are online and share the same repository session.");
+  note(
+    "Alice, Bob, and Carol are online and share the same repository session.",
+  );
 
   // 1) Presence -------------------------------------------------------------
   banner("1. Presence — 'who is editing what'");
   step("Alice opens and starts editing  src/api/login.ts");
-  alice.agent.hostConnection().send("presence.report", { path: "src/api/login.ts", state: "editing" });
+  alice.agent
+    .hostConnection()
+    .send("presence.report", { path: "src/api/login.ts", state: "editing" });
   await waitUntil(
-    () => bob.agent.view.entries(session).some((e) => e.path === "src/api/login.ts"),
+    () =>
+      bob.agent.view
+        .entries(session)
+        .some((e) => e.path === "src/api/login.ts"),
     "Bob to see Alice's edit",
   );
   note("Bob and Carol are notified in real time:");
@@ -218,7 +247,9 @@ async function main() {
   // 2) Direct conflict via a soft lock -------------------------------------
   banner("2. Direct conflict — Bob tries the SAME file Alice locked");
   step("Alice acquires a lock on  src/api/login.ts");
-  await alice.agent.agentPort().acquireLock({ session, scope: "src/api/login.ts", scopeKind: "file" });
+  await alice.agent
+    .agentPort()
+    .acquireLock({ session, scope: "src/api/login.ts", scopeKind: "file" });
   await delay(150);
   step("Bob's agent tries to acquire the same file…");
   const bobLock = await bob.agent.agentPort().acquireLock({
@@ -232,12 +263,16 @@ async function main() {
         `(winning revision ${bobLock.data.winner?.eventRevision}). Bob's agent backs off.`,
     );
   } else {
-    console.log(`  ${DIM}(Bob's lock outcome: ${JSON.stringify(bobLock.ok ? bobLock.data : bobLock.error)})${RESET}`);
+    console.log(
+      `  ${DIM}(Bob's lock outcome: ${JSON.stringify(bobLock.ok ? bobLock.data : bobLock.error)})${RESET}`,
+    );
   }
 
   // 3) Declared intent + planned new file ----------------------------------
   banner("3. Declared intent — Carol announces future work before editing");
-  step("Carol declares: will modify src/auth/session.ts and CREATE src/api/logout.ts");
+  step(
+    "Carol declares: will modify src/auth/session.ts and CREATE src/api/logout.ts",
+  );
   await carol.agent.agentPort().declareIntent({
     session,
     modifyPaths: ["src/auth/session.ts"],
@@ -245,7 +280,10 @@ async function main() {
     description: "Add logout flow",
   });
   await waitUntil(
-    () => alice.agent.view.entries(session).some((e) => e.member.memberId === "Carol"),
+    () =>
+      alice.agent.view
+        .entries(session)
+        .some((e) => e.member.memberId === "Carol"),
     "Alice to see Carol's declared intent",
   );
   note("Everyone's agent now knows Carol's plan BEFORE she writes any code:");
@@ -253,24 +291,34 @@ async function main() {
 
   // 4) Indirect dependency risk --------------------------------------------
   banner("4. Indirect dependency risk — different files, hidden link");
-  note("src/api/login.ts imports src/auth/session.ts (from the dependency graph).");
+  note(
+    "src/api/login.ts imports src/auth/session.ts (from the dependency graph).",
+  );
   step("Carol starts editing  src/auth/session.ts  (Alice is on login.ts)…");
-  carol.agent.hostConnection().send("presence.report", { path: "src/auth/session.ts", state: "editing" });
+  carol.agent
+    .hostConnection()
+    .send("presence.report", { path: "src/auth/session.ts", state: "editing" });
   await delay(400);
-  note("Alice's agent can now flag that her file is indirectly affected by Carol's change:");
+  note(
+    "Alice's agent can now flag that her file is indirectly affected by Carol's change:",
+  );
   printRiskMap(alice);
 
   // 5) Release --------------------------------------------------------------
   banner("5. Release — the file frees up");
   step("Alice finishes and releases  src/api/login.ts");
-  await alice.agent.agentPort().releaseLock({ session, scope: "src/api/login.ts" });
+  await alice.agent
+    .agentPort()
+    .releaseLock({ session, scope: "src/api/login.ts" });
   await delay(300);
   note("Bob's agent sees the lock is gone and the path is safer again:");
   printRiskMap(bob);
 
   // --- teardown ------------------------------------------------------------
   banner("Demo complete");
-  note("This is the real host + real agents over real WSS — the same code teammates run,");
+  note(
+    "This is the real host + real agents over real WSS — the same code teammates run,",
+  );
   note("just three instances on one laptop instead of three laptops.");
 
   for (const t of team) await t.agent.stop();

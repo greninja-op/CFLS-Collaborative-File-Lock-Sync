@@ -53,7 +53,11 @@ export function resolveLocalApiSettings(
   if (raw.token !== "" || workspaceFolder === undefined) {
     return { ...raw };
   }
-  const discoveryPath = join(workspaceFolder, ".coordination", "local-api.json");
+  const discoveryPath = join(
+    workspaceFolder,
+    ".coordination",
+    "local-api.json",
+  );
   if (!reader.exists(discoveryPath)) {
     return { ...raw };
   }

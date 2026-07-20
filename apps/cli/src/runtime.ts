@@ -11,7 +11,10 @@ import { defaultGitRunner, type GitRunner } from "./git";
  * back to `cwd` when the directory is not a git repository (the manual
  * `.coordination/*` fallback still works relative to `cwd`).
  */
-export function resolveRepoRoot(cwd: string, runner: GitRunner = defaultGitRunner): string {
+export function resolveRepoRoot(
+  cwd: string,
+  runner: GitRunner = defaultGitRunner,
+): string {
   const top = runner(["rev-parse", "--show-toplevel"], cwd);
   return top.ok && top.stdout !== "" ? top.stdout : cwd;
 }
@@ -54,7 +57,10 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
 }
 
 /** Read a string option, or `undefined` when absent/boolean. */
-export function stringOption(args: ParsedArgs, name: string): string | undefined {
+export function stringOption(
+  args: ParsedArgs,
+  name: string,
+): string | undefined {
   const value = args.options[name];
   return typeof value === "string" ? value : undefined;
 }
@@ -77,7 +83,9 @@ export const log = {
  * Used by the long-running `host` and `agent` commands so Ctrl+C shuts down
  * cleanly (Req: stop the host/agent on SIGINT).
  */
-export async function waitForShutdown(onStop: () => Promise<void>): Promise<void> {
+export async function waitForShutdown(
+  onStop: () => Promise<void>,
+): Promise<void> {
   await new Promise<void>((resolve) => {
     const stop = (): void => {
       log.info("\nShutting down…");

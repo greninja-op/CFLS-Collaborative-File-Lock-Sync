@@ -234,6 +234,8 @@ export interface ProjectSessionStatusData {
     manualConfig: boolean;
   };
   authorized: boolean;
+  /** The requesting client's own Team_Member id (used for own-activity exclusion). */
+  memberId: string;
 }
 
 /**
@@ -259,7 +261,9 @@ export interface AgentPort {
     req: GetDependentsRequest,
   ): MaybePromise<AgentResult<GetDependentsData>>;
   getConnectionStatus(): MaybePromise<AgentResult<ConnectionStatusData>>;
-  getProjectSessionStatus(): MaybePromise<AgentResult<ProjectSessionStatusData>>;
+  getProjectSessionStatus(): MaybePromise<
+    AgentResult<ProjectSessionStatusData>
+  >;
 
   // Mutations — must return OFFLINE_QUEUED while offline (Req 4.8).
   declareIntent(

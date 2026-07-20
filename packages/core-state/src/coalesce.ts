@@ -42,7 +42,11 @@
 
 import type { MemberRef } from "@cfls/protocol";
 
-import { normalizePath, pathMatchKey, type PlatformCaseSensitivity } from "./path";
+import {
+  normalizePath,
+  pathMatchKey,
+  type PlatformCaseSensitivity,
+} from "./path";
 
 /** The kinds of outbound coordination event the agent coalesces (Req 34.1). */
 export type CoalescableKind = "presence" | "lock";
@@ -116,7 +120,10 @@ function clampWindow(requested: number | undefined): number {
   if (requested === undefined || !Number.isFinite(requested)) {
     return DEFAULT_WINDOW_MS;
   }
-  return Math.min(MAX_WINDOW_MS, Math.max(MIN_WINDOW_MS, Math.trunc(requested)));
+  return Math.min(
+    MAX_WINDOW_MS,
+    Math.max(MIN_WINDOW_MS, Math.trunc(requested)),
+  );
 }
 
 /**

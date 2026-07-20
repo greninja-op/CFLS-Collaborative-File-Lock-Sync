@@ -18,7 +18,11 @@ import { DEFAULT_SECRET_SERVICE } from "./secret-store";
  */
 interface KeytarLike {
   getPassword(service: string, account: string): Promise<string | null>;
-  setPassword(service: string, account: string, password: string): Promise<void>;
+  setPassword(
+    service: string,
+    account: string,
+    password: string,
+  ): Promise<void>;
   deletePassword(service: string, account: string): Promise<boolean>;
 }
 
@@ -49,7 +53,8 @@ function loadKeytar(): Promise<KeytarLike | null> {
 
 function extractKeytar(mod: unknown): KeytarLike | null {
   const root = mod as { default?: unknown } | undefined;
-  const target: unknown = root && "default" in root ? (root.default ?? root) : root;
+  const target: unknown =
+    root && "default" in root ? (root.default ?? root) : root;
   if (
     target &&
     typeof (target as KeytarLike).getPassword === "function" &&
@@ -70,7 +75,9 @@ export function __resetKeytarProbeForTests(): void {
  * Create a {@link SecretStore} backed by the OS credential store via `keytar`.
  * All operations are keyed by `(serviceName, name)`.
  */
-export function createOsCredentialStore(serviceName = DEFAULT_SECRET_SERVICE): SecretStore {
+export function createOsCredentialStore(
+  serviceName = DEFAULT_SECRET_SERVICE,
+): SecretStore {
   return {
     backend: "os-credential-store",
 

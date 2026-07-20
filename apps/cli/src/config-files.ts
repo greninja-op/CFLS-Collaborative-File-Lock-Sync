@@ -89,7 +89,11 @@ function readJsonObject(path: string): Record<string, unknown> | null {
   }
   try {
     const parsed: unknown = JSON.parse(readFileSync(path, "utf8"));
-    if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed)
+    ) {
       return parsed as Record<string, unknown>;
     }
     return null;
@@ -132,7 +136,10 @@ export function appendAdminPublicKey(
   adminPublicKey: string,
   teamId: string,
 ): HostConfigFile {
-  const existing = readHostConfig(path) ?? { authorizedAdminPublicKeys: [], teamId };
+  const existing = readHostConfig(path) ?? {
+    authorizedAdminPublicKeys: [],
+    teamId,
+  };
   const keys = new Set(existing.authorizedAdminPublicKeys);
   keys.add(adminPublicKey);
   const next: HostConfigFile = {
@@ -162,7 +169,10 @@ export function readAgentConfig(path: string): AgentConfigFile {
 }
 
 /** Merge `patch` into the existing agent config and persist it. */
-export function updateAgentConfig(path: string, patch: AgentConfigFile): AgentConfigFile {
+export function updateAgentConfig(
+  path: string,
+  patch: AgentConfigFile,
+): AgentConfigFile {
   const merged: AgentConfigFile = { ...readAgentConfig(path), ...patch };
   writeJson(path, merged);
   return merged;
@@ -173,7 +183,10 @@ export function updateAgentConfig(path: string, patch: AgentConfigFile): AgentCo
 // ---------------------------------------------------------------------------
 
 /** Write the Local_API discovery file for the VS Code extension. */
-export function writeLocalApiConfig(path: string, value: LocalApiConfigFile): void {
+export function writeLocalApiConfig(
+  path: string,
+  value: LocalApiConfigFile,
+): void {
   writeJson(path, value);
 }
 
@@ -227,7 +240,10 @@ export function readAutoSyncConfig(path: string): AutoSyncConfig {
   return {
     enabled: block["enabled"] === true,
     remote: nonEmptyStringOr(block["remote"], DEFAULT_AUTO_SYNC.remote),
-    branchPrefix: nonEmptyStringOr(block["branchPrefix"], DEFAULT_AUTO_SYNC.branchPrefix),
+    branchPrefix: nonEmptyStringOr(
+      block["branchPrefix"],
+      DEFAULT_AUTO_SYNC.branchPrefix,
+    ),
     commitIntervalSec: positiveIntOr(
       block["commitIntervalSec"],
       DEFAULT_AUTO_SYNC.commitIntervalSec,

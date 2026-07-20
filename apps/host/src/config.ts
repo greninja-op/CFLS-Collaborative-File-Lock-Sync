@@ -69,7 +69,11 @@ export const DEFAULT_START_TIMEOUT_MS = 10_000;
  * that is not a `ws`/`wss` URL so misconfiguration fails fast rather than
  * silently binding the wrong address (Req 6.1).
  */
-export function parseHostUrl(hostUrl: string): { host: string; port: number; secure: boolean } {
+export function parseHostUrl(hostUrl: string): {
+  host: string;
+  port: number;
+  secure: boolean;
+} {
   let url: URL;
   try {
     url = new URL(hostUrl);
@@ -104,7 +108,10 @@ export function parseHostUrl(hostUrl: string): { host: string; port: number; sec
  * There is no built-in default address: an absent `Host_URL` throws so the host
  * never silently listens on a hardcoded address (Req 6.1).
  */
-export function loadHostConfig(input: HostConfigInput = {}, env: NodeJS.ProcessEnv = process.env): HostConfig {
+export function loadHostConfig(
+  input: HostConfigInput = {},
+  env: NodeJS.ProcessEnv = process.env,
+): HostConfig {
   const hostUrl = input.hostUrl ?? env.CFLS_HOST_URL;
   if (hostUrl === undefined || hostUrl.trim() === "") {
     throw new Error(
@@ -127,9 +134,7 @@ export function loadHostConfig(input: HostConfigInput = {}, env: NodeJS.ProcessE
     dbPath: input.dbPath ?? env.CFLS_DB_PATH ?? ":memory:",
     dashboard:
       input.dashboard ??
-      (env.CFLS_DASHBOARD === undefined
-        ? true
-        : isTruthy(env.CFLS_DASHBOARD)),
+      (env.CFLS_DASHBOARD === undefined ? true : isTruthy(env.CFLS_DASHBOARD)),
     ...(input.expiry !== undefined ? { expiry: input.expiry } : {}),
     startTimeoutMs: input.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS,
   };

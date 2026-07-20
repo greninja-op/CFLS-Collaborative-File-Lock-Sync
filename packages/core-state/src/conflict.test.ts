@@ -121,15 +121,15 @@ describe("resolveByEarliestRevision — determinism (Req 8.3)", () => {
   });
 
   it("compareClaims orders by revision then claimId", () => {
-    expect(compareClaims(claim("x", 1, alice), claim("y", 2, bob))).toBeLessThan(
-      0,
-    );
+    expect(
+      compareClaims(claim("x", 1, alice), claim("y", 2, bob)),
+    ).toBeLessThan(0);
     expect(
       compareClaims(claim("y", 2, bob), claim("x", 1, alice)),
     ).toBeGreaterThan(0);
-    expect(compareClaims(claim("a", 5, alice), claim("b", 5, bob))).toBeLessThan(
-      0,
-    );
+    expect(
+      compareClaims(claim("a", 5, alice), claim("b", 5, bob)),
+    ).toBeLessThan(0);
     expect(compareClaims(claim("a", 5, alice), claim("a", 5, alice))).toBe(0);
   });
 });
@@ -140,7 +140,13 @@ describe("resolvePlannedFileCreationClaims (Req 18.1, 18.3)", () => {
     eventRevision: number,
     holder: MemberRef,
   ): PlannedFileCreationClaim {
-    return { claimId, eventRevision, holder, path: "src/new.ts", branch: "main" };
+    return {
+      claimId,
+      eventRevision,
+      holder,
+      path: "src/new.ts",
+      branch: "main",
+    };
   }
 
   it("attributes the creation to the earliest declaration and marks the rest concurrent", () => {

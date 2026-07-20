@@ -96,7 +96,9 @@ export class RealHostGateway extends EventEmitter implements HostGateway {
   constructor(private readonly connection: HostConnection) {
     super();
     // Fan every host broadcast out to the port's view.
-    this.connection.on("update", (u: CoordinationUpdate) => this.emit("update", u));
+    this.connection.on("update", (u: CoordinationUpdate) =>
+      this.emit("update", u),
+    );
   }
 
   getConnection(): ConnectionSnapshot {
@@ -143,8 +145,11 @@ export class RealHostGateway extends EventEmitter implements HostGateway {
       return {
         ok: false,
         error: {
-          code: (message.payload.code as EnvelopeError["code"]) ?? "STORAGE_ERROR",
-          message: String(message.payload.message ?? "Host rejected the event."),
+          code:
+            (message.payload.code as EnvelopeError["code"]) ?? "STORAGE_ERROR",
+          message: String(
+            message.payload.message ?? "Host rejected the event.",
+          ),
         },
       };
     }
@@ -223,7 +228,10 @@ export class LocalHostGateway extends EventEmitter implements HostGateway {
       secondsSinceSync:
         this.lastSyncAt === null
           ? null
-          : Math.max(0, Math.floor((this.now() - Date.parse(this.lastSyncAt)) / 1000)),
+          : Math.max(
+              0,
+              Math.floor((this.now() - Date.parse(this.lastSyncAt)) / 1000),
+            ),
     };
   }
 
@@ -253,7 +261,10 @@ export class LocalHostGateway extends EventEmitter implements HostGateway {
     });
   }
 
-  private apply(event: MutationEvent, revision: number): CoordinationUpdate | undefined {
+  private apply(
+    event: MutationEvent,
+    revision: number,
+  ): CoordinationUpdate | undefined {
     switch (event.type) {
       case "lock.acquire": {
         const lockId = `lk-${(this.lockSeq += 1)}`;

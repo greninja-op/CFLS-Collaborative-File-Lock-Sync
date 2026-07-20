@@ -115,15 +115,15 @@ soft locks, and (where configured) hard-lock coordination live.
 
 ## Files this creates
 
-| Path | Scope | Committed? | Contents |
-| --- | --- | --- | --- |
-| `~/.cfls/host.json` | per-machine (admin) | no | authorized admin public keys + teamId |
-| OS secret store / `~/.cfls` encrypted file | per-machine | no | admin private key, device private key |
-| `.coordination/agent.json` | per-repo, per-machine | no (gitignored) | hostUrl, memberName, teamId, invitation |
-| `.coordination/local-api.json` | per-repo, per-machine | no (gitignored) | loopback Local_API url + per-session token |
-| `.coordination/session.json` | per-repo | optional | manual session fallback when git is unavailable |
-| `.coordination/rules.json` | per-repo | **yes** (team-shared) | Repository_Rules_Config |
-| `.coordination/config.json` | per-repo | **yes** (team-shared) | optional `autoSync` block (opt-in git sync; no secrets) |
+| Path                                       | Scope                 | Committed?            | Contents                                                |
+| ------------------------------------------ | --------------------- | --------------------- | ------------------------------------------------------- |
+| `~/.cfls/host.json`                        | per-machine (admin)   | no                    | authorized admin public keys + teamId                   |
+| OS secret store / `~/.cfls` encrypted file | per-machine           | no                    | admin private key, device private key                   |
+| `.coordination/agent.json`                 | per-repo, per-machine | no (gitignored)       | hostUrl, memberName, teamId, invitation                 |
+| `.coordination/local-api.json`             | per-repo, per-machine | no (gitignored)       | loopback Local_API url + per-session token              |
+| `.coordination/session.json`               | per-repo              | optional              | manual session fallback when git is unavailable         |
+| `.coordination/rules.json`                 | per-repo              | **yes** (team-shared) | Repository_Rules_Config                                 |
+| `.coordination/config.json`                | per-repo              | **yes** (team-shared) | optional `autoSync` block (opt-in git sync; no secrets) |
 
 Secrets never land in `.coordination/*`. Private keys live only in the OS secret
 store or the encrypted-file fallback under `~/.cfls`. The `.gitignore` already
@@ -154,13 +154,13 @@ force-pushes, and half-applied conflicting writes. With per-user branches:
   A rejected (non-fast-forward) or unauthenticated push logs a concise notice and
   retries next cycle; it **never force-pushes**.
 - **Consumer (fetch + notify):** the agent periodically `git fetch`es and, when
-  another `cfls/*` branch advances, notifies e.g. *"alice published 2 commit(s)"*.
+  another `cfls/*` branch advances, notifies e.g. _"alice published 2 commit(s)"_.
   Applying those changes is a **safe, explicit** step (`cfls sync merge alice`)
   unless you enable `autoMerge`.
 - **Optional `autoMerge` (conflict-free only):** when enabled, the consumer
   attempts a merge and applies it **only** when it is clean/fast-forward.
   On **any** conflict it runs `git merge --abort` (your tree is left untouched)
-  and notifies *"manual merge needed"*. It **never auto-resolves conflicts**.
+  and notifies _"manual merge needed"_. It **never auto-resolves conflicts**.
 
 > Honest caveat: real conflicts still require a manual merge or a PR. The
 > automatic layer safely moves conflict-free work and gets out of your way the
@@ -208,7 +208,7 @@ cfls sync merge <m> --resolve
 Auto-sync is built to make conflicts rare and safe:
 
 - **Live-edit pre-warning:** before an auto-merge touches a file a teammate is
-  editing *right now* (from the live coordination view), you're warned — and with
+  editing _right now_ (from the live coordination view), you're warned — and with
   `autoMerge` on, that branch's merge is **deferred** so live work is never
   clobbered.
 - **`git rerere`** is turned on automatically when auto-sync is enabled, so a

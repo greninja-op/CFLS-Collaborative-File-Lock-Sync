@@ -4,7 +4,11 @@ import { describe, expect, it } from "vitest";
 
 import type { SessionId, SessionStateSnapshot } from "@cfls/protocol";
 
-import { buildDashboardState, escapeDashboardHtml, renderDashboardHtml } from "./dashboard";
+import {
+  buildDashboardState,
+  escapeDashboardHtml,
+  renderDashboardHtml,
+} from "./dashboard";
 
 function session(overrides: Partial<SessionId> = {}): SessionId {
   return {
@@ -149,11 +153,13 @@ describe("buildDashboardState", () => {
     expect(state.uptimeSeconds).toBe(42);
     expect(state.generatedAt).toBe("2026-07-19T12:34:56.000Z");
     expect(state.totals).toEqual({ sessions: 3, devices: 3, locks: 3 });
-    expect(state.sessions.map((entry) => [entry.repoId, entry.branch])).toEqual([
-      ["github.com/acme/alpha", "develop"],
-      ["github.com/acme/alpha", "release"],
-      ["github.com/acme/zeta", "main"],
-    ]);
+    expect(state.sessions.map((entry) => [entry.repoId, entry.branch])).toEqual(
+      [
+        ["github.com/acme/alpha", "develop"],
+        ["github.com/acme/alpha", "release"],
+        ["github.com/acme/zeta", "main"],
+      ],
+    );
 
     const displayed = state.sessions[2]!;
     expect(displayed.connectedDevices).toEqual(["device-z"]);
@@ -189,7 +195,9 @@ describe("buildDashboardState", () => {
     expect(serialized).not.toContain("lock-private-id");
     expect(serialized).not.toContain("base-revision-not-for-dashboard");
     expect(serialized).not.toContain("agent-private-id");
-    expect(serialized).not.toContain("TOP_SECRET_DESCRIPTION_NOT_FOR_DASHBOARD");
+    expect(serialized).not.toContain(
+      "TOP_SECRET_DESCRIPTION_NOT_FOR_DASHBOARD",
+    );
     expect(serialized).not.toContain("SIGNED_INVITATION_NOT_FOR_DASHBOARD");
     expect(serialized).not.toContain("TOKEN_NOT_FOR_DASHBOARD");
   });
@@ -197,7 +205,9 @@ describe("buildDashboardState", () => {
   it("escapes dynamic paths before the client inserts dashboard state into HTML", () => {
     const path = "src/a-<script>alert(1)</script>.ts";
 
-    expect(escapeDashboardHtml(path)).toBe("src/a-&lt;script&gt;alert(1)&lt;/script&gt;.ts");
+    expect(escapeDashboardHtml(path)).toBe(
+      "src/a-&lt;script&gt;alert(1)&lt;/script&gt;.ts",
+    );
   });
 });
 
@@ -212,7 +222,9 @@ describe("renderDashboardHtml", () => {
     expect(html).toContain("function escapeHtml");
     expect(html).toContain("The live coordination");
     expect(html).toContain('class="live-demo-card"');
-    expect(html).toContain('<circle cx="10.5" cy="18" r="4.4" fill="currentColor"/>');
+    expect(html).toContain(
+      '<circle cx="10.5" cy="18" r="4.4" fill="currentColor"/>',
+    );
     expect(html).not.toContain("See the work already in motion");
   });
 });

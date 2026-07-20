@@ -61,7 +61,11 @@ import type {
   SessionId,
 } from "@cfls/protocol";
 
-import { normalizePath, normalizePathKey, type PlatformCaseSensitivity } from "./path";
+import {
+  normalizePath,
+  normalizePathKey,
+  type PlatformCaseSensitivity,
+} from "./path";
 import { globMatch } from "./rules";
 import { sessionKey } from "./session";
 
@@ -150,8 +154,7 @@ export type DeclareResult =
 
 /** Result of {@link IntentRegistry.withdraw} / {@link IntentRegistry.complete}. */
 export type WithdrawResult =
-  | { ok: true; removed: DeclaredIntent }
-  | { ok: false; code: IntentError };
+  { ok: true; removed: DeclaredIntent } | { ok: false; code: IntentError };
 
 /** Result of {@link IntentRegistry.reconcileCreation} (Req 17.2, 17.3). */
 export interface CreationReconciliation {
@@ -265,7 +268,9 @@ export class IntentRegistry {
 
   /** Whether a repository-relative path is currently a tracked (existing) file. */
   isTracked(session: SessionId, path: string): boolean {
-    return this.tracked.get(sessionKey(session))?.has(this.pathKey(path)) ?? false;
+    return (
+      this.tracked.get(sessionKey(session))?.has(this.pathKey(path)) ?? false
+    );
   }
 
   /**
@@ -281,16 +286,22 @@ export class IntentRegistry {
     const errors: string[] = [];
 
     if (!SCOPE_KINDS.includes(scopeKind)) {
-      errors.push(`Invalid scopeKind '${String(scopeKind)}'; expected file, folder, or glob.`);
+      errors.push(
+        `Invalid scopeKind '${String(scopeKind)}'; expected file, folder, or glob.`,
+      );
     }
 
     if (modifyPaths.length === 0 && createPaths.length === 0) {
-      errors.push("Declared_Intent must include at least one modify or create path.");
+      errors.push(
+        "Declared_Intent must include at least one modify or create path.",
+      );
     }
 
     for (const path of [...modifyPaths, ...createPaths]) {
       if (path.length > MAX_PATH_LENGTH) {
-        errors.push(`Path exceeds ${MAX_PATH_LENGTH} characters: '${path.slice(0, 32)}…'.`);
+        errors.push(
+          `Path exceeds ${MAX_PATH_LENGTH} characters: '${path.slice(0, 32)}…'.`,
+        );
       }
       if (scopeKind === "glob" && isMalformedGlob(path)) {
         errors.push(`Malformed glob pattern: '${path}'.`);
@@ -325,7 +336,11 @@ export class IntentRegistry {
         if (!modify.includes(normalized)) {
           modify.push(normalized);
         }
-        reclassified.push({ path: normalized, as: "modify", reason: "path_exists" });
+        reclassified.push({
+          path: normalized,
+          as: "modify",
+          reason: "path_exists",
+        });
       } else {
         create.push({ path: normalized });
       }
@@ -580,7 +595,11 @@ export class IntentRegistry {
       return { ok: false, code: "NOT_FOUND" };
     }
     stored.intent = { ...stored.intent, createPaths: remaining };
-    return { ok: true, intent: stored.intent, removedPath: normalizePath(path) };
+    return {
+      ok: true,
+      intent: stored.intent,
+      removedPath: normalizePath(path),
+    };
   }
 
   /**
@@ -755,7 +774,11 @@ export class IntentRegistry {
    * (Req 30.3, 30.7). Returns the intents that were updated (empty when no intent
    * referenced the old path — Req 30.7).
    */
-  renamePath(session: SessionId, fromPath: string, toPath: string): DeclaredIntent[] {
+  renamePath(
+    session: SessionId,
+    fromPath: string,
+    toPath: string,
+  ): DeclaredIntent[] {
     const fromKey = this.pathKey(fromPath);
     const normalizedTo = normalizePath(toPath);
     const updated: DeclaredIntent[] = [];

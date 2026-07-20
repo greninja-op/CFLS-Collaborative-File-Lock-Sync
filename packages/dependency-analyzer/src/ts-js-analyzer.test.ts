@@ -61,7 +61,12 @@ describe("TsJsImportAnalyzer — static relative imports → high", () => {
       file("src/b.ts", "export const b = 1;"),
     ]);
     expect(edgesOf(modules, "src/a.ts")).toEqual([
-      { from: "src/a.ts", to: "src/b.ts", kind: "runtime_import", confidence: "high" },
+      {
+        from: "src/a.ts",
+        to: "src/b.ts",
+        kind: "runtime_import",
+        confidence: "high",
+      },
     ]);
   });
 
@@ -92,7 +97,12 @@ describe("TsJsImportAnalyzer — static relative imports → high", () => {
       file("src/b.ts", ""),
     ]);
     expect(edgesOf(modules, "src/index.ts")).toEqual([
-      { from: "src/index.ts", to: "src/b.ts", kind: "runtime_import", confidence: "high" },
+      {
+        from: "src/index.ts",
+        to: "src/b.ts",
+        kind: "runtime_import",
+        confidence: "high",
+      },
     ]);
   });
 
@@ -101,7 +111,12 @@ describe("TsJsImportAnalyzer — static relative imports → high", () => {
       file("src/a.ts", "import './missing';"),
     ]);
     expect(edgesOf(modules, "src/a.ts")).toEqual([
-      { from: "src/a.ts", to: "src/missing", kind: "runtime_import", confidence: "high" },
+      {
+        from: "src/a.ts",
+        to: "src/missing",
+        kind: "runtime_import",
+        confidence: "high",
+      },
     ]);
   });
 });
@@ -113,7 +128,12 @@ describe("TsJsImportAnalyzer — type-only imports", () => {
       file("src/types.ts", ""),
     ]);
     expect(edgesOf(modules, "src/a.ts")).toEqual([
-      { from: "src/a.ts", to: "src/types.ts", kind: "type_only_import", confidence: "high" },
+      {
+        from: "src/a.ts",
+        to: "src/types.ts",
+        kind: "type_only_import",
+        confidence: "high",
+      },
     ]);
   });
 
@@ -132,7 +152,12 @@ describe("TsJsImportAnalyzer — aliased imports → medium (§7.5)", () => {
       file("src/a.ts", "import { x } from '@/utils';"),
     ]);
     expect(edgesOf(modules, "src/a.ts")).toEqual([
-      { from: "src/a.ts", to: "@/utils", kind: "runtime_import", confidence: "medium" },
+      {
+        from: "src/a.ts",
+        to: "@/utils",
+        kind: "runtime_import",
+        confidence: "medium",
+      },
     ]);
   });
 
@@ -151,16 +176,29 @@ describe("TsJsImportAnalyzer — dynamic imports → low|unknown (Req 19.6)", ()
       file("src/b.ts", ""),
     ]);
     expect(edgesOf(modules, "src/a.ts")).toEqual([
-      { from: "src/a.ts", to: "src/b.ts", kind: "dynamic_unknown", confidence: "low" },
+      {
+        from: "src/a.ts",
+        to: "src/b.ts",
+        kind: "dynamic_unknown",
+        confidence: "low",
+      },
     ]);
   });
 
   it("marks a non-literal (reflection-based) dynamic import as unknown", () => {
     const { modules } = analyzer.analyze([
-      file("src/a.ts", "const name = getName();\nconst m = await import(name);"),
+      file(
+        "src/a.ts",
+        "const name = getName();\nconst m = await import(name);",
+      ),
     ]);
     expect(edgesOf(modules, "src/a.ts")).toEqual([
-      { from: "src/a.ts", to: DYNAMIC_TARGET, kind: "dynamic_unknown", confidence: "unknown" },
+      {
+        from: "src/a.ts",
+        to: DYNAMIC_TARGET,
+        kind: "dynamic_unknown",
+        confidence: "unknown",
+      },
     ]);
   });
 });
@@ -172,7 +210,12 @@ describe("TsJsImportAnalyzer — require() and edge kinds", () => {
       file("src/b.js", ""),
     ]);
     expect(edgesOf(modules, "src/a.js")).toEqual([
-      { from: "src/a.js", to: "src/b.js", kind: "runtime_import", confidence: "high" },
+      {
+        from: "src/a.js",
+        to: "src/b.js",
+        kind: "runtime_import",
+        confidence: "high",
+      },
     ]);
   });
 
@@ -182,7 +225,12 @@ describe("TsJsImportAnalyzer — require() and edge kinds", () => {
       file("src/a.ts", ""),
     ]);
     expect(edgesOf(modules, "src/a.test.ts")).toEqual([
-      { from: "src/a.test.ts", to: "src/a.ts", kind: "test_dependency", confidence: "high" },
+      {
+        from: "src/a.test.ts",
+        to: "src/a.ts",
+        kind: "test_dependency",
+        confidence: "high",
+      },
     ]);
   });
 });
@@ -190,7 +238,10 @@ describe("TsJsImportAnalyzer — require() and edge kinds", () => {
 describe("TsJsImportAnalyzer — bare package specifiers excluded (§7.6)", () => {
   it("does not emit module edges for bare npm packages", () => {
     const { modules } = analyzer.analyze([
-      file("src/a.ts", "import React from 'react';\nimport { z } from '@scope/pkg';"),
+      file(
+        "src/a.ts",
+        "import React from 'react';\nimport { z } from '@scope/pkg';",
+      ),
     ]);
     expect(edgesOf(modules, "src/a.ts")).toEqual([]);
   });
@@ -213,14 +264,22 @@ describe("TsJsImportAnalyzer — metadata-only guarantee (Req 19.2)", () => {
       file("src/real.ts", ""),
     ]);
     expect(edgesOf(modules, "src/a.ts")).toEqual([
-      { from: "src/a.ts", to: "src/real.ts", kind: "runtime_import", confidence: "high" },
+      {
+        from: "src/a.ts",
+        to: "src/real.ts",
+        kind: "runtime_import",
+        confidence: "high",
+      },
     ]);
   });
 
   it("emits only specifiers and never file body content", () => {
     const body =
       "const API_KEY = 'sk-super-secret-value';\nimport { b } from './b';\nconst data = 'sensitive payload';";
-    const { modules } = analyzer.analyze([file("src/a.ts", body), file("src/b.ts", "")]);
+    const { modules } = analyzer.analyze([
+      file("src/a.ts", body),
+      file("src/b.ts", ""),
+    ]);
     const serialized = JSON.stringify(modules);
     expect(serialized).not.toContain("sk-super-secret-value");
     expect(serialized).not.toContain("sensitive payload");

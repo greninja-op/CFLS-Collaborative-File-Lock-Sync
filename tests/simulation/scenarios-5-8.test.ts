@@ -25,9 +25,16 @@ afterEach(async () => {
 });
 
 /** Does an agent's view hold a `soft_lock` for `path` won by `memberId`? */
-function hasLock(entries: CoordinationUpdate[], path: string, memberId: string): boolean {
+function hasLock(
+  entries: CoordinationUpdate[],
+  path: string,
+  memberId: string,
+): boolean {
   return entries.some(
-    (e) => e.entryType === "soft_lock" && e.path === path && e.member.memberId === memberId,
+    (e) =>
+      e.entryType === "soft_lock" &&
+      e.path === path &&
+      e.member.memberId === memberId,
   );
 }
 
@@ -40,10 +47,9 @@ describe("Scenario 5 — lock acquire/release happy path (Req 12.1)", () => {
     expect(acquired.granted).toBe(true);
     expect(acquired.lockId).toBeTruthy();
 
-    await sim.waitForConverged(
-      (entries) => hasLock(entries, path, "agent-0"),
-      { label: "lock acquire convergence" },
-    );
+    await sim.waitForConverged((entries) => hasLock(entries, path, "agent-0"), {
+      label: "lock acquire convergence",
+    });
 
     const released = await sim.releaseLock(0, path);
     expect(released.released).toBe(true);
@@ -66,19 +72,23 @@ describe("Scenario 6 — stale lock expiry after missed heartbeats (Req 26.3)", 
     const holder = sim.agentAt(0);
 
     await sim.acquireLock(0, path);
-    await sim.waitForConverged(
-      (entries) => hasLock(entries, path, "agent-0"),
-      { label: "pre-expiry convergence" },
-    );
+    await sim.waitForConverged((entries) => hasLock(entries, path, "agent-0"), {
+      label: "pre-expiry convergence",
+    });
 
     // Record a heartbeat, then sweep far past the Lock_Expiry_Interval so the
     // holder is deemed stale (missed heartbeats) — deterministic, no waiting.
     const t0 = 1_000;
     sim.host.authority.recordHeartbeat(sim.session, holder.member.deviceId, t0);
-    const removals = sim.host.authority.sweepExpiry(sim.session, t0 + 10 * 60_000);
+    const removals = sim.host.authority.sweepExpiry(
+      sim.session,
+      t0 + 10 * 60_000,
+    );
 
     expect(removals.length).toBeGreaterThan(0);
-    expect(removals.some((r) => r.op === "removed" && r.path === path)).toBe(true);
+    expect(removals.some((r) => r.op === "removed" && r.path === path)).toBe(
+      true,
+    );
 
     // Broadcast the authoritative removals over the real transport (as the
     // host's periodic sweep would) and confirm every agent drops the lock.
@@ -90,7 +100,11 @@ describe("Scenario 6 — stale lock expiry after missed heartbeats (Req 26.3)", 
       { label: "expiry convergence" },
     );
 
-    expect(sim.host.authority.snapshot(sim.session).locks.filter((l) => l.scope === path)).toHaveLength(0);
+    expect(
+      sim.host.authority
+        .snapshot(sim.session)
+        .locks.filter((l) => l.scope === path),
+    ).toHaveLength(0);
   });
 });
 
@@ -135,7 +149,9 @@ describe("Scenario 7 — reconnect sync convergence from a known revision (Req 9
     );
 
     // Converged strictly above the revision it reconnected from (Req 9.1, 9.4).
-    expect(reconnecting.agent.view.highestApplied(sim.session)).toBeGreaterThan(knownRevision);
+    expect(reconnecting.agent.view.highestApplied(sim.session)).toBeGreaterThan(
+      knownRevision,
+    );
   });
 });
 

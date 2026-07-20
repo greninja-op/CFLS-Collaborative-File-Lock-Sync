@@ -93,7 +93,9 @@ export function extractExportedNames(source: string): string[] {
   for (const match of clean.matchAll(EXPORT_DEFAULT_EXPR)) {
     const end = (match.index ?? 0) + (match[0]?.length ?? 0);
     const after = clean.slice(end).trimStart();
-    if (!/^(?:async\s+)?(?:abstract\s+)?(?:function\s*\*?|class)\b/.test(after)) {
+    if (
+      !/^(?:async\s+)?(?:abstract\s+)?(?:function\s*\*?|class)\b/.test(after)
+    ) {
       names.add("default");
     }
   }
@@ -105,7 +107,10 @@ export function extractExportedNames(source: string): string[] {
 // Non-source contract classification.
 // ---------------------------------------------------------------------------
 
-function hasSegment(path: string, predicate: (seg: string) => boolean): boolean {
+function hasSegment(
+  path: string,
+  predicate: (seg: string) => boolean,
+): boolean {
   return segments(path).some(predicate);
 }
 
@@ -116,8 +121,15 @@ function isMigrationPath(path: string): boolean {
   });
 }
 
-const DB_SCHEMA_EXTENSIONS: ReadonlySet<string> = new Set([".sql", ".prisma", ".dbml"]);
-const API_SCHEMA_EXTENSIONS: ReadonlySet<string> = new Set([".graphql", ".gql"]);
+const DB_SCHEMA_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".sql",
+  ".prisma",
+  ".dbml",
+]);
+const API_SCHEMA_EXTENSIONS: ReadonlySet<string> = new Set([
+  ".graphql",
+  ".gql",
+]);
 
 function isApiSchemaFile(name: string, ext: string): boolean {
   if (API_SCHEMA_EXTENSIONS.has(ext)) return true;

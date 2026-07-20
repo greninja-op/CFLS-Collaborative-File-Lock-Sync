@@ -31,7 +31,10 @@ function file(path: string, content: string): RepoRelativeFile {
 }
 
 /** The single edge produced for `src/a.ts` from a one-import fixture. */
-function soleEdge(content: string, extra: RepoRelativeFile[] = []): DependencyEdge {
+function soleEdge(
+  content: string,
+  extra: RepoRelativeFile[] = [],
+): DependencyEdge {
   const { modules } = analyzer.analyze([file("src/a.ts", content), ...extra]);
   const edges = modules.find((m) => m.sourceFile === "src/a.ts")?.edges ?? [];
   expect(edges).toHaveLength(1);
@@ -44,7 +47,11 @@ function soleEdge(content: string, extra: RepoRelativeFile[] = []): DependencyEd
 
 describe("Req 19.6 — confidence assignment matrix", () => {
   it("maps each import form to its documented confidence level", () => {
-    const cases: { label: string; edge: DependencyEdge; expected: Confidence }[] = [
+    const cases: {
+      label: string;
+      edge: DependencyEdge;
+      expected: Confidence;
+    }[] = [
       {
         label: "static relative import",
         edge: soleEdge("import { b } from './b';", [file("src/b.ts", "")]),
@@ -62,7 +69,9 @@ describe("Req 19.6 — confidence assignment matrix", () => {
       },
       {
         label: "dynamic import with a static relative string",
-        edge: soleEdge("const m = await import('./b');", [file("src/b.ts", "")]),
+        edge: soleEdge("const m = await import('./b');", [
+          file("src/b.ts", ""),
+        ]),
         expected: "low",
       },
       {
@@ -149,7 +158,10 @@ describe("Req 19.7 — excluded folders and files are never analyzed", () => {
     const serialized = JSON.stringify(graph);
 
     // No excluded path appears as a source, package, or contract id...
-    expect(graph.modules.map((m) => m.sourceFile)).toEqual(["src/app.ts", "src/util.ts"]);
+    expect(graph.modules.map((m) => m.sourceFile)).toEqual([
+      "src/app.ts",
+      "src/util.ts",
+    ]);
     for (const marker of [
       "node_modules",
       "dist/",
@@ -161,7 +173,9 @@ describe("Req 19.7 — excluded folders and files are never analyzed", () => {
       "vendor-leak",
       "SECRET_TOKEN",
     ]) {
-      expect(serialized.includes(marker), `must not leak "${marker}"`).toBe(false);
+      expect(serialized.includes(marker), `must not leak "${marker}"`).toBe(
+        false,
+      );
     }
   });
 });
@@ -240,7 +254,8 @@ describe("Req 19.4 — add and remove edge deltas", () => {
 
     const delta = computeDelta(before, after);
     const highRemoved = delta.changedEdges.find(
-      (e) => e.to === "src/b.ts" && e.confidence === "high" && e.op === "remove",
+      (e) =>
+        e.to === "src/b.ts" && e.confidence === "high" && e.op === "remove",
     );
     const lowAdded = delta.changedEdges.find(
       (e) => e.to === "src/b.ts" && e.confidence === "low" && e.op === "add",

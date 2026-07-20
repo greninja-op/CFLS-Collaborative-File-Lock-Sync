@@ -40,15 +40,20 @@ Every application message after auth uses this envelope:
 
 ```jsonc
 {
-  "type": "lock.acquire",           // message type from the catalog
-  "version": 1,                      // MESSAGE_FORMAT_VERSION
-  "eventId": "9f2c…-uuid",          // globally unique per Signed_Event (idempotency)
-  "session": { "repoId": "…", "teamId": "…", "branch": "…", "baseRevision": "…" },
-  "deviceId": "dev-abc",            // sender device (public-key id)
+  "type": "lock.acquire", // message type from the catalog
+  "version": 1, // MESSAGE_FORMAT_VERSION
+  "eventId": "9f2c…-uuid", // globally unique per Signed_Event (idempotency)
+  "session": {
+    "repoId": "…",
+    "teamId": "…",
+    "branch": "…",
+    "baseRevision": "…",
+  },
+  "deviceId": "dev-abc", // sender device (public-key id)
   "replay": { "counter": 10432, "nonce": "b64…" }, // monotonic per-device counter + nonce
   "sentAt": "2024-01-01T10:00:00Z", // advisory only; NEVER sole conflict resolver
-  "payload": { /* type-specific */ },
-  "signature": "b64(Ed25519 over canonical(type,version,eventId,session,deviceId,replay,sentAt,payload))"
+  "payload": {/* type-specific */},
+  "signature": "b64(Ed25519 over canonical(type,version,eventId,session,deviceId,replay,sentAt,payload))",
 }
 ```
 
@@ -56,18 +61,18 @@ Host-emitted broadcasts and acks carry the assigned `eventRevision`.
 
 ## Message Catalog
 
-| Category | Client → Host | Host → Client |
-|---|---|---|
-| Auth | `auth.hello`, `auth.response` | `auth.challenge`, `auth.ok`, `auth.error` |
-| Presence | `presence.report` (start/stop) | `presence.update` |
-| Locks | `lock.acquire`, `lock.release`, `lock.override` | `lock.update`, `lock.conflict` |
-| Intents | `intent.declare`, `intent.update`, `intent.withdraw`, `intent.progress` | `intent.update`, `intent.conflict` |
-| Dependency | `dep.snapshot`, `dep.delta` | `dep.applied` |
-| Path change | `path.renamed`, `path.deleted`, `file.created` | `path.update` |
-| Heartbeat | `heartbeat.ping` | `heartbeat.ack` |
-| Sync | `sync.request {fromRevision}` | `sync.events {events[]}` / `sync.snapshot {state}` |
-| Broadcast | — | `coordination.update` |
-| Error | — | `error {code, message, refEventId?}` |
+| Category    | Client → Host                                                           | Host → Client                                      |
+| ----------- | ----------------------------------------------------------------------- | -------------------------------------------------- |
+| Auth        | `auth.hello`, `auth.response`                                           | `auth.challenge`, `auth.ok`, `auth.error`          |
+| Presence    | `presence.report` (start/stop)                                          | `presence.update`                                  |
+| Locks       | `lock.acquire`, `lock.release`, `lock.override`                         | `lock.update`, `lock.conflict`                     |
+| Intents     | `intent.declare`, `intent.update`, `intent.withdraw`, `intent.progress` | `intent.update`, `intent.conflict`                 |
+| Dependency  | `dep.snapshot`, `dep.delta`                                             | `dep.applied`                                      |
+| Path change | `path.renamed`, `path.deleted`, `file.created`                          | `path.update`                                      |
+| Heartbeat   | `heartbeat.ping`                                                        | `heartbeat.ack`                                    |
+| Sync        | `sync.request {fromRevision}`                                           | `sync.events {events[]}` / `sync.snapshot {state}` |
+| Broadcast   | —                                                                       | `coordination.update`                              |
+| Error       | —                                                                       | `error {code, message, refEventId?}`               |
 
 ## Idempotency & Replay Protection
 
@@ -130,20 +135,20 @@ The Local_MCP_Server exposes exactly **12 tools** over stdio/local transport. Ev
 wraps its data in the `McpEnvelope`, carrying `connection` and `staleness` on every response
 (see [architecture.md](./architecture.md#local_mcp_server-packagesmcp-server)).
 
-| # | Tool | Purpose |
-|---|---|---|
-| 1 | `get_risk_map` | Per-path Risk_Map with contributors, explanation paths, planned file creations, highest revision. Own activity excluded. |
-| 2 | `get_dependency_impact` | Direct + reverse dependencies, shared contracts, risk level, explanation paths for given paths. |
-| 3 | `get_dependencies` | `{ path } → { dependsOn[], presentInGraph }`. |
-| 4 | `get_dependents` | `{ path } → { dependedOnBy[], presentInGraph }`. |
-| 5 | `declare_intent` | Declare modify/create paths + description; returns intentId, eventRevision, reclassifications. |
-| 6 | `update_intent` | Owner-only update of an intent's paths/description. |
-| 7 | `withdraw_intent` | Owner-only withdrawal of an intent. |
-| 8 | `acquire_lock` | Acquire a soft/coordination-required/hard lock on a file/folder/glob scope. |
-| 9 | `release_lock` | Release by lockId or scope; holder-only. |
-| 10 | `subscribe_to_coordination_updates` | Stream `CoordinationUpdate`s for a session. |
-| 11 | `get_connection_status` | Online/offline + connected/offline participants + manual-coordination flag. |
-| 12 | `get_project_session_status` | Current session identity + authorization status. |
+| #   | Tool                                | Purpose                                                                                                                  |
+| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| 1   | `get_risk_map`                      | Per-path Risk_Map with contributors, explanation paths, planned file creations, highest revision. Own activity excluded. |
+| 2   | `get_dependency_impact`             | Direct + reverse dependencies, shared contracts, risk level, explanation paths for given paths.                          |
+| 3   | `get_dependencies`                  | `{ path } → { dependsOn[], presentInGraph }`.                                                                            |
+| 4   | `get_dependents`                    | `{ path } → { dependedOnBy[], presentInGraph }`.                                                                         |
+| 5   | `declare_intent`                    | Declare modify/create paths + description; returns intentId, eventRevision, reclassifications.                           |
+| 6   | `update_intent`                     | Owner-only update of an intent's paths/description.                                                                      |
+| 7   | `withdraw_intent`                   | Owner-only withdrawal of an intent.                                                                                      |
+| 8   | `acquire_lock`                      | Acquire a soft/coordination-required/hard lock on a file/folder/glob scope.                                              |
+| 9   | `release_lock`                      | Release by lockId or scope; holder-only.                                                                                 |
+| 10  | `subscribe_to_coordination_updates` | Stream `CoordinationUpdate`s for a session.                                                                              |
+| 11  | `get_connection_status`             | Online/offline + connected/offline participants + manual-coordination flag.                                              |
+| 12  | `get_project_session_status`        | Current session identity + authorization status.                                                                         |
 
 ### Example tool schemas
 

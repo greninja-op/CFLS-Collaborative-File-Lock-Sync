@@ -75,7 +75,12 @@
         </div>
       </div>
 
-      <nav id="mobile-menu" class="mobile-menu" aria-label="Mobile navigation" hidden>
+      <nav
+        id="mobile-menu"
+        class="mobile-menu"
+        aria-label="Mobile navigation"
+        hidden
+      >
         <a href="#why">Why CFLS</a>
         <a href="#workflow">How it works</a>
         <a href="#demo">Walkthrough</a>
@@ -86,11 +91,17 @@
     <main id="main-content">
       <section id="top" class="hero shell">
         <div class="hero-copy" data-reveal>
-          <p class="eyebrow"><span class="eyebrow-pulse"></span> Collaborative code coordination</p>
-          <h1>Two developers. <span>One shared codebase.</span> No surprise collisions.</h1>
+          <p class="eyebrow">
+            <span class="eyebrow-pulse"></span> Collaborative code coordination
+          </p>
+          <h1>
+            Two developers. <span>One shared codebase.</span> No surprise
+            collisions.
+          </h1>
           <p class="hero-lede">
-            CFLS gives every teammate a live signal before they touch the same work. Local Agents
-            coordinate through one Host while your source code stays in your normal Git workflow.
+            CFLS gives every teammate a live signal before they touch the same
+            work. Local Agents coordinate through one Host while your source
+            code stays in your normal Git workflow.
           </p>
           <div class="hero-actions">
             <a class="button button-primary" href="#demo">
@@ -109,9 +120,17 @@
             <a class="button button-secondary" href="#install">Set up a team</a>
           </div>
           <ul class="hero-proof" aria-label="CFLS highlights">
-            <li><span class="proof-dot proof-dot--green"></span> Code stays in Git</li>
-            <li><span class="proof-dot proof-dot--blue"></span> Per-device identity</li>
-            <li><span class="proof-dot proof-dot--amber"></span> Shared risk signal</li>
+            <li>
+              <span class="proof-dot proof-dot--green"></span> Code stays in Git
+            </li>
+            <li>
+              <span class="proof-dot proof-dot--blue"></span> Per-device
+              identity
+            </li>
+            <li>
+              <span class="proof-dot proof-dot--amber"></span> Shared risk
+              signal
+            </li>
           </ul>
         </div>
 
@@ -125,9 +144,14 @@
             <span>Bob's laptop</span>
           </div>
 
-          <article class="editor-card editor-card--alice" aria-label="Alice's VS Code workspace">
+          <article
+            class="editor-card editor-card--alice"
+            aria-label="Alice's VS Code workspace"
+          >
             <div class="editor-titlebar">
-              <span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="window-dots" aria-hidden="true"
+                ><i></i><i></i><i></i
+              ></span>
               <span class="editor-app">VS Code</span>
               <span class="editor-person"><b>A</b> Alice</span>
             </div>
@@ -136,28 +160,31 @@
                 <span></span><span></span><span></span><span></span>
               </aside>
               <div class="editor-main">
-                <div class="editor-tabs"><span class="active-tab">payments.ts</span></div>
+                <div class="editor-tabs">
+                  <span class="active-tab">payments.ts</span>
+                </div>
                 <div class="code-lines" aria-hidden="true">
                   <div>
                     <em>1</em><span class="token-key">export function</span>
                     <span class="token-fn">refund</span>(id) {
                   </div>
                   <div>
-                    <em>2</em><span class="indent"></span><span class="token-key">const</span> order
-                    = <span class="token-key">await</span> orders.find(id)
+                    <em>2</em><span class="indent"></span
+                    ><span class="token-key">const</span> order =
+                    <span class="token-key">await</span> orders.find(id)
                   </div>
                   <div class="code-active">
                     <em>3</em><span class="indent"></span
-                    ><span class="token-key">return</span> gateway.reverse(order)<span
-                      class="editor-caret"
-                    ></span>
+                    ><span class="token-key">return</span>
+                    gateway.reverse(order)<span class="editor-caret"></span>
                   </div>
                   <div><em>4</em>}</div>
                 </div>
               </div>
             </div>
             <div class="editor-status">
-              <span class="online-led"></span><span>CFLS: editing payments.ts</span
+              <span class="online-led"></span
+              ><span>CFLS: editing payments.ts</span
               ><span class="status-owner">Alice</span>
             </div>
           </article>
@@ -181,9 +208,14 @@
             <p>signed metadata</p>
           </div>
 
-          <article class="editor-card editor-card--bob" aria-label="Bob's Kiro workspace">
+          <article
+            class="editor-card editor-card--bob"
+            aria-label="Bob's Kiro workspace"
+          >
             <div class="editor-titlebar">
-              <span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+              <span class="window-dots" aria-hidden="true"
+                ><i></i><i></i><i></i
+              ></span>
               <span class="editor-app">Kiro</span>
               <span class="editor-person"><b>B</b> Bob</span>
             </div>
@@ -192,7 +224,9 @@
                 <span></span><span></span><span></span><span></span>
               </aside>
               <div class="editor-main">
-                <div class="editor-tabs"><span class="active-tab">payments.ts</span></div>
+                <div class="editor-tabs">
+                  <span class="active-tab">payments.ts</span>
+                </div>
                 <div class="code-lines" aria-hidden="true">
                   <div>
                     <em>1</em><span class="token-key">export function</span>
@@ -200,14 +234,15 @@
                   </div>
                   <div class="code-risk">
                     <em>2</em><span class="indent"></span
-                    ><span class="token-key">return</span> gateway.reverse(order)<span
-                      class="remote-lock"
+                    ><span class="token-key">return</span>
+                    gateway.reverse(order)<span class="remote-lock"
                       >Alice editing</span
                     >
                   </div>
                   <div><em>3</em>}</div>
                   <div class="code-muted">
-                    <em>4</em><span class="comment">// choose another task first</span>
+                    <em>4</em
+                    ><span class="comment">// choose another task first</span>
                   </div>
                 </div>
               </div>
@@ -218,12 +253,20 @@
             </div>
           </article>
 
-          <div class="network-path network-path--one" aria-hidden="true"><span></span></div>
-          <div class="network-path network-path--two" aria-hidden="true"><span></span></div>
+          <div class="network-path network-path--one" aria-hidden="true">
+            <span></span>
+          </div>
+          <div class="network-path network-path--two" aria-hidden="true">
+            <span></span>
+          </div>
         </div>
       </section>
 
-      <section class="trust-strip shell" aria-label="CFLS principles" data-reveal>
+      <section
+        class="trust-strip shell"
+        aria-label="CFLS principles"
+        data-reveal
+      >
         <div>
           <span class="trust-icon trust-icon--git">G</span>
           <p>
@@ -241,13 +284,15 @@
         <div>
           <span class="trust-icon trust-icon--key">+</span>
           <p>
-            <strong>One identity per device</strong><span>Invitation-based team membership.</span>
+            <strong>One identity per device</strong
+            ><span>Invitation-based team membership.</span>
           </p>
         </div>
         <div>
           <span class="trust-icon trust-icon--host">H</span>
           <p>
-            <strong>One shared coordination view</strong><span>A Host keeps the team in sync.</span>
+            <strong>One shared coordination view</strong
+            ><span>A Host keeps the team in sync.</span>
           </p>
         </div>
       </section>
@@ -257,8 +302,9 @@
           <p class="eyebrow">The problem</p>
           <h2>Merge conflicts are discovered too late.</h2>
           <p>
-            The expensive moment is not the merge itself. It is the hour two people spend
-            implementing overlapping ideas without knowing the other person is already there.
+            The expensive moment is not the merge itself. It is the hour two
+            people spend implementing overlapping ideas without knowing the
+            other person is already there.
           </p>
         </div>
 
@@ -266,7 +312,9 @@
           <article class="scenario-card scenario-card--before" data-reveal>
             <div class="scenario-topline">
               <span>Without coordination</span
-              ><span class="scenario-state scenario-state--risk">blind overlap</span>
+              ><span class="scenario-state scenario-state--risk"
+                >blind overlap</span
+              >
             </div>
             <div class="scenario-file">
               <span class="file-dot file-dot--red"></span>
@@ -276,11 +324,16 @@
             <ol class="event-list">
               <li><b>09:14</b><span>Alice changes refund logic.</span></li>
               <li><b>09:18</b><span>Bob changes the same path.</span></li>
-              <li><b>10:02</b><span>Git discovers the collision at merge time.</span></li>
+              <li>
+                <b>10:02</b
+                ><span>Git discovers the collision at merge time.</span>
+              </li>
             </ol>
             <div class="conflict-snippet" aria-label="Conflicting changes">
               <span class="line-delete">- return gateway.reverse(order)</span>
-              <span class="line-add">+ return gateway.reverse(order, reason)</span>
+              <span class="line-add"
+                >+ return gateway.reverse(order, reason)</span
+              >
               <span class="line-add">+ return gateway.refund(order)</span>
             </div>
           </article>
@@ -288,7 +341,9 @@
           <article class="scenario-card scenario-card--after" data-reveal>
             <div class="scenario-topline">
               <span>With CFLS</span
-              ><span class="scenario-state scenario-state--safe">shared signal</span>
+              ><span class="scenario-state scenario-state--safe"
+                >shared signal</span
+              >
             </div>
             <div class="scenario-file">
               <span class="file-dot file-dot--green"></span>
@@ -296,15 +351,26 @@
               <span>Alice active</span>
             </div>
             <ol class="event-list">
-              <li><b>09:14</b><span>Alice's local Agent shares activity metadata.</span></li>
-              <li><b>09:14</b><span>Bob sees that the file is already in play.</span></li>
-              <li><b>09:15</b><span>Bob coordinates or starts on a safe next task.</span></li>
+              <li>
+                <b>09:14</b
+                ><span>Alice's local Agent shares activity metadata.</span>
+              </li>
+              <li>
+                <b>09:14</b
+                ><span>Bob sees that the file is already in play.</span>
+              </li>
+              <li>
+                <b>09:15</b
+                ><span>Bob coordinates or starts on a safe next task.</span>
+              </li>
             </ol>
             <div class="safe-outcome">
               <span class="safe-check">+</span>
               <p>
                 <strong>One deliberate decision.</strong
-                ><span>No surprise collision waiting at the end of the day.</span>
+                ><span
+                  >No surprise collision waiting at the end of the day.</span
+                >
               </p>
             </div>
           </article>
@@ -316,18 +382,24 @@
           <div class="section-heading section-heading--split" data-reveal>
             <div>
               <p class="eyebrow">How it works</p>
-              <h2>A quiet coordination layer around the tools your team already uses.</h2>
+              <h2>
+                A quiet coordination layer around the tools your team already
+                uses.
+              </h2>
             </div>
             <p>
-              Each person keeps their own editor and Git checkout. The local Agent turns activity
-              into a shared signal; the Host distributes that signal to the rest of the team.
+              Each person keeps their own editor and Git checkout. The local
+              Agent turns activity into a shared signal; the Host distributes
+              that signal to the rest of the team.
             </p>
           </div>
 
           <div class="architecture-card" data-reveal>
             <div class="architecture-device">
               <span class="architecture-label">Alice's laptop</span>
-              <div class="architecture-box"><b>VS Code / Kiro</b><span>Editor events</span></div>
+              <div class="architecture-box">
+                <b>VS Code / Kiro</b><span>Editor events</span>
+              </div>
               <div class="architecture-arrow">down</div>
               <div class="architecture-box architecture-box--agent">
                 <b>Local CFLS Agent</b><span>Watches, signs, caches</span>
@@ -337,13 +409,16 @@
               <span>signed coordination metadata</span>
               <i></i>
               <div class="architecture-host">
-                <span>CFLS</span><b>Coordination Host</b><small>shared state</small>
+                <span>CFLS</span><b>Coordination Host</b
+                ><small>shared state</small>
               </div>
               <i></i>
             </div>
             <div class="architecture-device">
               <span class="architecture-label">Bob's laptop</span>
-              <div class="architecture-box"><b>VS Code / Kiro</b><span>Visible context</span></div>
+              <div class="architecture-box">
+                <b>VS Code / Kiro</b><span>Visible context</span>
+              </div>
               <div class="architecture-arrow">down</div>
               <div class="architecture-box architecture-box--agent">
                 <b>Local CFLS Agent</b><span>Receives state</span>
@@ -359,14 +434,17 @@
             <article data-reveal>
               <span>01</span>
               <h3>Observe</h3>
-              <p>Your local Agent sees editor activity inside the repository you authorize.</p>
+              <p>
+                Your local Agent sees editor activity inside the repository you
+                authorize.
+              </p>
             </article>
             <article data-reveal>
               <span>02</span>
               <h3>Signal</h3>
               <p>
-                It sends a signed coordination event to the shared Host, not a copy of your source
-                file.
+                It sends a signed coordination event to the shared Host, not a
+                copy of your source file.
               </p>
             </article>
             <article data-reveal>
@@ -377,7 +455,10 @@
             <article data-reveal>
               <span>04</span>
               <h3>Ship</h3>
-              <p>Git still handles commits, branches, reviews, and the source bytes themselves.</p>
+              <p>
+                Git still handles commits, branches, reviews, and the source
+                bytes themselves.
+              </p>
             </article>
           </div>
         </div>
@@ -388,9 +469,9 @@
           <p class="eyebrow">Interactive walkthrough</p>
           <h2>Watch two editor windows make a safer choice.</h2>
           <p>
-            This is a product-flow illustration of the local playground. It shows the story a real
-            60-second recording should tell: activity becomes context before the second person
-            edits.
+            This is a product-flow illustration of the local playground. It
+            shows the story a real 60-second recording should tell: activity
+            becomes context before the second person edits.
           </p>
         </div>
 
@@ -402,7 +483,11 @@
                 Both teammates are online and looking at the same repository.
               </p>
             </div>
-            <button id="demo-play" class="button button-primary button-play" type="button">
+            <button
+              id="demo-play"
+              class="button button-primary button-play"
+              type="button"
+            >
               <svg viewBox="0 0 20 20" aria-hidden="true">
                 <path d="m7 4 8 6-8 6V4Z" fill="currentColor" />
               </svg>
@@ -410,7 +495,11 @@
             </button>
           </div>
 
-          <div class="demo-controls" role="tablist" aria-label="Walkthrough steps">
+          <div
+            class="demo-controls"
+            role="tablist"
+            aria-label="Walkthrough steps"
+          >
             <button
               class="demo-step is-active"
               type="button"
@@ -464,7 +553,8 @@
                 <div class="laptop-camera"></div>
                 <div class="demo-window">
                   <div class="demo-window-bar">
-                    <span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span
+                    <span class="window-dots" aria-hidden="true"
+                      ><i></i><i></i><i></i></span
                     ><span>VS Code - billing-service</span
                     ><span class="demo-avatar demo-avatar--alice">A</span>
                   </div>
@@ -476,26 +566,28 @@
                     <div class="demo-code">
                       <div class="demo-code-tab">payments.ts</div>
                       <div>
-                        <em>18</em><span class="token-key">export function</span>
+                        <em>18</em
+                        ><span class="token-key">export function</span>
                         <span class="token-fn">refund</span>(id) {
                       </div>
                       <div class="demo-edit-line">
                         <em>19</em><span class="indent"></span
-                        ><span class="token-key">return</span> gateway.reverse(id)<span
-                          class="demo-caret"
-                        ></span>
+                        ><span class="token-key">return</span>
+                        gateway.reverse(id)<span class="demo-caret"></span>
                       </div>
                       <div><em>20</em>}</div>
                     </div>
                   </div>
                   <div class="demo-statusline">
-                    <span><i></i> CFLS: Online</span><strong>Alice editing</strong>
+                    <span><i></i> CFLS: Online</span
+                    ><strong>Alice editing</strong>
                   </div>
                 </div>
               </div>
               <div class="laptop-base"></div>
               <p class="laptop-name">
-                <span class="caption-dot caption-dot--alice"></span>Alice's laptop
+                <span class="caption-dot caption-dot--alice"></span>Alice's
+                laptop
               </p>
             </article>
 
@@ -524,25 +616,28 @@
                 <div class="laptop-camera"></div>
                 <div class="demo-window">
                   <div class="demo-window-bar">
-                    <span class="window-dots" aria-hidden="true"><i></i><i></i><i></i></span
+                    <span class="window-dots" aria-hidden="true"
+                      ><i></i><i></i><i></i></span
                     ><span>Kiro - billing-service</span
                     ><span class="demo-avatar demo-avatar--bob">B</span>
                   </div>
                   <div class="demo-window-main">
                     <div class="demo-explorer">
                       <span>EXPLORER</span><b>src</b><small>payments.ts</small
-                      ><small>orders.ts</small><small class="demo-next-file">tax.ts</small>
+                      ><small>orders.ts</small
+                      ><small class="demo-next-file">tax.ts</small>
                     </div>
                     <div class="demo-code">
                       <div class="demo-code-tab">payments.ts</div>
                       <div>
-                        <em>18</em><span class="token-key">export function</span>
+                        <em>18</em
+                        ><span class="token-key">export function</span>
                         <span class="token-fn">refund</span>(id) {
                       </div>
                       <div class="demo-bob-risk">
                         <em>19</em><span class="indent"></span
-                        ><span class="token-key">return</span> gateway.reverse(id)<span
-                          class="demo-alert"
+                        ><span class="token-key">return</span>
+                        gateway.reverse(id)<span class="demo-alert"
                           >Alice is active here</span
                         >
                       </div>
@@ -564,19 +659,27 @@
               </p>
             </article>
 
-            <div class="demo-signal demo-signal--left" aria-hidden="true"><span></span></div>
-            <div class="demo-signal demo-signal--right" aria-hidden="true"><span></span></div>
+            <div class="demo-signal demo-signal--left" aria-hidden="true">
+              <span></span>
+            </div>
+            <div class="demo-signal demo-signal--right" aria-hidden="true">
+              <span></span>
+            </div>
           </div>
 
           <div class="demo-footer">
             <div class="demo-legend">
               <span><i class="legend-dot legend-dot--green"></i> online</span
-              ><span><i class="legend-dot legend-dot--amber"></i> coordinate</span
-              ><span><i class="legend-dot legend-dot--blue"></i> metadata signal</span>
+              ><span
+                ><i class="legend-dot legend-dot--amber"></i> coordinate</span
+              ><span
+                ><i class="legend-dot legend-dot--blue"></i> metadata
+                signal</span
+              >
             </div>
             <p>
-              To record the real sequence, run <code>pnpm playground</code> and open separate VS
-              Code windows for Alice and Bob.
+              To record the real sequence, run <code>pnpm playground</code> and
+              open separate VS Code windows for Alice and Bob.
             </p>
           </div>
         </div>
@@ -590,8 +693,9 @@
               <h2>Make the next edit an informed decision.</h2>
             </div>
             <p>
-              CFLS is intentionally small: it does not replace your editor, your Git host, or your
-              team. It gives all three a shared coordination signal.
+              CFLS is intentionally small: it does not replace your editor, your
+              Git host, or your team. It gives all three a shared coordination
+              signal.
             </p>
           </div>
 
@@ -616,8 +720,8 @@
               <p class="capability-status">Available in the MVP</p>
               <h3>See active work</h3>
               <p>
-                Local Agents share presence and soft-lock coordination so teammates can see when a
-                tracked file is in play.
+                Local Agents share presence and soft-lock coordination so
+                teammates can see when a tracked file is in play.
               </p>
             </article>
             <article class="capability-card capability-card--live" data-reveal>
@@ -644,8 +748,8 @@
               <p class="capability-status">Available in the MVP</p>
               <h3>Connect a small team</h3>
               <p>
-                One Host, local Agents, invitation-based device identities, and a VS Code/Kiro
-                extension for the shared picture.
+                One Host, local Agents, invitation-based device identities, and
+                a VS Code/Kiro extension for the shared picture.
               </p>
             </article>
             <article class="capability-card capability-card--live" data-reveal>
@@ -668,8 +772,8 @@
               <p class="capability-status">Available in the MVP</p>
               <h3>Keep source in Git</h3>
               <p>
-                CFLS is designed to coordinate metadata. Commits, branches, reviews, and source
-                bytes remain in your normal Git workflow.
+                CFLS is designed to coordinate metadata. Commits, branches,
+                reviews, and source bytes remain in your normal Git workflow.
               </p>
             </article>
           </div>
@@ -679,8 +783,8 @@
               <p class="eyebrow">Being hardened next</p>
               <h3>The coordination model is ready for deeper context.</h3>
               <p>
-                These parts are in the architecture and active development, but are not yet the
-                promise of the live editor workflow.
+                These parts are in the architecture and active development, but
+                are not yet the promise of the live editor workflow.
               </p>
             </div>
             <ul>
@@ -689,7 +793,8 @@
                 <p>
                   <strong>Dependency-aware impact</strong
                   ><small
-                    >Analyze relationships locally and turn them into usable risk context.</small
+                    >Analyze relationships locally and turn them into usable
+                    risk context.</small
                   >
                 </p>
               </li>
@@ -698,8 +803,8 @@
                 <p>
                   <strong>MCP transport</strong
                   ><small
-                    >Give coding agents the same coordination view through a real local
-                    connection.</small
+                    >Give coding agents the same coordination view through a
+                    real local connection.</small
                   >
                 </p>
               </li>
@@ -708,8 +813,8 @@
                 <p>
                   <strong>Protected-path policy</strong
                   ><small
-                    >Move from friendly soft signals to enforceable workflows for critical
-                    paths.</small
+                    >Move from friendly soft signals to enforceable workflows
+                    for critical paths.</small
                   >
                 </p>
               </li>
@@ -723,8 +828,8 @@
           <p class="eyebrow">Install and try it</p>
           <h2>Choose the route that matches your role.</h2>
           <p>
-            Start with the local playground for a visual demo, or follow the role-based team setup
-            for a real shared repository.
+            Start with the local playground for a visual demo, or follow the
+            role-based team setup for a real shared repository.
           </p>
         </div>
 
@@ -756,7 +861,8 @@
               aria-controls="install-panel-host"
               data-install-tab="host"
             >
-              <span>02</span><b>I run the Host</b><small>Create a team and invite devices</small>
+              <span>02</span><b>I run the Host</b
+              ><small>Create a team and invite devices</small>
             </button>
             <button
               class="install-tab"
@@ -779,7 +885,8 @@
               aria-controls="install-panel-editor"
               data-install-tab="editor"
             >
-              <span>04</span><b>I use VS Code or Kiro</b><small>Install the editor extension</small>
+              <span>04</span><b>I use VS Code or Kiro</b
+              ><small>Install the editor extension</small>
             </button>
             <button
               class="install-tab"
@@ -807,8 +914,9 @@
               <p class="panel-label">Fastest visual demo</p>
               <h3>Run a Host plus Alice, Bob, and Carol on one machine.</h3>
               <p>
-                Use this before filming your demo. It launches the local coordination scenario and
-                lets you open separate editor windows to show the team flow.
+                Use this before filming your demo. It launches the local
+                coordination scenario and lets you open separate editor windows
+                to show the team flow.
               </p>
               <div class="command-stack">
                 <div class="command">
@@ -817,13 +925,15 @@
                 </div>
                 <div class="command">
                   <code>pnpm playground</code
-                  ><button type="button" data-copy="pnpm playground">Copy</button>
+                  ><button type="button" data-copy="pnpm playground">
+                    Copy
+                  </button>
                 </div>
               </div>
               <p class="panel-note">
-                <strong>What you will see:</strong> a local Host and three simulated teammate
-                environments. Open the generated workspaces in separate VS Code windows for the
-                clearest recording.
+                <strong>What you will see:</strong> a local Host and three
+                simulated teammate environments. Open the generated workspaces
+                in separate VS Code windows for the clearest recording.
               </p>
             </section>
 
@@ -839,24 +949,33 @@
               <p class="panel-label">Admin path</p>
               <h3>Create a team identity, then start the coordination Host.</h3>
               <p>
-                Run these commands inside the Git repository that your team shares. The Host can
-                begin on a laptop for a demo and move to an always-on server later.
+                Run these commands inside the Git repository that your team
+                shares. The Host can begin on a laptop for a demo and move to an
+                always-on server later.
               </p>
               <div class="command-stack">
                 <div class="command">
                   <code>.\cfls.exe admin-init --team my-team</code
-                  ><button type="button" data-copy=".\cfls.exe admin-init --team my-team">
+                  ><button
+                    type="button"
+                    data-copy=".\cfls.exe admin-init --team my-team"
+                  >
                     Copy
                   </button>
                 </div>
                 <div class="command">
                   <code>.\cfls.exe host --url wss://0.0.0.0:8730</code
-                  ><button type="button" data-copy=".\cfls.exe host --url wss://0.0.0.0:8730">
+                  ><button
+                    type="button"
+                    data-copy=".\cfls.exe host --url wss://0.0.0.0:8730"
+                  >
                     Copy
                   </button>
                 </div>
                 <div class="command">
-                  <code>.\cfls.exe invite alice &lt;alice-device-public-key&gt;</code
+                  <code
+                    >.\cfls.exe invite alice
+                    &lt;alice-device-public-key&gt;</code
                   ><button
                     type="button"
                     data-copy=".\cfls.exe invite alice &lt;alice-device-public-key&gt;"
@@ -866,9 +985,10 @@
                 </div>
               </div>
               <p class="panel-note">
-                <strong>Important:</strong> <code>0.0.0.0</code> is only the listening address.
-                Teammates join using this machine's reachable LAN address or DNS name. Use a real
-                TLS certificate for a non-demo deployment.
+                <strong>Important:</strong> <code>0.0.0.0</code> is only the
+                listening address. Teammates join using this machine's reachable
+                LAN address or DNS name. Use a real TLS certificate for a
+                non-demo deployment.
               </p>
             </section>
 
@@ -882,14 +1002,20 @@
               hidden
             >
               <p class="panel-label">Teammate path</p>
-              <h3>Register this laptop, receive an invitation, and start the local Agent.</h3>
+              <h3>
+                Register this laptop, receive an invitation, and start the local
+                Agent.
+              </h3>
               <p>
-                Each teammate uses their own device key. This MVP expects the same Git remote,
-                branch, and base revision as the Host's coordination session.
+                Each teammate uses their own device key. This MVP expects the
+                same Git remote, branch, and base revision as the Host's
+                coordination session.
               </p>
               <div class="command-stack">
                 <div class="command">
-                  <code>.\cfls.exe join --host wss://HOST-IP:8730 --name alice --team my-team</code
+                  <code
+                    >.\cfls.exe join --host wss://HOST-IP:8730 --name alice
+                    --team my-team</code
                   ><button
                     type="button"
                     data-copy=".\cfls.exe join --host wss://HOST-IP:8730 --name alice --team my-team"
@@ -903,18 +1029,27 @@
                 </div>
                 <div class="command">
                   <code>.\cfls.exe connect &lt;invitation&gt;</code
-                  ><button type="button" data-copy=".\cfls.exe connect &lt;invitation&gt;">
+                  ><button
+                    type="button"
+                    data-copy=".\cfls.exe connect &lt;invitation&gt;"
+                  >
                     Copy
                   </button>
                 </div>
                 <div class="command">
                   <code>.\cfls.exe agent --insecure-tls</code
-                  ><button type="button" data-copy=".\cfls.exe agent --insecure-tls">Copy</button>
+                  ><button
+                    type="button"
+                    data-copy=".\cfls.exe agent --insecure-tls"
+                  >
+                    Copy
+                  </button>
                 </div>
               </div>
               <p class="panel-note">
-                <strong>Demo-only flag:</strong> <code>--insecure-tls</code> is for a self-signed
-                local Host. Do not use it for a production Host with a valid certificate.
+                <strong>Demo-only flag:</strong> <code>--insecure-tls</code> is
+                for a self-signed local Host. Do not use it for a production
+                Host with a valid certificate.
               </p>
             </section>
 
@@ -929,16 +1064,19 @@
             >
               <p class="panel-label">Supported editor extension</p>
               <h3>
-                Install the packaged extension, then open the repository while the local Agent is
-                running.
+                Install the packaged extension, then open the repository while
+                the local Agent is running.
               </h3>
               <p>
-                The extension auto-discovers the Agent through a local, per-session configuration
-                file. VS Code and Kiro are the supported editor paths today.
+                The extension auto-discovers the Agent through a local,
+                per-session configuration file. VS Code and Kiro are the
+                supported editor paths today.
               </p>
               <div class="command-stack">
                 <div class="command">
-                  <code>code --install-extension release/cfls-coordination.vsix</code
+                  <code
+                    >code --install-extension
+                    release/cfls-coordination.vsix</code
                   ><button
                     type="button"
                     data-copy="code --install-extension release/cfls-coordination.vsix"
@@ -947,7 +1085,9 @@
                   </button>
                 </div>
                 <div class="command">
-                  <code>kiro --install-extension release/cfls-coordination.vsix</code
+                  <code
+                    >kiro --install-extension
+                    release/cfls-coordination.vsix</code
                   ><button
                     type="button"
                     data-copy="kiro --install-extension release/cfls-coordination.vsix"
@@ -957,9 +1097,9 @@
                 </div>
               </div>
               <p class="panel-note">
-                Use <code>--force</code> only when you intentionally want to replace an installed
-                extension version. The extension's current MVP UI is the CFLS status bar and
-                coordination-status command.
+                Use <code>--force</code> only when you intentionally want to
+                replace an installed extension version. The extension's current
+                MVP UI is the CFLS status bar and coordination-status command.
               </p>
             </section>
 
@@ -975,8 +1115,8 @@
               <p class="panel-label">Source build</p>
               <h3>Build the monorepo and package the Windows CLI yourself.</h3>
               <p>
-                This is the route for contributors or teams that want to make their own internal
-                build. It requires Node.js and pnpm.
+                This is the route for contributors or teams that want to make
+                their own internal build. It requires Node.js and pnpm.
               </p>
               <div class="command-stack">
                 <div class="command">
@@ -989,18 +1129,27 @@
                 </div>
                 <div class="command">
                   <code>pnpm -C apps/cli package:win</code
-                  ><button type="button" data-copy="pnpm -C apps/cli package:win">Copy</button>
+                  ><button
+                    type="button"
+                    data-copy="pnpm -C apps/cli package:win"
+                  >
+                    Copy
+                  </button>
                 </div>
                 <div class="command">
                   <code>pnpm -C apps/vscode-extension package:vsix</code
-                  ><button type="button" data-copy="pnpm -C apps/vscode-extension package:vsix">
+                  ><button
+                    type="button"
+                    data-copy="pnpm -C apps/vscode-extension package:vsix"
+                  >
                     Copy
                   </button>
                 </div>
               </div>
               <p class="panel-note">
-                The built executable is intended for a GitHub Release or internal distribution; it
-                is not automatically included in this static website.
+                The built executable is intended for a GitHub Release or
+                internal distribution; it is not automatically included in this
+                static website.
               </p>
             </section>
           </div>
@@ -1034,39 +1183,46 @@
             <p class="eyebrow">Clear by design</p>
             <h2>Coordination without inventing another source of truth.</h2>
             <p>
-              CFLS should make parallel work calmer, not add another place to wonder where code
-              lives.
+              CFLS should make parallel work calmer, not add another place to
+              wonder where code lives.
             </p>
           </div>
           <div class="faq-list" data-reveal>
             <details open>
               <summary>Does CFLS replace Git?<span>+</span></summary>
               <p>
-                No. Git remains responsible for source code, commits, branches, reviews, and remote
-                hosting. CFLS adds real-time coordination context around that workflow.
+                No. Git remains responsible for source code, commits, branches,
+                reviews, and remote hosting. CFLS adds real-time coordination
+                context around that workflow.
               </p>
             </details>
             <details>
               <summary>Does CFLS upload my source code?<span>+</span></summary>
               <p>
-                The architecture is designed to analyze dependencies locally and share coordination
-                metadata. Your source files continue to move through Git, not the coordination Host.
+                The architecture is designed to analyze dependencies locally and
+                share coordination metadata. Your source files continue to move
+                through Git, not the coordination Host.
               </p>
             </details>
             <details>
-              <summary>Can the Host run on one teammate's laptop?<span>+</span></summary>
+              <summary>
+                Can the Host run on one teammate's laptop?<span>+</span>
+              </summary>
               <p>
-                Yes, for a local demo or a small co-located session. For an always-on team setup,
-                move the same Host configuration to a stable machine or VPS with proper TLS and
-                backups.
+                Yes, for a local demo or a small co-located session. For an
+                always-on team setup, move the same Host configuration to a
+                stable machine or VPS with proper TLS and backups.
               </p>
             </details>
             <details>
-              <summary>What is ready now and what is next?<span>+</span></summary>
+              <summary>
+                What is ready now and what is next?<span>+</span>
+              </summary>
               <p>
-                The MVP demonstrates Host/Agent coordination, editor activity, soft lock signals,
-                and device invitations. Dependency ingestion, MCP transport, and stronger
-                protected-path enforcement are the next product hardening steps.
+                The MVP demonstrates Host/Agent coordination, editor activity,
+                soft lock signals, and device invitations. Dependency ingestion,
+                MCP transport, and stronger protected-path enforcement are the
+                next product hardening steps.
               </p>
             </details>
           </div>
@@ -1076,10 +1232,15 @@
       <section class="final-cta shell" data-reveal>
         <div>
           <p class="eyebrow">Start with one shared signal</p>
-          <h2>Let your team see the next collision before it becomes a merge conflict.</h2>
+          <h2>
+            Let your team see the next collision before it becomes a merge
+            conflict.
+          </h2>
         </div>
         <div class="final-cta-actions">
-          <a class="button button-primary" href="#install">Try the playground</a>
+          <a class="button button-primary" href="#install"
+            >Try the playground</a
+          >
           <a
             class="button button-secondary"
             href="https://github.com/greninja-op/multi-agentic-workflow"
@@ -1099,7 +1260,10 @@
           </span>
           <span>CFLS</span>
         </a>
-        <p>Collaborative File Lock Sync - a coordination layer for parallel coding.</p>
+        <p>
+          Collaborative File Lock Sync - a coordination layer for parallel
+          coding.
+        </p>
         <div>
           <a href="#top">Back to top</a
           ><a
@@ -1117,7 +1281,12 @@
       </div>
     </footer>
 
-    <div id="copy-status" class="sr-only" role="status" aria-live="polite"></div>
+    <div
+      id="copy-status"
+      class="sr-only"
+      role="status"
+      aria-live="polite"
+    ></div>
     <script src="./main.js" defer></script>
   </body>
 </html>

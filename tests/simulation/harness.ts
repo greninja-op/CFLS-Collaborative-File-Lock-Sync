@@ -22,15 +22,13 @@ import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import {
-  CoordinationAgent,
-  type RunningAgent,
-} from "@cfls/agent";
+import { CoordinationAgent, type RunningAgent } from "@cfls/agent";
 import { ALL_SOFT_CONFIG } from "@cfls/core-state";
 import type {
   AcquireLockData,
   AgentResult,
   DeclareIntentData,
+  GetDependenciesData,
   GetRiskMapData,
   MaybePromise,
   ReleaseLockData,
@@ -62,7 +60,11 @@ export interface SimulationOptions {
   /** Metadata-only Dependency_Graph shared by every agent (indirect risk). */
   graph?: DependencyGraph;
   /** Heartbeat/expiry tuning forwarded to the host authority (Req 26). */
-  expiry?: { heartbeatIntervalMs?: number; lockExpiryIntervalMs?: number; softLockMaxAgeMs?: number };
+  expiry?: {
+    heartbeatIntervalMs?: number;
+    lockExpiryIntervalMs?: number;
+    softLockMaxAgeMs?: number;
+  };
   /** Host expiry-sweep interval (ms); 0 disables the timer (default 0, driven manually). */
   expirySweepIntervalMs?: number;
   /** Per-agent WSS heartbeat interval (ms); 0 disables auto pings (default 0). */
@@ -109,7 +111,9 @@ export class Simulation {
   agentAt(index: number): SimAgent {
     const agent = this.agents[index];
     if (agent === undefined) {
-      throw new RangeError(`No agent at index ${index} (have ${this.agents.length}).`);
+      throw new RangeError(
+        `No agent at index ${index} (have ${this.agents.length}).`,
+      );
     }
     return agent;
   }
@@ -161,7 +165,11 @@ export class Simulation {
   async connectAgent(
     memberId: string,
     options: SimulationOptions = {},
-    overrides: { invitation?: string; authorized?: boolean; deviceKey?: DeviceKey } = {},
+    overrides: {
+      invitation?: string;
+      authorized?: boolean;
+      deviceKey?: DeviceKey;
+    } = {},
   ): Promise<SimAgent> {
     const deviceKey = overrides.deviceKey ?? generateDeviceKey();
     const member: MemberRef = {
@@ -183,7 +191,9 @@ export class Simulation {
       localApiPort: 0,
       enableNamedPipe: false,
       ...(options.graph !== undefined ? { graph: options.graph } : {}),
-      ...(overrides.authorized !== undefined ? { authorized: overrides.authorized } : {}),
+      ...(overrides.authorized !== undefined
+        ? { authorized: overrides.authorized }
+        : {}),
       connection: {
         heartbeatIntervalMs: options.heartbeatIntervalMs ?? 0,
         autoReconnect: false,
@@ -198,7 +208,11 @@ export class Simulation {
    * session admin. Used by every admitted agent; scenarios can also mint an
    * invitation signed by a NON-admin to exercise the rejection path.
    */
-  invitationFor(deviceKey: DeviceKey, memberId: string, issuer: DeviceKey = this.admin): string {
+  invitationFor(
+    deviceKey: DeviceKey,
+    memberId: string,
+    issuer: DeviceKey = this.admin,
+  ): string {
     const invitation = issueInvitation(
       {
         session: this.session,
@@ -221,12 +235,40 @@ export class Simulation {
     path: string,
     state: "started" | "editing" | "stopped" = "editing",
   ): void {
-    this.agentAt(agentIndex).agent.hostConnection().send("presence.report", { path, state });
+    this.agentAt(agentIndex)
+      .agent.hostConnection()
+      .send("presence.report", { path, state });
   }
 
   /** Drive a confirmed file save (reconciled as editing presence, Req 17.x). */
   save(agentIndex: number, path: string): void {
     this.reportPresence(agentIndex, path, "editing");
+  }
+
+  /** Drive a confirmed rename/move for `agentIndex` (Req 30.1, 30.2). */
+  renamePath(agentIndex: number, fromPath: string, toPath: string): void {
+    this.agentAt(agentIndex)
+      .agent.hostConnection()
+      .send("path.renamed", { fromPath, toPath });
+  }
+
+  /** Drive a confirmed deletion for `agentIndex` (Req 30.5). */
+  deletePath(agentIndex: number, path: string): void {
+    this.agentAt(agentIndex)
+      .agent.hostConnection()
+      .send("path.deleted", { path });
+  }
+
+  /** Upload a metadata-only Dependency_Graph from `agentIndex` (Req 19.3). */
+  uploadGraph(agentIndex: number, graph: DependencyGraph): void {
+    this.agentAt(agentIndex)
+      .agent.hostConnection()
+      .send("dep.snapshot", { graph });
+  }
+
+  /** The Dependency_Graph an agent's port currently holds (shared/received). */
+  portGraph(agentIndex: number): DependencyGraph | undefined {
+    return this.agentAt(agentIndex).agent.agentPort().currentGraph();
   }
 
   // -------------------------------------------------------------------------
@@ -258,22 +300,40 @@ export class Simulation {
   /** MCP `declare_intent` for `agentIndex` (Req 16.1–16.2). */
   declareIntent(
     agentIndex: number,
-    input: { modifyPaths?: string[]; createPaths?: string[]; description?: string },
+    input: {
+      modifyPaths?: string[];
+      createPaths?: string[];
+      description?: string;
+    },
   ): Promise<DeclareIntentData> {
     return this.expectOk(
-      this.agentAt(agentIndex).agent.agentPort().declareIntent({
-        session: this.session,
-        modifyPaths: input.modifyPaths ?? [],
-        createPaths: input.createPaths ?? [],
-        description: input.description ?? "",
-      }),
+      this.agentAt(agentIndex)
+        .agent.agentPort()
+        .declareIntent({
+          session: this.session,
+          modifyPaths: input.modifyPaths ?? [],
+          createPaths: input.createPaths ?? [],
+          description: input.description ?? "",
+        }),
     );
   }
 
   /** MCP `get_risk_map` for `agentIndex` (Req 24, 21, 22, 31.5). */
   getRiskMap(agentIndex: number): Promise<GetRiskMapData> {
     return this.expectOk(
-      this.agentAt(agentIndex).agent.agentPort().getRiskMap({ session: this.session }),
+      this.agentAt(agentIndex)
+        .agent.agentPort()
+        .getRiskMap({ session: this.session }),
+    );
+  }
+
+  /** MCP `get_dependencies` for `agentIndex` (Req 23.2). */
+  getDependencies(
+    agentIndex: number,
+    path: string,
+  ): Promise<GetDependenciesData> {
+    return this.expectOk(
+      this.agentAt(agentIndex).agent.agentPort().getDependencies({ path }),
     );
   }
 
@@ -298,7 +358,10 @@ export class Simulation {
   /** Poll `predicate` until it holds or the timeout elapses. */
   async waitUntil(
     predicate: () => boolean,
-    { timeoutMs = CONVERGENCE_TIMEOUT_MS, label = "condition" }: { timeoutMs?: number; label?: string } = {},
+    {
+      timeoutMs = CONVERGENCE_TIMEOUT_MS,
+      label = "condition",
+    }: { timeoutMs?: number; label?: string } = {},
   ): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
@@ -326,7 +389,12 @@ export class Simulation {
         this.agents.every((a) =>
           predicate(a.agent.view.entries(this.session), a),
         ),
-      { label: options.label ?? "cluster convergence", ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}) },
+      {
+        label: options.label ?? "cluster convergence",
+        ...(options.timeoutMs !== undefined
+          ? { timeoutMs: options.timeoutMs }
+          : {}),
+      },
     );
   }
 

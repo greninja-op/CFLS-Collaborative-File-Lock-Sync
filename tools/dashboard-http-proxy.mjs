@@ -14,7 +14,10 @@ const proxy = http.createServer((request, response) => {
       rejectUnauthorized: false,
     },
     (upstreamResponse) => {
-      response.writeHead(upstreamResponse.statusCode ?? 502, upstreamResponse.headers);
+      response.writeHead(
+        upstreamResponse.statusCode ?? 502,
+        upstreamResponse.headers,
+      );
       upstreamResponse.pipe(response);
     },
   );
@@ -27,5 +30,7 @@ const proxy = http.createServer((request, response) => {
 });
 
 proxy.listen(listenPort, "127.0.0.1", () => {
-  console.log(`Dashboard verification proxy listening on http://127.0.0.1:${listenPort}`);
+  console.log(
+    `Dashboard verification proxy listening on http://127.0.0.1:${listenPort}`,
+  );
 });

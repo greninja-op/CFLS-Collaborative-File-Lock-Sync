@@ -51,7 +51,10 @@ describe("config files round-trip", () => {
     const path = join(dir, "agent.json");
     expect(readAgentConfig(path)).toEqual({});
 
-    updateAgentConfig(path, { hostUrl: "wss://host:8730", memberName: "alice" });
+    updateAgentConfig(path, {
+      hostUrl: "wss://host:8730",
+      memberName: "alice",
+    });
     updateAgentConfig(path, { invitation: "BASE64", teamId: "team-1" });
 
     expect(readAgentConfig(path)).toEqual({
@@ -100,7 +103,9 @@ describe("config.json autoSync", () => {
     const path = join(dir, "config.json");
     writeFileSync(
       path,
-      JSON.stringify({ autoSync: { enabled: true, autoMerge: true, commitIntervalSec: 45 } }),
+      JSON.stringify({
+        autoSync: { enabled: true, autoMerge: true, commitIntervalSec: 45 },
+      }),
     );
     expect(readAutoSyncConfig(path)).toEqual({
       enabled: true,

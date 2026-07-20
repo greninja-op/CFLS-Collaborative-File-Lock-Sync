@@ -21,6 +21,7 @@ import {
   PresenceRegistry,
   RevisionCounter,
   checkInboundMinimization,
+  normalizePath,
   restoreSessionState,
   serializeSessionState,
   sessionKey,
@@ -34,7 +35,11 @@ import {
   type AuditRecord,
   type AuthHelloPayload,
   type CoordinationUpdate,
+  type DependencyGraph,
+  type DepDeltaPayload,
+  type DepSnapshotPayload,
   type ErrorCode,
+  type FileCreatedPayload,
   type IntentDeclarePayload,
   type IntentUpdatePayload,
   type IntentWithdrawPayload,
@@ -43,6 +48,8 @@ import {
   type LockReleasePayload,
   type MemberRef,
   type MembershipRegistryEntry,
+  type PathDeletedPayload,
+  type PathRenamedPayload,
   type PresenceReportPayload,
   type SessionId,
   type SignedEvent,
@@ -74,8 +81,7 @@ export interface AuthPrincipal {
 
 /** Outcome of {@link CoordinationAuthority.prepareChallenge}. */
 export type ChallengeResult =
-  | { ok: true; nonce: string }
-  | { ok: false; code: ErrorCode; message: string };
+  { ok: true; nonce: string } | { ok: false; code: ErrorCode; message: string };
 
 /** Outcome of {@link CoordinationAuthority.finalizeHandshake}. */
 export type HandshakeResult =
@@ -117,11 +123,16 @@ export class CoordinationAuthority {
   private readonly registries: SessionRegistries;
 
   /** `session_key` → in-memory Membership_Registry (mirror of the store). */
-  private readonly membershipBySession = new Map<string, MembershipRegistryEntry[]>();
+  private readonly membershipBySession = new Map<
+    string,
+    MembershipRegistryEntry[]
+  >();
   /** `session_key` → authorized admin Device_Public_Keys (Req 5.5). */
   private readonly adminKeysBySession = new Map<string, Set<DevicePublicKey>>();
   /** `session_key` → SessionId (every session the authority knows about). */
   private readonly knownSessions = new Map<string, SessionId>();
+  /** `session_key` → the latest metadata-only Dependency_Graph (Req 19, 20). */
+  private readonly dependencyGraphs = new Map<string, DependencyGraph>();
 
   constructor(
     private readonly store: Store,
@@ -152,7 +163,9 @@ export class CoordinationAuthority {
     // Reseed the applied-Event_ID index so idempotency survives a restart (Req 7.4).
     const appliedSeed: Array<readonly [SessionId, string, number]> = [];
     for (const { session } of this.store.allSessions()) {
-      for (const { eventId, eventRevision } of this.store.appliedEvents(session)) {
+      for (const { eventId, eventRevision } of this.store.appliedEvents(
+        session,
+      )) {
         appliedSeed.push([session, eventId, eventRevision]);
       }
     }
@@ -160,7 +173,8 @@ export class CoordinationAuthority {
     this.gate = new IngestGate({
       revisions: this.revisions,
       replayGuard: createReplayGuard(replaySeed),
-      checkPermission: (envelope: TypedEventEnvelope) => this.checkPermission(envelope),
+      checkPermission: (envelope: TypedEventEnvelope) =>
+        this.checkPermission(envelope),
       appliedEvents: appliedSeed,
     });
 
@@ -305,7 +319,11 @@ export class CoordinationAuthority {
     // Re-validate the hello (cheap; guards against a tampered replay).
     const revalidated = this.prepareChallenge(hello);
     if (!revalidated.ok) {
-      return { ok: false, code: revalidated.code, message: revalidated.message };
+      return {
+        ok: false,
+        code: revalidated.code,
+        message: revalidated.message,
+      };
     }
 
     if (!verifyChallenge(nonce, responseSignature, hello.devicePublicKey)) {
@@ -401,7 +419,12 @@ export class CoordinationAuthority {
 
     // Signature verification against a non-revoked, admitted key (Req 7.2, 7.3, 5.6).
     const key = sessionKey(principal.session);
-    if (!canAuthenticate(this.membershipBySession.get(key) ?? [], principal.devicePublicKey)) {
+    if (
+      !canAuthenticate(
+        this.membershipBySession.get(key) ?? [],
+        principal.devicePublicKey,
+      )
+    ) {
       return {
         accepted: false,
         error: "AUTH_INVALID_DEVICE",
@@ -426,12 +449,21 @@ export class CoordinationAuthority {
     const audits: AuditRecord[] = [];
     let applyError: { code: ErrorCode; reason: string } | undefined;
 
-    const result = this.gate.ingest(input, (env: TypedEventEnvelope, eventRevision: number) => {
-      const applied = this.apply(env, eventRevision, member, broadcasts, audits);
-      if (applied !== undefined) {
-        applyError = applied;
-      }
-    });
+    const result = this.gate.ingest(
+      input,
+      (env: TypedEventEnvelope, eventRevision: number) => {
+        const applied = this.apply(
+          env,
+          eventRevision,
+          member,
+          broadcasts,
+          audits,
+        );
+        if (applied !== undefined) {
+          applyError = applied;
+        }
+      },
+    );
 
     if (!result.accepted) {
       return {
@@ -446,7 +478,9 @@ export class CoordinationAuthority {
     if (result.duplicateOf !== undefined) {
       return {
         accepted: true,
-        ...(result.eventRevision !== undefined ? { eventRevision: result.eventRevision } : {}),
+        ...(result.eventRevision !== undefined
+          ? { eventRevision: result.eventRevision }
+          : {}),
         duplicateOf: result.duplicateOf,
         broadcasts: [],
       };
@@ -571,7 +605,8 @@ export class CoordinationAuthority {
         if (!validated.ok) {
           return {
             code: validated.code,
-            reason: "Coordination-required override requires an Override_Reason.",
+            reason:
+              "Coordination-required override requires an Override_Reason.",
           };
         }
         this.locks.acquire({
@@ -654,7 +689,8 @@ export class CoordinationAuthority {
         if (!declared.ok) {
           return {
             code: declared.code,
-            reason: declared.errors?.join("; ") ?? "Intent declaration rejected.",
+            reason:
+              declared.errors?.join("; ") ?? "Intent declaration rejected.",
           };
         }
         this.emitIntentBroadcasts(
@@ -666,7 +702,10 @@ export class CoordinationAuthority {
         audits.push({
           member,
           action: "create",
-          targetScope: declared.intent.modifyPaths[0] ?? declared.intent.createPaths[0]?.path ?? "",
+          targetScope:
+            declared.intent.modifyPaths[0] ??
+            declared.intent.createPaths[0]?.path ??
+            "",
           eventRevision,
           time: now,
         });
@@ -735,11 +774,340 @@ export class CoordinationAuthority {
         return undefined;
       }
 
+      case "path.renamed": {
+        const payload = envelope.payload as PathRenamedPayload;
+        this.applyRename(
+          session,
+          member,
+          payload,
+          eventRevision,
+          broadcasts,
+          audits,
+          now,
+        );
+        return undefined;
+      }
+
+      case "path.deleted": {
+        const payload = envelope.payload as PathDeletedPayload;
+        this.applyDelete(
+          session,
+          member,
+          payload,
+          eventRevision,
+          broadcasts,
+          audits,
+          now,
+        );
+        return undefined;
+      }
+
+      case "file.created": {
+        const payload = envelope.payload as FileCreatedPayload;
+        const allocate = this.revisionAllocator(session, eventRevision);
+        // Record the created path as tracked and retire any matching
+        // Planned_File_Creation on active intents (Req 17.2, 17.3).
+        const reconciled = this.intents.reconcileCreation(
+          session,
+          payload.path,
+        );
+        for (const intent of reconciled.removedFrom) {
+          broadcasts.push({
+            entryType: "planned_file_creation",
+            op: "removed",
+            path: payload.path,
+            member: intent.owner,
+            eventRevision: allocate(),
+          });
+        }
+        return undefined;
+      }
+
+      case "intent.progress": {
+        // Progress is advisory: it reports how far an owned intent has gotten
+        // but changes none of the authoritative coordination state (locks,
+        // intents, presence) and is not part of the broadcast
+        // Coordination_Update model (design §4.3). The event is still validated,
+        // persisted, and revision-stamped by the ingest pipeline; there is
+        // simply nothing to mutate or broadcast here.
+        return undefined;
+      }
+
+      case "dep.snapshot": {
+        const payload = envelope.payload as DepSnapshotPayload;
+        // Persist the metadata-only Dependency_Graph so the host holds it for the
+        // session identity (Req 19.3, 20.1). Distribution to other agents is
+        // handled by the server layer via the returned graph.
+        this.store.upsertDependencyGraph(session, payload.graph);
+        this.dependencyGraphs.set(sessionKey(session), payload.graph);
+        return undefined;
+      }
+
+      case "dep.delta": {
+        const payload = envelope.payload as DepDeltaPayload;
+        this.applyDependencyDelta(session, payload);
+        return undefined;
+      }
+
       default:
-        // Unhandled message types (dependency, path, progress) are accepted and
-        // recorded but produce no coordination broadcast in this MVP slice.
+        // Any remaining message types are accepted and recorded but produce no
+        // coordination broadcast.
         return undefined;
     }
+  }
+
+  /**
+   * Apply a confirmed rename/move (Req 30.2, 30.3): transfer the sender's lock
+   * from the old path to the new one, follow the file in every intent that
+   * referenced it, and emit the corresponding removal/addition broadcasts so
+   * every agent's cached view converges.
+   */
+  private applyRename(
+    session: SessionId,
+    member: MemberRef,
+    payload: PathRenamedPayload,
+    eventRevision: number,
+    broadcasts: CoordinationUpdate[],
+    audits: AuditRecord[],
+    now: string,
+  ): void {
+    const allocate = this.revisionAllocator(session, eventRevision);
+
+    // Classify how each affected member's intent referenced the old path BEFORE
+    // the rewrite, so removals carry the correct entry type.
+    const before = this.intents.allIntents(session);
+    const fromKey = normalizePath(payload.fromPath);
+
+    const moved = this.locks.transferPath({
+      session,
+      member,
+      fromScope: payload.fromPath,
+      toScope: payload.toPath,
+      scopeKind: "file",
+      branch: session.branch,
+      eventRevision,
+    });
+    if (moved !== undefined) {
+      broadcasts.push({
+        entryType: "soft_lock",
+        op: "removed",
+        path: payload.fromPath,
+        member: moved.holder,
+        eventRevision: allocate(),
+      });
+      broadcasts.push({
+        entryType: "soft_lock",
+        op: "added",
+        path: payload.toPath,
+        member: moved.holder,
+        eventRevision: allocate(),
+      });
+    }
+
+    const updated = this.intents.renamePath(
+      session,
+      payload.fromPath,
+      payload.toPath,
+    );
+    for (const intent of updated) {
+      const priorForOwner = before.find((i) => i.intentId === intent.intentId);
+      const wasModify =
+        priorForOwner?.modifyPaths.some((p) => normalizePath(p) === fromKey) ??
+        false;
+      const entryType = wasModify ? "intent" : "planned_file_creation";
+      broadcasts.push({
+        entryType,
+        op: "removed",
+        path: payload.fromPath,
+        member: intent.owner,
+        eventRevision: allocate(),
+      });
+      broadcasts.push({
+        entryType,
+        op: "added",
+        path: payload.toPath,
+        member: intent.owner,
+        eventRevision: allocate(),
+      });
+    }
+
+    audits.push({
+      member,
+      action: "update",
+      targetScope: payload.toPath,
+      eventRevision,
+      time: now,
+    });
+  }
+
+  /**
+   * Apply a confirmed deletion (Req 30.5): release the deleting member's lock on
+   * the path and remove the path from that member's intents, emitting removals.
+   */
+  private applyDelete(
+    session: SessionId,
+    member: MemberRef,
+    payload: PathDeletedPayload,
+    eventRevision: number,
+    broadcasts: CoordinationUpdate[],
+    audits: AuditRecord[],
+    now: string,
+  ): void {
+    const allocate = this.revisionAllocator(session, eventRevision);
+    const key = normalizePath(payload.path);
+
+    // Classify the member's references to the path before removing them.
+    const owned = this.intents
+      .allIntents(session)
+      .filter((i) => i.owner.memberId === member.memberId);
+    const wasModify = owned.some((i) =>
+      i.modifyPaths.some((p) => normalizePath(p) === key),
+    );
+    const wasCreate = owned.some((i) =>
+      i.createPaths.some((c) => normalizePath(c.path) === key),
+    );
+
+    const released = this.locks.releaseOnDelete(
+      session,
+      payload.path,
+      "file",
+      session.branch,
+      member,
+    );
+    if (released !== undefined) {
+      broadcasts.push({
+        entryType: "soft_lock",
+        op: "removed",
+        path: payload.path,
+        member: released.holder,
+        eventRevision: allocate(),
+      });
+    }
+
+    const updated = this.intents.deletePathForMember(
+      session,
+      payload.path,
+      member,
+    );
+    if (updated.length > 0) {
+      if (wasModify) {
+        broadcasts.push({
+          entryType: "intent",
+          op: "removed",
+          path: payload.path,
+          member,
+          eventRevision: allocate(),
+        });
+      }
+      if (wasCreate) {
+        broadcasts.push({
+          entryType: "planned_file_creation",
+          op: "removed",
+          path: payload.path,
+          member,
+          eventRevision: allocate(),
+        });
+      }
+    }
+
+    audits.push({
+      member,
+      action: "update",
+      targetScope: payload.path,
+      eventRevision,
+      time: now,
+    });
+  }
+
+  /**
+   * Apply an incremental Dependency_Graph delta (Req 19.4) on top of the stored
+   * graph for the session, persisting the merged result. When no graph is stored
+   * yet the delta is applied to an empty graph for this session's identity.
+   */
+  private applyDependencyDelta(
+    session: SessionId,
+    delta: DepDeltaPayload,
+  ): void {
+    const key = sessionKey(session);
+    const current =
+      this.dependencyGraphs.get(key) ??
+      this.store.getDependencyGraph(session) ??
+      this.emptyGraph(session);
+
+    const modules = current.modules.map((m) => ({
+      sourceFile: m.sourceFile,
+      edges: [...m.edges],
+    }));
+    const moduleByFile = new Map(modules.map((m) => [m.sourceFile, m]));
+    const edgeKey = (from: string, to: string, kind: string): string =>
+      `${from}\u0000${to}\u0000${kind}`;
+
+    for (const change of delta.changedEdges) {
+      let mod = moduleByFile.get(change.from);
+      if (mod === undefined) {
+        mod = { sourceFile: change.from, edges: [] };
+        moduleByFile.set(change.from, mod);
+        modules.push(mod);
+      }
+      if (change.op === "remove") {
+        mod.edges = mod.edges.filter(
+          (e) =>
+            edgeKey(e.from, e.to, e.kind) !==
+            edgeKey(change.from, change.to, change.kind),
+        );
+      } else {
+        const exists = mod.edges.some(
+          (e) =>
+            edgeKey(e.from, e.to, e.kind) ===
+            edgeKey(change.from, change.to, change.kind),
+        );
+        if (!exists) {
+          mod.edges.push({
+            from: change.from,
+            to: change.to,
+            kind: change.kind,
+            confidence: change.confidence,
+          });
+        }
+      }
+    }
+
+    // Apply contract changes: an empty fingerprint signals removal.
+    const contracts = new Map(current.contracts.map((c) => [c.id, c]));
+    for (const contract of delta.changedContracts) {
+      if (contract.fingerprint === "") {
+        contracts.delete(contract.id);
+      } else {
+        contracts.set(contract.id, contract);
+      }
+    }
+
+    const merged: DependencyGraph = {
+      snapshot: {
+        sessionId: session,
+        graphVersion: current.snapshot.graphVersion + 1,
+        analyzerVersion: current.snapshot.analyzerVersion,
+      },
+      packages: current.packages,
+      modules: modules.filter((m) => m.edges.length > 0),
+      contracts: [...contracts.values()],
+    };
+    this.store.upsertDependencyGraph(session, merged);
+    this.dependencyGraphs.set(key, merged);
+  }
+
+  /** An empty Dependency_Graph for a session (delta baseline). */
+  private emptyGraph(session: SessionId): DependencyGraph {
+    return {
+      snapshot: {
+        sessionId: session,
+        graphVersion: 0,
+        analyzerVersion: "unknown",
+      },
+      packages: [],
+      modules: [],
+      contracts: [],
+    };
   }
 
   /**
@@ -764,7 +1132,11 @@ export class CoordinationAuthority {
   }
 
   private emitIntentBroadcasts(
-    intent: { modifyPaths: readonly string[]; createPaths: readonly { path: string }[]; owner: MemberRef },
+    intent: {
+      modifyPaths: readonly string[];
+      createPaths: readonly { path: string }[];
+      owner: MemberRef;
+    },
     op: "added" | "removed",
     allocate: () => number,
     broadcasts: CoordinationUpdate[],
@@ -792,12 +1164,20 @@ export class CoordinationAuthority {
   /** The gate's permission predicate: the sender must be admitted (Req 7.7, 10.7). */
   private checkPermission(
     envelope: TypedEventEnvelope,
-  ): { permitted: true } | { permitted: false; code: ErrorCode; reason: string } {
+  ):
+    | { permitted: true }
+    | { permitted: false; code: ErrorCode; reason: string } {
     const registry = this.membershipBySession.get(sessionKey(envelope.session));
     if (registry === undefined) {
-      return { permitted: false, code: "AUTH_SESSION_FORBIDDEN", reason: "Unknown session." };
+      return {
+        permitted: false,
+        code: "AUTH_SESSION_FORBIDDEN",
+        reason: "Unknown session.",
+      };
     }
-    const entry = registry.find((e) => deriveDeviceId(e.devicePublicKey) === envelope.deviceId);
+    const entry = registry.find(
+      (e) => deriveDeviceId(e.devicePublicKey) === envelope.deviceId,
+    );
     if (entry === undefined || entry.revoked || !entry.invitationValid) {
       return {
         permitted: false,
@@ -827,12 +1207,33 @@ export class CoordinationAuthority {
     return serializeSessionState(session, this.registries);
   }
 
+  /**
+   * The latest metadata-only Dependency_Graph the host holds for a session, or
+   * `null` when none has been uploaded (Req 19, 20). The server sends this to a
+   * connecting agent so every client shares the same graph for risk analysis.
+   */
+  dependencyGraph(session: SessionId): DependencyGraph | null {
+    const cached = this.dependencyGraphs.get(sessionKey(session));
+    if (cached !== undefined) {
+      return cached;
+    }
+    const stored = this.store.getDependencyGraph(session);
+    if (stored !== null) {
+      this.dependencyGraphs.set(sessionKey(session), stored);
+    }
+    return stored;
+  }
+
   // -------------------------------------------------------------------------
   // Heartbeats & expiry (Req 26; design §5.2)
   // -------------------------------------------------------------------------
 
   /** Record a device heartbeat (Req 26.2). */
-  recordHeartbeat(session: SessionId, deviceId: string, atMs: number = Date.now()): void {
+  recordHeartbeat(
+    session: SessionId,
+    deviceId: string,
+    atMs: number = Date.now(),
+  ): void {
     this.expiry.recordHeartbeat(session, deviceId, atMs);
   }
 
@@ -841,7 +1242,10 @@ export class CoordinationAuthority {
    * session (Req 26.3–26.5), logging and persisting the resulting removals.
    * Returns the removal updates to broadcast.
    */
-  sweepExpiry(session: SessionId, nowMs: number = Date.now()): CoordinationUpdate[] {
+  sweepExpiry(
+    session: SessionId,
+    nowMs: number = Date.now(),
+  ): CoordinationUpdate[] {
     const removals = [
       ...this.expiry.sweep(session, nowMs).removals,
       ...this.expiry.expireStaleSoftLocks(session, nowMs).removals,

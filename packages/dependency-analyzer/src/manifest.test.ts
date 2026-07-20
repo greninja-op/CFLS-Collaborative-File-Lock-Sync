@@ -37,7 +37,10 @@ describe("extractPackageMetadata — scopes", () => {
     expect(new Set(result.map((m) => m.scope))).toEqual(
       new Set(["prod", "dev", "peer", "optional"]),
     );
-    expect(byScope.dev?.directDependencyNames).toEqual(["typescript", "vitest"]);
+    expect(byScope.dev?.directDependencyNames).toEqual([
+      "typescript",
+      "vitest",
+    ]);
     expect(byScope.dev?.declaredVersionRanges).toEqual({
       typescript: "~5.7.0",
       vitest: "^3.0.0",
@@ -113,7 +116,10 @@ describe("extractPackageMetadata — robustness and exclusion", () => {
 
   it("never reads manifests under excluded directories", () => {
     const result = extractPackageMetadata([
-      file("node_modules/react/package.json", pkg({ dependencies: { x: "1" } })),
+      file(
+        "node_modules/react/package.json",
+        pkg({ dependencies: { x: "1" } }),
+      ),
     ]);
     expect(result).toEqual([]);
   });

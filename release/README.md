@@ -3,10 +3,10 @@
 This folder holds the two distributable artifacts. Both are **built and verified
 working**; see how to (re)build each below.
 
-| Artifact | Size | In git? | What it is |
-|----------|------|---------|------------|
-| `cfls-coordination.vsix` | ~33 KB | ✅ committed | The VS Code / Kiro editor extension, self-contained (no `node_modules` needed). |
-| `cfls.exe` | ~89 MB | ❌ not committed | The standalone `cfls` CLI as a single Windows executable (Node runtime baked in). Runs with no Node install. |
+| Artifact                 | Size   | In git?          | What it is                                                                                                   |
+| ------------------------ | ------ | ---------------- | ------------------------------------------------------------------------------------------------------------ |
+| `cfls-coordination.vsix` | ~33 KB | ✅ committed     | The VS Code / Kiro editor extension, self-contained (no `node_modules` needed).                              |
+| `cfls.exe`               | ~89 MB | ❌ not committed | The standalone `cfls` CLI as a single Windows executable (Node runtime baked in). Runs with no Node install. |
 
 > **Why `cfls.exe` is not committed:** it's an 89 MB binary. Committing it would
 > bloat the git history permanently (every clone would download it forever, even

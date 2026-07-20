@@ -143,7 +143,10 @@ describe("IngestGate — idempotency (Req 7.4)", () => {
     expect(result).toMatchObject({ accepted: true, eventRevision: 1 });
     expect(result.duplicateOf).toBeUndefined();
     expect(apply).toHaveBeenCalledTimes(1);
-    expect(apply).toHaveBeenCalledWith(expect.objectContaining({ eventId: "e1" }), 1);
+    expect(apply).toHaveBeenCalledWith(
+      expect.objectContaining({ eventId: "e1" }),
+      1,
+    );
   });
 
   it("returns the prior revision for a duplicate Event_ID without re-applying", () => {
@@ -157,8 +160,16 @@ describe("IngestGate — idempotency (Req 7.4)", () => {
     const third = gate.ingest(makeEvent({ eventId: "e1" }), apply);
 
     expect(first.eventRevision).toBe(1);
-    expect(second).toMatchObject({ accepted: true, eventRevision: 1, duplicateOf: 1 });
-    expect(third).toMatchObject({ accepted: true, eventRevision: 1, duplicateOf: 1 });
+    expect(second).toMatchObject({
+      accepted: true,
+      eventRevision: 1,
+      duplicateOf: 1,
+    });
+    expect(third).toMatchObject({
+      accepted: true,
+      eventRevision: 1,
+      duplicateOf: 1,
+    });
     // apply ran exactly once despite three submissions.
     expect(apply).toHaveBeenCalledTimes(1);
   });
@@ -182,7 +193,11 @@ describe("IngestGate — idempotency (Req 7.4)", () => {
     expect(gate.hasApplied(session, "e1")).toBe(true);
 
     const result = gate.ingest(makeEvent({ eventId: "e1" }));
-    expect(result).toMatchObject({ accepted: true, eventRevision: 7, duplicateOf: 7 });
+    expect(result).toMatchObject({
+      accepted: true,
+      eventRevision: 7,
+      duplicateOf: 7,
+    });
   });
 });
 
@@ -249,9 +264,15 @@ describe("IngestGate — ordering guarantees (design §4.4)", () => {
 
   it("assigns strictly increasing revisions across distinct accepted events", () => {
     const gate = new IngestGate();
-    const r1 = gate.ingest(makeEvent({ eventId: "e1", counter: 1 })).eventRevision;
-    const r2 = gate.ingest(makeEvent({ eventId: "e2", counter: 2 })).eventRevision;
-    const r3 = gate.ingest(makeEvent({ eventId: "e3", counter: 3 })).eventRevision;
+    const r1 = gate.ingest(
+      makeEvent({ eventId: "e1", counter: 1 }),
+    ).eventRevision;
+    const r2 = gate.ingest(
+      makeEvent({ eventId: "e2", counter: 2 }),
+    ).eventRevision;
+    const r3 = gate.ingest(
+      makeEvent({ eventId: "e3", counter: 3 }),
+    ).eventRevision;
     expect([r1, r2, r3]).toEqual([1, 2, 3]);
   });
 });

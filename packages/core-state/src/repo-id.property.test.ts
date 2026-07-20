@@ -46,34 +46,37 @@ const host = fc
   )
   .map((labels) => labels.join("."));
 
-describe(propertyTag(12, "Canonical repository ID is transport-independent"), () => {
-  it("derives an identical canonical repoId for SSH, HTTPS, and .git remote variants", () => {
-    assertProperty(
-      fc.property(host, segment, segment, (h, org, repo) => {
-        // The transport-independent canonical form: lowercase host + repo path.
-        const expected = `${h}/${org}/${repo}`;
+describe(
+  propertyTag(12, "Canonical repository ID is transport-independent"),
+  () => {
+    it("derives an identical canonical repoId for SSH, HTTPS, and .git remote variants", () => {
+      assertProperty(
+        fc.property(host, segment, segment, (h, org, repo) => {
+          // The transport-independent canonical form: lowercase host + repo path.
+          const expected = `${h}/${org}/${repo}`;
 
-        // Every spelling below denotes the SAME repository and must collapse to
-        // `expected`: scp-style SSH, ssh://, git://, and HTTPS — each with and
-        // without a `.git` suffix, a trailing slash, and a credential prefix.
-        const variants = [
-          `git@${h}:${org}/${repo}.git`,
-          `git@${h}:${org}/${repo}`,
-          `ssh://git@${h}/${org}/${repo}.git`,
-          `ssh://git@${h}/${org}/${repo}`,
-          `git://${h}/${org}/${repo}.git`,
-          `https://${h}/${org}/${repo}.git`,
-          `https://${h}/${org}/${repo}`,
-          `https://${h}/${org}/${repo}/`,
-          `https://${h}/${org}/${repo}.git/`,
-          `http://${h}/${org}/${repo}.git`,
-          `https://user@${h}/${org}/${repo}.git`,
-        ];
+          // Every spelling below denotes the SAME repository and must collapse to
+          // `expected`: scp-style SSH, ssh://, git://, and HTTPS — each with and
+          // without a `.git` suffix, a trailing slash, and a credential prefix.
+          const variants = [
+            `git@${h}:${org}/${repo}.git`,
+            `git@${h}:${org}/${repo}`,
+            `ssh://git@${h}/${org}/${repo}.git`,
+            `ssh://git@${h}/${org}/${repo}`,
+            `git://${h}/${org}/${repo}.git`,
+            `https://${h}/${org}/${repo}.git`,
+            `https://${h}/${org}/${repo}`,
+            `https://${h}/${org}/${repo}/`,
+            `https://${h}/${org}/${repo}.git/`,
+            `http://${h}/${org}/${repo}.git`,
+            `https://user@${h}/${org}/${repo}.git`,
+          ];
 
-        for (const remote of variants) {
-          expect(deriveRepoId(remote)).toBe(expected);
-        }
-      }),
-    );
-  });
-});
+          for (const remote of variants) {
+            expect(deriveRepoId(remote)).toBe(expected);
+          }
+        }),
+      );
+    });
+  },
+);

@@ -20,8 +20,10 @@
   --alice: #ff9fbd;
   --bob: #7fa8ff;
   --sans:
-    "Manrope", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    "Manrope", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  --mono:
+    "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   --shadow-lg: 0 36px 90px rgba(0, 0, 0, 0.42);
   --shadow-sm: 0 14px 35px rgba(0, 0, 0, 0.22);
 }
@@ -42,8 +44,17 @@ body {
   overflow-x: hidden;
   color: var(--text);
   background:
-    radial-gradient(circle at 49% -15%, rgba(214, 245, 74, 0.11), transparent 38rem),
-    radial-gradient(circle at 93% 28%, rgba(88, 213, 208, 0.055), transparent 32rem), var(--canvas);
+    radial-gradient(
+      circle at 49% -15%,
+      rgba(214, 245, 74, 0.11),
+      transparent 38rem
+    ),
+    radial-gradient(
+      circle at 93% 28%,
+      rgba(88, 213, 208, 0.055),
+      transparent 32rem
+    ),
+    var(--canvas);
   font-family: var(--sans);
   line-height: 1.5;
 }
@@ -966,7 +977,11 @@ code {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 16px;
-  background: linear-gradient(145deg, rgba(23, 34, 38, 0.84), rgba(12, 20, 23, 0.9));
+  background: linear-gradient(
+    145deg,
+    rgba(23, 34, 38, 0.84),
+    rgba(12, 20, 23, 0.9)
+  );
   box-shadow: var(--shadow-sm);
 }
 
@@ -1135,7 +1150,10 @@ code {
 /* Architecture */
 .architecture-card {
   display: grid;
-  grid-template-columns: minmax(200px, 1fr) minmax(240px, 1.2fr) minmax(200px, 1fr);
+  grid-template-columns: minmax(200px, 1fr) minmax(240px, 1.2fr) minmax(
+      200px,
+      1fr
+    );
   gap: clamp(16px, 3vw, 32px);
   align-items: center;
   margin-top: 55px;
@@ -1424,9 +1442,14 @@ code {
   min-height: 420px;
   padding: 49px clamp(20px, 5vw, 62px) 26px;
   background:
-    radial-gradient(circle at 50% 42%, rgba(98, 230, 224, 0.075), transparent 13rem),
+    radial-gradient(
+      circle at 50% 42%,
+      rgba(98, 230, 224, 0.075),
+      transparent 13rem
+    ),
     linear-gradient(rgba(214, 245, 74, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(214, 245, 74, 0.02) 1px, transparent 1px), #091215;
+    linear-gradient(90deg, rgba(214, 245, 74, 0.02) 1px, transparent 1px),
+    #091215;
   background-size:
     auto,
     32px 32px,
@@ -1928,7 +1951,11 @@ code {
   padding: clamp(24px, 5vw, 43px);
   border: 1px solid rgba(184, 158, 255, 0.22);
   border-radius: 15px;
-  background: linear-gradient(115deg, rgba(184, 158, 255, 0.08), rgba(13, 23, 26, 0.3) 48%);
+  background: linear-gradient(
+    115deg,
+    rgba(184, 158, 255, 0.08),
+    rgba(13, 23, 26, 0.3) 48%
+  );
 }
 
 .roadmap-copy h3 {
@@ -2051,7 +2078,11 @@ code {
   min-height: 470px;
   border: 1px solid var(--line-strong);
   border-radius: 15px;
-  background: linear-gradient(140deg, rgba(23, 35, 39, 0.9), rgba(10, 18, 21, 0.95));
+  background: linear-gradient(
+    140deg,
+    rgba(23, 35, 39, 0.9),
+    rgba(10, 18, 21, 0.95)
+  );
   box-shadow: var(--shadow-sm);
 }
 
@@ -2273,7 +2304,11 @@ code {
   border: 1px solid rgba(214, 245, 74, 0.27);
   border-radius: 18px;
   background:
-    radial-gradient(circle at 10% 0%, rgba(214, 245, 74, 0.16), transparent 26rem),
+    radial-gradient(
+      circle at 10% 0%,
+      rgba(214, 245, 74, 0.16),
+      transparent 26rem
+    ),
     linear-gradient(120deg, #14211b, #0d1c20 68%);
   box-shadow: var(--shadow-lg);
 }
@@ -2353,7 +2388,10 @@ code {
   }
 
   .architecture-card {
-    grid-template-columns: minmax(170px, 1fr) minmax(195px, 1.05fr) minmax(170px, 1fr);
+    grid-template-columns: minmax(170px, 1fr) minmax(195px, 1.05fr) minmax(
+        170px,
+        1fr
+      );
   }
 
   .demo-canvas {

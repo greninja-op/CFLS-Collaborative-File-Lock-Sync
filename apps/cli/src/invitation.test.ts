@@ -60,8 +60,8 @@ describe("invite → connect flow", () => {
 
   it("rejects malformed invitation strings with a clear error", () => {
     expect(() => decodeInvitation("not-base64-json!!")).toThrow();
-    expect(() => decodeInvitation(Buffer.from("{}", "utf8").toString("base64"))).toThrow(
-      /claims or signature/,
-    );
+    expect(() =>
+      decodeInvitation(Buffer.from("{}", "utf8").toString("base64")),
+    ).toThrow(/claims or signature/);
   });
 });

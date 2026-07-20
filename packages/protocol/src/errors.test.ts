@@ -12,11 +12,7 @@
 
 import { describe, it, expect } from "vitest";
 
-import {
-  ERROR_CODES,
-  isErrorCode,
-  type ErrorCode,
-} from "./errors";
+import { ERROR_CODES, isErrorCode, type ErrorCode } from "./errors";
 import {
   AuthMessageType,
   PresenceMessageType,

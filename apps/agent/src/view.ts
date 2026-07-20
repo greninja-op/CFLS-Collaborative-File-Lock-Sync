@@ -55,7 +55,10 @@ export class AgentView {
   }
 
   /** Apply a batch of host broadcasts to the view. */
-  applyUpdates(session: SessionId, updates: readonly CoordinationUpdate[]): void {
+  applyUpdates(
+    session: SessionId,
+    updates: readonly CoordinationUpdate[],
+  ): void {
     this.cache.applyEvents(session, updates);
   }
 
@@ -183,7 +186,10 @@ export class AgentView {
   }
 
   /** Planned file creations by OTHER members (own excluded, Req 31.5). */
-  plannedCreations(session: SessionId, requester: MemberRef): PlannedCreation[] {
+  plannedCreations(
+    session: SessionId,
+    requester: MemberRef,
+  ): PlannedCreation[] {
     const out = new Map<string, PlannedCreation>();
     for (const entry of this.entries(session)) {
       if (

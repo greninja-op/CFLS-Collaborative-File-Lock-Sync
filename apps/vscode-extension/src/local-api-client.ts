@@ -30,7 +30,8 @@ export interface Scheduler {
 /** The default {@link Scheduler} backed by the host runtime's global timers. */
 export const globalScheduler: Scheduler = {
   setInterval: (handler, ms) => setInterval(handler, ms),
-  clearInterval: (handle) => clearInterval(handle as ReturnType<typeof setInterval>),
+  clearInterval: (handle) =>
+    clearInterval(handle as ReturnType<typeof setInterval>),
 };
 
 /** Options for a {@link LocalApiClient}. */
@@ -71,7 +72,10 @@ export class LocalApiClient {
   private authenticated = false;
   private readonly pending = new Map<number, Pending>();
   private readonly updateListeners = new Set<UpdateListener>();
-  private authWaiter: { resolve: () => void; reject: (e: Error) => void } | null = null;
+  private authWaiter: {
+    resolve: () => void;
+    reject: (e: Error) => void;
+  } | null = null;
   private heartbeatHandle: unknown = null;
   private closeListeners = new Set<() => void>();
 
@@ -165,7 +169,12 @@ export class LocalApiClient {
   /** Forward one Editor_Event to the agent (Req 3.2). Fire-and-forget. */
   sendEditorEvent(event: unknown): void {
     const id = this.nextId++;
-    this.transport.send({ type: "request", id, method: EDITOR_EVENT_METHOD, params: event });
+    this.transport.send({
+      type: "request",
+      id,
+      method: EDITOR_EVENT_METHOD,
+      params: event,
+    });
   }
 
   /** Send a single heartbeat to the agent (Req 26.6). Fire-and-forget. */

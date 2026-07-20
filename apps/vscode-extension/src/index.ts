@@ -24,6 +24,7 @@ import {
   CoordinationUiController,
   onWillSaveTextDocument,
   readLocalApiSettings,
+  readRepositoryRules,
   registerCommand,
   showErrorMessage,
   showInformationMessage,
@@ -31,7 +32,10 @@ import {
   type VsCodeExtensionContext,
   VsCodeEditorHost,
 } from "./vscode-adapter";
-import { buildCoordinationViewModel, type CoordinationViewModel } from "./view-model";
+import {
+  buildCoordinationViewModel,
+  type CoordinationViewModel,
+} from "./view-model";
 
 /** Package identifier. */
 export const APP_NAME = "@cfls/vscode-extension";
@@ -49,10 +53,19 @@ let runtime: Runtime | undefined;
 let currentViewModel: CoordinationViewModel | undefined;
 let currentSession: SessionId | undefined;
 let rules: RepositoryRulesConfig = ALL_SOFT_CONFIG;
-const selfMemberId = "self";
+/**
+ * This client's own Team_Member id, resolved from the agent's
+ * `get_project_session_status`. Used so cooperative hard-stop never treats the
+ * user's own lock as a block (own activity is already excluded from the Risk_Map
+ * at the agent, Req 31.5, but this keeps the decision correct regardless).
+ */
+let selfMemberId = "self";
 
 /** Fetch the latest Risk_Map + connection snapshots and update every UI cue. */
-async function refresh(client: LocalApiClient, ui: CoordinationUiController): Promise<void> {
+async function refresh(
+  client: LocalApiClient,
+  ui: CoordinationUiController,
+): Promise<void> {
   if (currentSession === undefined) {
     return;
   }
@@ -72,21 +85,35 @@ async function refresh(client: LocalApiClient, ui: CoordinationUiController): Pr
 
 /** Resolve the Repository_Session from the local CoordinationAgent. */
 async function resolveSession(client: LocalApiClient): Promise<void> {
-  const envelope = (await client.request("get_project_session_status", {})) as McpEnvelope<{
+  const envelope = (await client.request(
+    "get_project_session_status",
+    {},
+  )) as McpEnvelope<{
     session: {
       repoId: string;
       teamId: string;
       branch: string;
       baseRevision: string | null;
     };
+    memberId?: string;
   }>;
   if (envelope.ok && envelope.data !== undefined) {
-    currentSession = { ...envelope.data.session };
+    const { repoId, teamId, branch, baseRevision } = envelope.data.session;
+    currentSession = { repoId, teamId, branch, baseRevision };
+    if (
+      typeof envelope.data.memberId === "string" &&
+      envelope.data.memberId !== ""
+    ) {
+      selfMemberId = envelope.data.memberId;
+    }
   }
 }
 
 /** Blank offline snapshots used before the first successful fetch. */
-function offlineSnapshot(): { connection: ConnectionSnapshot; staleness: StalenessSnapshot } {
+function offlineSnapshot(): {
+  connection: ConnectionSnapshot;
+  staleness: StalenessSnapshot;
+} {
   return {
     connection: { status: "offline", hostUrl: "", lastSyncAt: null },
     staleness: { stale: true, secondsSinceSync: null },
@@ -95,6 +122,9 @@ function offlineSnapshot(): { connection: ConnectionSnapshot; staleness: Stalene
 
 /** VS Code entrypoint. All runtime VS Code calls are delegated to the adapter. */
 export async function activate(context: VsCodeExtensionContext): Promise<void> {
+  // Load the team's committed rules so hard-stop resolves path modes as the
+  // agent does (Req 15); fail-safe all-soft when absent/malformed (Req 15.5).
+  rules = readRepositoryRules();
   const settings = readLocalApiSettings();
   const transport = new WebSocketFrameTransport(settings.url);
   const client = new LocalApiClient({
@@ -104,7 +134,9 @@ export async function activate(context: VsCodeExtensionContext): Promise<void> {
   });
 
   const editorHost = new VsCodeEditorHost();
-  const forwarder = new EditorEventForwarder(editorHost, (event) => client.sendEditorEvent(event));
+  const forwarder = new EditorEventForwarder(editorHost, (event) =>
+    client.sendEditorEvent(event),
+  );
   const ui = new CoordinationUiController({ selfMemberId });
   ui.register(context.subscriptions);
 
@@ -119,6 +151,7 @@ export async function activate(context: VsCodeExtensionContext): Promise<void> {
   try {
     await client.authenticate();
     await resolveSession(client);
+    ui.setSelfMemberId(selfMemberId);
     if (currentSession !== undefined) {
       await client.subscribe({ session: currentSession }, () => {
         void refresh(client, ui);
@@ -141,7 +174,12 @@ export async function activate(context: VsCodeExtensionContext): Promise<void> {
       if (currentViewModel === undefined) {
         return;
       }
-      const decision = enforceHardStop(currentViewModel, rules, path, selfMemberId);
+      const decision = enforceHardStop(
+        currentViewModel,
+        rules,
+        path,
+        selfMemberId,
+      );
       if (!decision.allowed) {
         showErrorMessage(decision.message);
       } else if (decision.reason === "offline-manual-coordination") {
@@ -157,13 +195,18 @@ export async function activate(context: VsCodeExtensionContext): Promise<void> {
         return;
       }
       if (vm.paths.length === 0 && vm.plannedFileCreations.length === 0) {
-        showInformationMessage("CFLS: Online. No teammates are currently editing tracked files.");
+        showInformationMessage(
+          "CFLS: Online. No teammates are currently editing tracked files.",
+        );
         return;
       }
-      showInformationMessage(`CFLS coordination (${vm.paths.length} path(s)):`, {
-        modal: true,
-        detail: buildCoordinationStatusDetail(vm, selfMemberId),
-      });
+      showInformationMessage(
+        `CFLS coordination (${vm.paths.length} path(s)):`,
+        {
+          modal: true,
+          detail: buildCoordinationStatusDetail(vm, selfMemberId),
+        },
+      );
     }),
     registerCommand("cfls.reconnectLocalAgent", () => {
       void refresh(client, ui);

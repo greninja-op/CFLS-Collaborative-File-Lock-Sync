@@ -218,9 +218,12 @@ export function decideConsumer(
   }
 
   const ownBranch = userBranchName(config.branchPrefix, member);
-  const branches = listTrackingBranches(config.remote, config.branchPrefix, cwd, runner).filter(
-    (b: TrackingBranch) => b.branch !== ownBranch,
-  );
+  const branches = listTrackingBranches(
+    config.remote,
+    config.branchPrefix,
+    cwd,
+    runner,
+  ).filter((b: TrackingBranch) => b.branch !== ownBranch);
 
   const tips = new Map<string, string>();
   const advanced: AdvancedBranch[] = [];
@@ -245,7 +248,10 @@ export function decideConsumer(
     // Pre-warning (coordination-aware): if this branch would touch a file a
     // teammate is editing RIGHT NOW, surface it before doing anything.
     let collisions: string[] = [];
-    if (deps.heldPathsByOthers !== undefined && deps.heldPathsByOthers.size > 0) {
+    if (
+      deps.heldPathsByOthers !== undefined &&
+      deps.heldPathsByOthers.size > 0
+    ) {
       const incoming = filesChangedBetween("HEAD", b.ref, cwd, runner);
       collisions = detectLockCollisions(incoming, deps.heldPathsByOthers);
       if (collisions.length > 0) {
@@ -297,7 +303,10 @@ export interface GitSyncLoopOptions extends SyncDeps {
    */
   getHeldPathsByOthers?: () => ReadonlySet<string>;
   /** Injectable timers (tests). Defaults to global `setInterval`/`clearInterval`. */
-  setIntervalFn?: (handler: () => void, ms: number) => ReturnType<typeof setInterval>;
+  setIntervalFn?: (
+    handler: () => void,
+    ms: number,
+  ) => ReturnType<typeof setInterval>;
   clearIntervalFn?: (handle: ReturnType<typeof setInterval>) => void;
 }
 
@@ -315,7 +324,9 @@ export interface GitSyncLoopHandle {
  * crashing the agent. `stop()` clears both timers and is wired into the existing
  * SIGINT/shutdown flow by the caller.
  */
-export function startGitSyncLoop(options: GitSyncLoopOptions): GitSyncLoopHandle {
+export function startGitSyncLoop(
+  options: GitSyncLoopOptions,
+): GitSyncLoopHandle {
   const { config } = options;
   if (!config.enabled) {
     return { stop: () => {} };
@@ -340,7 +351,9 @@ export function startGitSyncLoop(options: GitSyncLoopOptions): GitSyncLoopHandle
         onNotice(notice);
       }
     } catch (error) {
-      onNotice(`auto-sync: producer error (continuing): ${describeError(error)}`);
+      onNotice(
+        `auto-sync: producer error (continuing): ${describeError(error)}`,
+      );
     }
   };
 
@@ -355,12 +368,20 @@ export function startGitSyncLoop(options: GitSyncLoopOptions): GitSyncLoopHandle
         onNotice(notice);
       }
     } catch (error) {
-      onNotice(`auto-sync: consumer error (continuing): ${describeError(error)}`);
+      onNotice(
+        `auto-sync: consumer error (continuing): ${describeError(error)}`,
+      );
     }
   };
 
-  const producerTimer = setIntervalFn(runProducer, config.commitIntervalSec * 1000);
-  const consumerTimer = setIntervalFn(runConsumer, config.fetchIntervalSec * 1000);
+  const producerTimer = setIntervalFn(
+    runProducer,
+    config.commitIntervalSec * 1000,
+  );
+  const consumerTimer = setIntervalFn(
+    runConsumer,
+    config.fetchIntervalSec * 1000,
+  );
   // Do not keep the event loop alive solely for these timers; the agent's own
   // connection keeps the process running, and Ctrl+C should still exit promptly.
   producerTimer.unref?.();

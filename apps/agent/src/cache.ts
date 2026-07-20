@@ -93,7 +93,10 @@ export class EncryptedCache {
     const iv = randomBytes(IV_LEN);
     const cipher = createCipheriv(ALGORITHM, key, iv);
     const plaintext = Buffer.from(JSON.stringify(snapshot), "utf8");
-    const ciphertext = Buffer.concat([cipher.update(plaintext), cipher.final()]);
+    const ciphertext = Buffer.concat([
+      cipher.update(plaintext),
+      cipher.final(),
+    ]);
     const record: CacheRecord = {
       magic: MAGIC,
       salt: salt.toString("base64"),

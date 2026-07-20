@@ -71,7 +71,7 @@ export async function loadAdminKey(teamId: string): Promise<DeviceKey> {
   }
   const parsed: unknown = JSON.parse(raw);
   if (!isDeviceKey(parsed)) {
-    throw new Error("Stored admin key is corrupt; re-run \"cfls admin-init\".");
+    throw new Error('Stored admin key is corrupt; re-run "cfls admin-init".');
   }
   return { publicKey: parsed.publicKey, privateKey: parsed.privateKey };
 }
@@ -81,7 +81,9 @@ export async function loadAdminKey(teamId: string): Promise<DeviceKey> {
  * key the {@link CoordinationAgent} loads at runtime. Delegates to the agent's
  * {@link loadOrCreateDeviceKey}, which fails closed on an unavailable store.
  */
-export async function loadOrCreateThisDeviceKey(repoId: string): Promise<DeviceKey> {
+export async function loadOrCreateThisDeviceKey(
+  repoId: string,
+): Promise<DeviceKey> {
   const store = createSecretStore({ appSecret: repoId });
   return loadOrCreateDeviceKey(store);
 }

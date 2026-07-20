@@ -53,8 +53,7 @@ import { sessionKey } from "./session";
 
 /** Outcome of a {@link PermissionCheck}. */
 export type PermissionDecision =
-  | { permitted: true }
-  | { permitted: false; code: ErrorCode; reason: string };
+  { permitted: true } | { permitted: false; code: ErrorCode; reason: string };
 
 /**
  * Pluggable per-message authorization predicate (Req 7.7). The host supplies the
@@ -62,7 +61,9 @@ export type PermissionDecision =
  * {@link permitAll} permits every validated envelope so the pure engine has no
  * membership knowledge baked in.
  */
-export type PermissionCheck = (envelope: TypedEventEnvelope) => PermissionDecision;
+export type PermissionCheck = (
+  envelope: TypedEventEnvelope,
+) => PermissionDecision;
 
 /**
  * Side-effecting mutation applied exactly once for a newly accepted event, after
@@ -219,7 +220,9 @@ export class IngestGate {
 
   /** Has an event with `eventId` already been applied for `session` (Req 7.4)? */
   hasApplied(session: SessionId, eventId: string): boolean {
-    return this.appliedBySession.get(sessionKey(session))?.has(eventId) ?? false;
+    return (
+      this.appliedBySession.get(sessionKey(session))?.has(eventId) ?? false
+    );
   }
 
   /**
@@ -242,7 +245,11 @@ export class IngestGate {
     return out;
   }
 
-  private recordApplied(key: string, eventId: string, eventRevision: number): void {
+  private recordApplied(
+    key: string,
+    eventId: string,
+    eventRevision: number,
+  ): void {
     const events = this.appliedBySession.get(key) ?? new Map<string, number>();
     events.set(eventId, eventRevision);
     this.appliedBySession.set(key, events);

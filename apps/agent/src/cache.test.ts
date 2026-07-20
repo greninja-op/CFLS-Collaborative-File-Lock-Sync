@@ -77,9 +77,14 @@ describe("EncryptedCache (Req 35.1, 35.3)", () => {
   });
 
   it("cannot be decrypted with a different passphrase", () => {
-    new EncryptedCache({ dir, passphrase: "correct" }).save(session, snapshot());
+    new EncryptedCache({ dir, passphrase: "correct" }).save(
+      session,
+      snapshot(),
+    );
     // A wrong passphrase fails the GCM auth tag and yields null (not a throw).
-    expect(new EncryptedCache({ dir, passphrase: "wrong" }).load(session)).toBeNull();
+    expect(
+      new EncryptedCache({ dir, passphrase: "wrong" }).load(session),
+    ).toBeNull();
   });
 
   it("refuses to cache a snapshot carrying source content (Req 35.3)", () => {

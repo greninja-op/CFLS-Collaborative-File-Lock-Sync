@@ -41,7 +41,13 @@
  * `NO_ACTIVE_LOCK` (Req 12.8).
  */
 
-import type { Lock, MemberRef, RiskLevel, ScopeKind, SessionId } from "@cfls/protocol";
+import type {
+  Lock,
+  MemberRef,
+  RiskLevel,
+  ScopeKind,
+  SessionId,
+} from "@cfls/protocol";
 
 import { type ConflictInfo, resolveByEarliestRevision } from "./conflict";
 import { normalizePathKey, type PlatformCaseSensitivity } from "./path";

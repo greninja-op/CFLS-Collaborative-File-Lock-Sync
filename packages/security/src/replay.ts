@@ -40,8 +40,7 @@ export interface ReplayRecord {
 
 /** The decision {@link evaluateReplay}/{@link ReplayGuard.acceptReplay} return. */
 export type ReplayDecision =
-  | { accepted: true }
-  | { accepted: false; code: ErrorCode; reason: string };
+  { accepted: true } | { accepted: false; code: ErrorCode; reason: string };
 
 /** Result of a pure {@link evaluateReplay} step: decision plus the next record. */
 export type ReplayEvaluation =
@@ -116,7 +115,11 @@ export interface ReplayGuard {
    * `counter <= last-seen` or a nonce already used by the device, leaving state
    * unchanged; on acceptance advances the device's counter and records the nonce.
    */
-  acceptReplay(deviceId: string, counter: number, nonce: string): ReplayDecision;
+  acceptReplay(
+    deviceId: string,
+    counter: number,
+    nonce: string,
+  ): ReplayDecision;
   /** The current {@link ReplayRecord} for a device, if it has been seen. */
   recordFor(deviceId: string): ReplayRecord | undefined;
   /** A read-only view of every device's replay record (for persistence/inspection). */

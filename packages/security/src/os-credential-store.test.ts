@@ -18,7 +18,10 @@ import {
   createOsCredentialStore,
   __resetKeytarProbeForTests,
 } from "./os-credential-store";
-import { DEFAULT_SECRET_SERVICE, DEVICE_PRIVATE_KEY_SECRET } from "./secret-store";
+import {
+  DEFAULT_SECRET_SERVICE,
+  DEVICE_PRIVATE_KEY_SECRET,
+} from "./secret-store";
 
 afterEach(() => {
   __resetKeytarProbeForTests();
@@ -42,7 +45,9 @@ describe("createOsCredentialStore (keytar not installed)", () => {
 
   it("throws on set when unavailable so no false success is reported", async () => {
     const store = createOsCredentialStore();
-    await expect(store.set(DEVICE_PRIVATE_KEY_SECRET, "value")).rejects.toThrow();
+    await expect(
+      store.set(DEVICE_PRIVATE_KEY_SECRET, "value"),
+    ).rejects.toThrow();
   });
 
   it("throws on delete when unavailable", async () => {

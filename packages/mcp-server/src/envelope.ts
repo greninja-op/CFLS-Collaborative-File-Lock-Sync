@@ -64,8 +64,7 @@ export interface McpEnvelope<T> {
  * (including `OFFLINE_QUEUED` for mutations attempted while offline, Req 4.8).
  */
 export type AgentResult<T> =
-  | { ok: true; data: T }
-  | { ok: false; error: EnvelopeError };
+  { ok: true; data: T } | { ok: false; error: EnvelopeError };
 
 /**
  * Informal error names used in the design §3.4 tool schemas that are **not**

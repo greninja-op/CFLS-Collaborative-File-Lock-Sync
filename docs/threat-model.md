@@ -64,14 +64,14 @@ messages that violate this.
 
 ## STRIDE Threat Table
 
-| Threat | Vector | Mitigation |
-|---|---|---|
-| **Spoofing** | Impersonate a device/member | Ed25519 challenge-response handshake; membership + invitation validation |
-| **Tampering** | Modify events in transit / at rest | TLS + per-event Ed25519 signatures verified before apply; host is sole revision authority |
-| **Repudiation** | Deny an override/action | Durable Audit_Records with member, device, action, revision, time, Override_Reason |
-| **Information disclosure** | Leak source/secrets/paths | Metadata-only guarantee; exclusion list; agent strip + host reject; loopback-only Local_API |
-| **Denial of service** | Event floods | Client-side coalescing/dedup + bounded outbound rate; replay counter caps duplicates |
-| **Elevation of privilege** | Non-admin issues invitations / non-holder releases lock | Admin-authorized invitation check; holder/owner checks on release/update/withdraw |
+| Threat                     | Vector                                                  | Mitigation                                                                                  |
+| -------------------------- | ------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| **Spoofing**               | Impersonate a device/member                             | Ed25519 challenge-response handshake; membership + invitation validation                    |
+| **Tampering**              | Modify events in transit / at rest                      | TLS + per-event Ed25519 signatures verified before apply; host is sole revision authority   |
+| **Repudiation**            | Deny an override/action                                 | Durable Audit_Records with member, device, action, revision, time, Override_Reason          |
+| **Information disclosure** | Leak source/secrets/paths                               | Metadata-only guarantee; exclusion list; agent strip + host reject; loopback-only Local_API |
+| **Denial of service**      | Event floods                                            | Client-side coalescing/dedup + bounded outbound rate; replay counter caps duplicates        |
+| **Elevation of privilege** | Non-admin issues invitations / non-holder releases lock | Admin-authorized invitation check; holder/owner checks on release/update/withdraw           |
 
 ## Audit & Overrides
 
@@ -84,17 +84,17 @@ member, device, path, revision, time, and reason — never any source content.
 
 ```typescript
 type ErrorCode =
-  | 'AUTH_INVALID_DEVICE'      // unknown/revoked key, bad invitation
-  | 'AUTH_ISSUER_NOT_ADMIN'    // invitation not signed by authorized admin
-  | 'AUTH_SESSION_FORBIDDEN'   // event for unauthorized session
-  | 'AUTH_NOT_AUTHORIZED'      // generic authorization failure
-  | 'FORMAT_ERROR'             // schema/version/glob/oversize/content violation
-  | 'NOT_OWNER'                // update/withdraw intent not owned
-  | 'NOT_LOCK_HOLDER'          // release by non-holder
-  | 'NO_ACTIVE_LOCK'           // release with no lock
-  | 'NOT_FOUND'                // unknown intent/lock/session
-  | 'OVERRIDE_REASON_REQUIRED' // coordination-required override w/o reason
-  | 'OFFLINE_QUEUED'           // mutation queued while offline
-  | 'STORAGE_ERROR'            // persistence failure
-  | 'SECURE_STORAGE_UNAVAILABLE'; // OS credential store missing
+  | "AUTH_INVALID_DEVICE" // unknown/revoked key, bad invitation
+  | "AUTH_ISSUER_NOT_ADMIN" // invitation not signed by authorized admin
+  | "AUTH_SESSION_FORBIDDEN" // event for unauthorized session
+  | "AUTH_NOT_AUTHORIZED" // generic authorization failure
+  | "FORMAT_ERROR" // schema/version/glob/oversize/content violation
+  | "NOT_OWNER" // update/withdraw intent not owned
+  | "NOT_LOCK_HOLDER" // release by non-holder
+  | "NO_ACTIVE_LOCK" // release with no lock
+  | "NOT_FOUND" // unknown intent/lock/session
+  | "OVERRIDE_REASON_REQUIRED" // coordination-required override w/o reason
+  | "OFFLINE_QUEUED" // mutation queued while offline
+  | "STORAGE_ERROR" // persistence failure
+  | "SECURE_STORAGE_UNAVAILABLE"; // OS credential store missing
 ```

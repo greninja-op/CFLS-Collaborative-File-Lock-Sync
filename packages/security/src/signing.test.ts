@@ -100,7 +100,10 @@ describe("signEnvelope / verifySignedEvent", () => {
     const signed = signEnvelope(sampleEnvelope(), key.privateKey);
 
     expect(
-      verifySignedEvent({ ...signed, signature: "!!!not-base64!!!" }, key.publicKey),
+      verifySignedEvent(
+        { ...signed, signature: "!!!not-base64!!!" },
+        key.publicKey,
+      ),
     ).toBe(false);
   });
 
@@ -121,8 +124,8 @@ describe("signEnvelope / verifySignedEvent", () => {
       type: original.type,
     };
 
-    expect(verifySignedEvent({ ...signed, envelope: reordered }, key.publicKey)).toBe(
-      true,
-    );
+    expect(
+      verifySignedEvent({ ...signed, envelope: reordered }, key.publicKey),
+    ).toBe(true);
   });
 });

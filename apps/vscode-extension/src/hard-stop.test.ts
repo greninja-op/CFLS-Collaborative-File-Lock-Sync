@@ -5,7 +5,12 @@
  * coordination required" behavior that never claims safety.
  */
 
-import { ALL_SOFT_CONFIG, type RepositoryRulesConfig } from "@cfls/core-state";
+import {
+  ALL_SOFT_CONFIG,
+  buildRiskMap,
+  type RepositoryRulesConfig,
+} from "@cfls/core-state";
+import type { RiskMapEntry } from "@cfls/protocol";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -14,11 +19,23 @@ import {
   OFFLINE_MANUAL_COORDINATION_MESSAGE,
 } from "./hard-stop";
 import { buildCoordinationViewModel } from "./view-model";
-import type { GetRiskMapData } from "@cfls/mcp-server";
-import type { ConnectionSnapshot, StalenessSnapshot } from "@cfls/mcp-server";
+import type {
+  ConnectionSnapshot,
+  GetRiskMapData,
+  RiskPathEntry,
+  StalenessSnapshot,
+} from "@cfls/mcp-server";
 
-const online: ConnectionSnapshot = { status: "online", hostUrl: "h", lastSyncAt: "t" };
-const offline: ConnectionSnapshot = { status: "offline", hostUrl: "h", lastSyncAt: null };
+const online: ConnectionSnapshot = {
+  status: "online",
+  hostUrl: "h",
+  lastSyncAt: "t",
+};
+const offline: ConnectionSnapshot = {
+  status: "offline",
+  hostUrl: "h",
+  lastSyncAt: null,
+};
 const fresh: StalenessSnapshot = { stale: false, secondsSinceSync: 0 };
 const staleSnap: StalenessSnapshot = { stale: true, secondsSinceSync: null };
 
@@ -132,7 +149,12 @@ describe("enforceHardStop over the view model (Req 3.5, 14)", () => {
       connection: online,
       staleness: fresh,
     });
-    const decision = enforceHardStop(vm, ALL_SOFT_CONFIG, "src/critical/db.ts", "alice");
+    const decision = enforceHardStop(
+      vm,
+      ALL_SOFT_CONFIG,
+      "src/critical/db.ts",
+      "alice",
+    );
     expect(decision.allowed).toBe(false);
     if (!decision.allowed) {
       expect(decision.holderMemberId).toBe("bob");
@@ -147,16 +169,22 @@ describe("enforceHardStop over the view model (Req 3.5, 14)", () => {
       connection: online,
       staleness: fresh,
     });
-    expect(enforceHardStop(vmOnline, hardRules, "src/critical/db.ts", "alice").reason).toBe(
-      "no-restriction",
-    );
+    expect(
+      enforceHardStop(vmOnline, hardRules, "src/critical/db.ts", "alice")
+        .reason,
+    ).toBe("no-restriction");
 
     const vmOffline = buildCoordinationViewModel({
       riskMap: { paths: [], plannedFileCreations: [], highestRevision: 0 },
       connection: offline,
       staleness: staleSnap,
     });
-    const decision = enforceHardStop(vmOffline, hardRules, "src/critical/db.ts", "alice");
+    const decision = enforceHardStop(
+      vmOffline,
+      hardRules,
+      "src/critical/db.ts",
+      "alice",
+    );
     expect(decision.allowed).toBe(true);
     expect(decision.reason).toBe("offline-manual-coordination");
   });
@@ -168,7 +196,96 @@ describe("enforceHardStop over the view model (Req 3.5, 14)", () => {
       staleness: fresh,
     });
     // A messy spelling of the same path still resolves to the hard lock.
-    const decision = enforceHardStop(vm, ALL_SOFT_CONFIG, "./src/critical/db.ts", "alice");
+    const decision = enforceHardStop(
+      vm,
+      ALL_SOFT_CONFIG,
+      "./src/critical/db.ts",
+      "alice",
+    );
     expect(decision.allowed).toBe(false);
+  });
+});
+
+/**
+ * End-to-end producer↔consumer alignment (regression for the contributor-kind
+ * mismatch). Instead of a hand-crafted GetRiskMapData, this drives a REAL
+ * `buildRiskMap` from `@cfls/core-state` — exactly what the agent's
+ * `get_risk_map` returns — through the view model and hard-stop, so a future
+ * drift between the risk producer's contributor `kind` and the extension's
+ * buckets is caught here.
+ */
+describe("enforceHardStop over a REAL buildRiskMap (regression, Req 3.5, 14)", () => {
+  /** Map a core-state RiskMapEntry[] into the agent's GetRiskMapData shape. */
+  function toRiskMapData(entries: RiskMapEntry[]): GetRiskMapData {
+    return {
+      paths: entries.map((entry) => {
+        const explanation: RiskPathEntry["explanation"] = {
+          type: entry.explanation.type,
+        };
+        if (entry.explanation.edges !== undefined)
+          explanation.edges = entry.explanation.edges;
+        if (entry.explanation.sharedContracts !== undefined) {
+          explanation.sharedContracts = entry.explanation.sharedContracts;
+        }
+        return {
+          path: entry.path,
+          riskLevel: entry.riskLevel,
+          contributors: entry.contributors.map((c) => ({
+            memberId: c.member.memberId,
+            kind: c.kind,
+          })),
+          explanation,
+          acknowledgementRequired: entry.acknowledgementRequired,
+        };
+      }),
+      plannedFileCreations: [],
+      highestRevision: 1,
+    };
+  }
+
+  it("blocks an edit to a real hard-locked path held by another member", () => {
+    const entries = buildRiskMap({
+      requester: { memberId: "alice", deviceId: "alice-1" },
+      branch: "main",
+      rules: hardRules, // src/critical/** => hard
+      locks: [
+        {
+          lockId: "lk-1",
+          scope: "src/critical/db.ts",
+          scopeKind: "file",
+          mode: "hard",
+          holder: { memberId: "bob", deviceId: "bob-1" },
+          branch: "main",
+          eventRevision: 1,
+          acquiredAt: "2024-01-01T00:00:00.000Z",
+          concurrent: false,
+        },
+      ],
+      presence: [],
+      intents: [],
+      sensitivity: "case-sensitive",
+    });
+
+    const vm = buildCoordinationViewModel({
+      riskMap: toRiskMapData(entries),
+      connection: online,
+      staleness: fresh,
+    });
+
+    // The bug: hardLockMembers was always empty because buildRiskMap emitted
+    // kind "lock", not "hard_lock". This asserts they now agree.
+    const view = vm.paths.find((p) => p.path === "src/critical/db.ts");
+    expect(view?.hardLockMembers).toEqual(["bob"]);
+
+    const decision = enforceHardStop(
+      vm,
+      hardRules,
+      "src/critical/db.ts",
+      "alice",
+    );
+    expect(decision.allowed).toBe(false);
+    if (!decision.allowed) {
+      expect(decision.holderMemberId).toBe("bob");
+    }
   });
 });

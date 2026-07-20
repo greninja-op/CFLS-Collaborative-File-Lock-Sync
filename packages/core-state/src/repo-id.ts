@@ -78,7 +78,10 @@ function splitRemote(remote: string): RemoteParts {
     // Strip a `user@` / `user:pass@` credential prefix that precedes the host.
     const atIndex = rest.indexOf("@");
     const firstSlashBeforeAt = rest.indexOf("/");
-    if (atIndex !== -1 && (firstSlashBeforeAt === -1 || atIndex < firstSlashBeforeAt)) {
+    if (
+      atIndex !== -1 &&
+      (firstSlashBeforeAt === -1 || atIndex < firstSlashBeforeAt)
+    ) {
       rest = rest.slice(atIndex + 1);
     }
 

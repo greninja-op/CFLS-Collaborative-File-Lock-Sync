@@ -8,7 +8,11 @@
  * projection is deterministic and directly unit-testable.
  */
 
-import type { RiskLevel, SessionId, SessionStateSnapshot } from "@cfls/protocol";
+import type {
+  RiskLevel,
+  SessionId,
+  SessionStateSnapshot,
+} from "@cfls/protocol";
 
 /** One session snapshot plus the devices currently connected to that session. */
 export interface DashboardSessionInput {
@@ -114,7 +118,8 @@ export function buildDashboardState(input: DashboardInput): DashboardState {
         }))
         .sort(
           (left, right) =>
-            compareStrings(left.path, right.path) || compareStrings(left.member, right.member),
+            compareStrings(left.path, right.path) ||
+            compareStrings(left.member, right.member),
         );
 
       const plannedCreations = snapshot.intents
@@ -126,7 +131,8 @@ export function buildDashboardState(input: DashboardInput): DashboardState {
         )
         .sort(
           (left, right) =>
-            compareStrings(left.path, right.path) || compareStrings(left.member, right.member),
+            compareStrings(left.path, right.path) ||
+            compareStrings(left.member, right.member),
         );
 
       return {
@@ -182,7 +188,10 @@ const HTML_ESCAPES: Readonly<Record<string, string>> = {
  * directly unit-testable without a browser runtime.
  */
 export function escapeDashboardHtml(value: unknown): string {
-  return String(value).replace(/[&<>"']/g, (character) => HTML_ESCAPES[character] ?? character);
+  return String(value).replace(
+    /[&<>"']/g,
+    (character) => HTML_ESCAPES[character] ?? character,
+  );
 }
 
 /**

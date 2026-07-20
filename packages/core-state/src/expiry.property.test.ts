@@ -66,130 +66,144 @@ const scenarioArb = fc.record({
   devices: fc.array(deviceArb, { minLength: 0, maxLength: 8 }),
 });
 
-describe(propertyTag(14, "stale locks and intents expire deterministically"), () => {
-  it("releases exactly the locks/intents of devices whose heartbeat is older than the Lock_Expiry_Interval", () => {
-    assertProperty(
-      fc.property(scenarioArb, ({ heartbeatIntervalMs, lockMultiple, now, devices }) => {
-        const lockExpiryIntervalMs = heartbeatIntervalMs * lockMultiple;
+describe(
+  propertyTag(14, "stale locks and intents expire deterministically"),
+  () => {
+    it("releases exactly the locks/intents of devices whose heartbeat is older than the Lock_Expiry_Interval", () => {
+      assertProperty(
+        fc.property(
+          scenarioArb,
+          ({ heartbeatIntervalMs, lockMultiple, now, devices }) => {
+            const lockExpiryIntervalMs = heartbeatIntervalMs * lockMultiple;
 
-        const locks = new LockRegistry("case-sensitive");
-        const intents = new IntentRegistry("case-sensitive");
-        const revisions = new RevisionCounter();
-        const engine = new ExpiryEngine(locks, intents, revisions, {
-          heartbeatIntervalMs,
-          lockExpiryIntervalMs,
-        });
-
-        // Each device gets a unique identity + unique scopes so no two claims
-        // ever contend — expiry is then purely about heartbeat staleness.
-        const staleDeviceIds = new Set<string>();
-        const expectedRemovedLockScopes = new Set<string>();
-        const expectedSurvivingLockScopes = new Set<string>();
-        const expectedRemovedIntentIds = new Set<string>();
-        const expectedSurvivingIntentIds = new Set<string>();
-
-        devices.forEach((device, i) => {
-          const deviceId = `dev-${i}`;
-          const holder = { memberId: `mem-${i}`, deviceId };
-          const lockScope = `src/lock-${i}.ts`;
-          const intentId = `intent-${i}`;
-
-          // A device is stale only when it HAS a recorded heartbeat that is
-          // strictly older than the Lock_Expiry_Interval.
-          const isStale =
-            device.hasHeartbeat && device.offsetMs > lockExpiryIntervalMs;
-          if (device.hasHeartbeat) {
-            engine.recordHeartbeat(session, deviceId, now - device.offsetMs);
-          }
-          if (isStale) {
-            staleDeviceIds.add(deviceId);
-          }
-
-          if (device.hasLock) {
-            locks.acquire({
-              session,
-              lockId: `lock-${i}`,
-              scope: lockScope,
-              scopeKind: "file",
-              mode: device.lockMode,
-              holder,
-              branch: "main",
-              eventRevision: revisions.next(session),
-              acquiredAt: ACQUIRED_AT,
+            const locks = new LockRegistry("case-sensitive");
+            const intents = new IntentRegistry("case-sensitive");
+            const revisions = new RevisionCounter();
+            const engine = new ExpiryEngine(locks, intents, revisions, {
+              heartbeatIntervalMs,
+              lockExpiryIntervalMs,
             });
-            (isStale ? expectedRemovedLockScopes : expectedSurvivingLockScopes).add(
-              lockScope,
-            );
-          }
 
-          if (device.hasIntent) {
-            intents.declare({
-              session,
-              intentId,
-              owner: holder,
-              agentId: `agent-${i}`,
-              modifyPaths: [`src/intent-${i}.ts`],
-              createPaths: [],
-              scopeKind: "file",
-              branch: "main",
-              description: `edit ${i}`,
-              eventRevision: revisions.next(session),
+            // Each device gets a unique identity + unique scopes so no two claims
+            // ever contend — expiry is then purely about heartbeat staleness.
+            const staleDeviceIds = new Set<string>();
+            const expectedRemovedLockScopes = new Set<string>();
+            const expectedSurvivingLockScopes = new Set<string>();
+            const expectedRemovedIntentIds = new Set<string>();
+            const expectedSurvivingIntentIds = new Set<string>();
+
+            devices.forEach((device, i) => {
+              const deviceId = `dev-${i}`;
+              const holder = { memberId: `mem-${i}`, deviceId };
+              const lockScope = `src/lock-${i}.ts`;
+              const intentId = `intent-${i}`;
+
+              // A device is stale only when it HAS a recorded heartbeat that is
+              // strictly older than the Lock_Expiry_Interval.
+              const isStale =
+                device.hasHeartbeat && device.offsetMs > lockExpiryIntervalMs;
+              if (device.hasHeartbeat) {
+                engine.recordHeartbeat(
+                  session,
+                  deviceId,
+                  now - device.offsetMs,
+                );
+              }
+              if (isStale) {
+                staleDeviceIds.add(deviceId);
+              }
+
+              if (device.hasLock) {
+                locks.acquire({
+                  session,
+                  lockId: `lock-${i}`,
+                  scope: lockScope,
+                  scopeKind: "file",
+                  mode: device.lockMode,
+                  holder,
+                  branch: "main",
+                  eventRevision: revisions.next(session),
+                  acquiredAt: ACQUIRED_AT,
+                });
+                (isStale
+                  ? expectedRemovedLockScopes
+                  : expectedSurvivingLockScopes
+                ).add(lockScope);
+              }
+
+              if (device.hasIntent) {
+                intents.declare({
+                  session,
+                  intentId,
+                  owner: holder,
+                  agentId: `agent-${i}`,
+                  modifyPaths: [`src/intent-${i}.ts`],
+                  createPaths: [],
+                  scopeKind: "file",
+                  branch: "main",
+                  description: `edit ${i}`,
+                  eventRevision: revisions.next(session),
+                });
+                (isStale
+                  ? expectedRemovedIntentIds
+                  : expectedSurvivingIntentIds
+                ).add(intentId);
+              }
             });
-            (isStale ? expectedRemovedIntentIds : expectedSurvivingIntentIds).add(
-              intentId,
+
+            const revBefore = revisions.highest(session);
+            const result = engine.sweep(session, now);
+
+            // 1. Exactly the stale devices are swept.
+            expect(new Set(result.expiredDevices)).toEqual(staleDeviceIds);
+
+            // 2. Surviving locks/intents are exactly those held by non-stale devices.
+            const survivingLockScopes = new Set(
+              locks.allLocks(session).map((l) => l.scope),
             );
-          }
-        });
+            const survivingIntentIds = new Set(
+              intents.allIntents(session).map((intent) => intent.intentId),
+            );
+            expect(survivingLockScopes).toEqual(expectedSurvivingLockScopes);
+            expect(survivingIntentIds).toEqual(expectedSurvivingIntentIds);
 
-        const revBefore = revisions.highest(session);
-        const result = engine.sweep(session, now);
+            // 3. No stale holder's lock/intent survives.
+            for (const scope of expectedRemovedLockScopes) {
+              expect(survivingLockScopes.has(scope)).toBe(false);
+            }
+            for (const intentId of expectedRemovedIntentIds) {
+              expect(survivingIntentIds.has(intentId)).toBe(false);
+            }
 
-        // 1. Exactly the stale devices are swept.
-        expect(new Set(result.expiredDevices)).toEqual(staleDeviceIds);
+            // 4. The removals are exactly the released locks + intents, each a
+            //    `removed` update attributed to a stale device.
+            const removedLockScopes = new Set(
+              result.removals
+                .filter((u) => u.entryType === "soft_lock")
+                .map((u) => u.path),
+            );
+            const removedIntentMembers = result.removals.filter(
+              (u) => u.entryType === "intent",
+            );
+            expect(removedLockScopes).toEqual(expectedRemovedLockScopes);
+            expect(removedIntentMembers).toHaveLength(
+              expectedRemovedIntentIds.size,
+            );
+            expect(result.removals).toHaveLength(
+              expectedRemovedLockScopes.size + expectedRemovedIntentIds.size,
+            );
+            for (const update of result.removals) {
+              expect(update.op).toBe("removed");
+              expect(staleDeviceIds.has(update.member.deviceId)).toBe(true);
+              expect(update.eventRevision).toBeGreaterThan(revBefore);
+            }
 
-        // 2. Surviving locks/intents are exactly those held by non-stale devices.
-        const survivingLockScopes = new Set(
-          locks.allLocks(session).map((l) => l.scope),
-        );
-        const survivingIntentIds = new Set(
-          intents.allIntents(session).map((intent) => intent.intentId),
-        );
-        expect(survivingLockScopes).toEqual(expectedSurvivingLockScopes);
-        expect(survivingIntentIds).toEqual(expectedSurvivingIntentIds);
-
-        // 3. No stale holder's lock/intent survives.
-        for (const scope of expectedRemovedLockScopes) {
-          expect(survivingLockScopes.has(scope)).toBe(false);
-        }
-        for (const intentId of expectedRemovedIntentIds) {
-          expect(survivingIntentIds.has(intentId)).toBe(false);
-        }
-
-        // 4. The removals are exactly the released locks + intents, each a
-        //    `removed` update attributed to a stale device.
-        const removedLockScopes = new Set(
-          result.removals
-            .filter((u) => u.entryType === "soft_lock")
-            .map((u) => u.path),
-        );
-        const removedIntentMembers = result.removals.filter(
-          (u) => u.entryType === "intent",
-        );
-        expect(removedLockScopes).toEqual(expectedRemovedLockScopes);
-        expect(removedIntentMembers).toHaveLength(expectedRemovedIntentIds.size);
-        expect(result.removals).toHaveLength(
-          expectedRemovedLockScopes.size + expectedRemovedIntentIds.size,
-        );
-        for (const update of result.removals) {
-          expect(update.op).toBe("removed");
-          expect(staleDeviceIds.has(update.member.deviceId)).toBe(true);
-          expect(update.eventRevision).toBeGreaterThan(revBefore);
-        }
-
-        // 5. Every assigned removal revision is unique.
-        const revs = result.removals.map((u) => u.eventRevision);
-        expect(new Set(revs).size).toBe(revs.length);
-      }),
-    );
-  });
-});
+            // 5. Every assigned removal revision is unique.
+            const revs = result.removals.map((u) => u.eventRevision);
+            expect(new Set(revs).size).toBe(revs.length);
+          },
+        ),
+      );
+    });
+  },
+);

@@ -62,7 +62,11 @@ export type { PresenceReport } from "./presence";
 
 // ---- Coordination-required override validation & audit (task 4.26; Req 13.2–13.4; §10.3) ----
 export { validateOverride } from "./override";
-export type { OverrideError, OverrideRequest, OverrideResult } from "./override";
+export type {
+  OverrideError,
+  OverrideRequest,
+  OverrideResult,
+} from "./override";
 
 // ---- Declared-intent lifecycle & planned-file-creation collisions (task 4.11; Req 16–18, 32; §5.1, §10.2) ----
 export { IntentRegistry } from "./intents";
@@ -98,7 +102,7 @@ export type {
 } from "./rules";
 
 // ---- Risk classification & Risk_Map projection (task 4.14; Req 21, 22, 24, 31.5; §7.8, §10.1) ----
-export { buildRiskMap, ContentionKind } from "./risk";
+export { buildRiskMap, ContentionKind, lockContentionKind } from "./risk";
 export type { RiskMapContext } from "./risk";
 
 // ---- Data-minimization filter & host-side rejection (task 4.24; Req 29; §7.2, §8.3) ----

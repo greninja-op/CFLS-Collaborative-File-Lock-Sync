@@ -281,7 +281,9 @@ describe(propertyTag(8, "reconnect synchronization converges"), () => {
           // The host serves incrementally exactly when the request is at or
           // above the retention watermark, otherwise a snapshot (Req 9.3/9.5).
           const servedIncrementally = fromRevision >= compactThrough;
-          expect(response.kind).toBe(servedIncrementally ? "events" : "snapshot");
+          expect(response.kind).toBe(
+            servedIncrementally ? "events" : "snapshot",
+          );
 
           // An incremental response is exactly the gap-free suffix of events
           // with a greater revision: nothing missed, nothing re-sent (Req 9.3).
@@ -299,7 +301,9 @@ describe(propertyTag(8, "reconnect synchronization converges"), () => {
 
           // Req 9.4 / 33.4: the converged cache equals the authoritative state.
           const expectedState = indexByKey([...authoritative.values()]);
-          expect(indexByKey(agent.cachedEntries(session))).toEqual(expectedState);
+          expect(indexByKey(agent.cachedEntries(session))).toEqual(
+            expectedState,
+          );
 
           // The agent's highest-applied revision matches the host's highest, so
           // a subsequent reconnect resumes from the right point.
@@ -311,7 +315,9 @@ describe(propertyTag(8, "reconnect synchronization converges"), () => {
           // Convergence is idempotent: re-delivering the same response applies
           // no event a second time and leaves the converged state unchanged.
           agent.applySync(session, response);
-          expect(indexByKey(agent.cachedEntries(session))).toEqual(expectedState);
+          expect(indexByKey(agent.cachedEntries(session))).toEqual(
+            expectedState,
+          );
           expect(agent.highestApplied(session)).toBe(highest);
         },
       ),

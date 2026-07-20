@@ -26,11 +26,7 @@ export {
   type PersistedEvent,
   type PersistedSession,
 } from "./store";
-export {
-  generateChallenge,
-  signChallenge,
-  verifyChallenge,
-} from "./challenge";
+export { generateChallenge, signChallenge, verifyChallenge } from "./challenge";
 export {
   CoordinationAuthority,
   type AuthPrincipal,
@@ -48,7 +44,11 @@ export {
 } from "./server";
 
 import { CoordinationAuthority } from "./authority";
-import { loadHostConfig, type HostConfig, type HostConfigInput } from "./config";
+import {
+  loadHostConfig,
+  type HostConfig,
+  type HostConfigInput,
+} from "./config";
 import { CoordinationServer, type ServerOptions } from "./server";
 import { SqliteStore, type Store } from "./store";
 

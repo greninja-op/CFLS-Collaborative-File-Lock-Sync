@@ -50,7 +50,10 @@ describe("resolveLocalApiSettings", () => {
 
   it("keeps an explicitly configured token (discovery is not consulted)", () => {
     const configured: RawLocalApiConfig = { ...raw, token: "manual-token" };
-    const reader = readerWith(discoveryPath, JSON.stringify({ url: "x", token: "y" }));
+    const reader = readerWith(
+      discoveryPath,
+      JSON.stringify({ url: "x", token: "y" }),
+    );
     const settings = resolveLocalApiSettings(configured, wf, reader);
     expect(settings.token).toBe("manual-token");
     expect(settings.url).toBe(raw.url);
@@ -67,7 +70,10 @@ describe("resolveLocalApiSettings", () => {
   });
 
   it("returns configured values unchanged when there is no workspace folder", () => {
-    const reader = readerWith(discoveryPath, JSON.stringify({ url: "x", token: "y" }));
+    const reader = readerWith(
+      discoveryPath,
+      JSON.stringify({ url: "x", token: "y" }),
+    );
     expect(resolveLocalApiSettings(raw, undefined, reader)).toEqual({ ...raw });
   });
 });

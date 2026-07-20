@@ -88,7 +88,11 @@ describe("mapToolErrorCode", () => {
   });
 
   it("only ever produces valid protocol error codes", () => {
-    for (const alias of ["NOT_AUTHORIZED", "SESSION_NOT_FOUND", "OFFLINE"] as const) {
+    for (const alias of [
+      "NOT_AUTHORIZED",
+      "SESSION_NOT_FOUND",
+      "OFFLINE",
+    ] as const) {
       expect(isErrorCode(mapToolErrorCode(alias))).toBe(true);
     }
   });
@@ -110,6 +114,8 @@ describe("offlineQueuedResult", () => {
     expect(result.error.message.toLowerCase()).toContain("manual coordination");
     // Must NOT falsely claim host acceptance.
     expect(result.error.message.toLowerCase()).not.toMatch(/\bwas accepted\b/);
-    expect(result.error.message.toLowerCase()).not.toMatch(/successfully accepted/);
+    expect(result.error.message.toLowerCase()).not.toMatch(
+      /successfully accepted/,
+    );
   });
 });

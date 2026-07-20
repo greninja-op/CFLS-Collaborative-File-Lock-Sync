@@ -47,12 +47,20 @@ describe("buildDependencyGraph — five metadata categories", () => {
     expect(graph.snapshot.analyzerVersion).toBe(tsJsAnalyzer.version);
 
     expect(graph.packages.map((p) => p.manifestPath)).toContain("package.json");
-    expect(graph.modules.map((m) => m.sourceFile)).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(graph.modules.map((m) => m.sourceFile)).toEqual([
+      "src/a.ts",
+      "src/b.ts",
+    ]);
 
     // a.ts depends on b.ts via a static relative import (high confidence).
     const aModule = graph.modules.find((m) => m.sourceFile === "src/a.ts");
     expect(aModule?.edges).toEqual([
-      { from: "src/a.ts", to: "src/b.ts", kind: "runtime_import", confidence: "high" },
+      {
+        from: "src/a.ts",
+        to: "src/b.ts",
+        kind: "runtime_import",
+        confidence: "high",
+      },
     ]);
 
     expect(graph.contracts.length).toBeGreaterThan(0);
@@ -71,7 +79,10 @@ describe("buildDependencyGraph — five metadata categories", () => {
       file("node_modules/react/index.js", "export default {};"),
       file("dist/app.js", "export const bundled = 1;"),
       file(".env", "SECRET=shh"),
-      file("node_modules/pkg/package.json", JSON.stringify({ dependencies: { evil: "1" } })),
+      file(
+        "node_modules/pkg/package.json",
+        JSON.stringify({ dependencies: { evil: "1" } }),
+      ),
     ];
 
     const graph = buildDependencyGraph(SESSION, files);
@@ -81,9 +92,13 @@ describe("buildDependencyGraph — five metadata categories", () => {
     expect(sources.some((s) => s.includes("node_modules"))).toBe(false);
     expect(sources.some((s) => s.startsWith("dist/"))).toBe(false);
     // The excluded manifest never contributes package metadata.
-    expect(graph.packages.some((p) => p.manifestPath.includes("node_modules"))).toBe(false);
+    expect(
+      graph.packages.some((p) => p.manifestPath.includes("node_modules")),
+    ).toBe(false);
     // No contract fingerprint references excluded content.
-    expect(graph.contracts.some((c) => c.id.includes("node_modules"))).toBe(false);
+    expect(graph.contracts.some((c) => c.id.includes("node_modules"))).toBe(
+      false,
+    );
     expect(graph.contracts.some((c) => c.id === ".env")).toBe(false);
   });
 });
@@ -104,7 +119,11 @@ describe("serializeGraph / deserializeGraph — round-trip", () => {
 
   it("is order-independent: shuffled inputs serialize identically", () => {
     const a: DependencyGraph = normalizeGraph({
-      snapshot: { sessionId: SESSION, graphVersion: 2, analyzerVersion: "1.0.0" },
+      snapshot: {
+        sessionId: SESSION,
+        graphVersion: 2,
+        analyzerVersion: "1.0.0",
+      },
       packages: [
         {
           manifestPath: "package.json",
@@ -119,8 +138,18 @@ describe("serializeGraph / deserializeGraph — round-trip", () => {
         {
           sourceFile: "src/a.ts",
           edges: [
-            { from: "src/a.ts", to: "src/c.ts", kind: "runtime_import", confidence: "high" },
-            { from: "src/a.ts", to: "src/b.ts", kind: "runtime_import", confidence: "high" },
+            {
+              from: "src/a.ts",
+              to: "src/c.ts",
+              kind: "runtime_import",
+              confidence: "high",
+            },
+            {
+              from: "src/a.ts",
+              to: "src/b.ts",
+              kind: "runtime_import",
+              confidence: "high",
+            },
           ],
         },
       ],
@@ -140,8 +169,18 @@ describe("serializeGraph / deserializeGraph — round-trip", () => {
         {
           sourceFile: "src/a.ts",
           edges: [
-            { to: "src/b.ts", from: "src/a.ts", confidence: "high", kind: "runtime_import" },
-            { to: "src/c.ts", from: "src/a.ts", confidence: "high", kind: "runtime_import" },
+            {
+              to: "src/b.ts",
+              from: "src/a.ts",
+              confidence: "high",
+              kind: "runtime_import",
+            },
+            {
+              to: "src/c.ts",
+              from: "src/a.ts",
+              confidence: "high",
+              kind: "runtime_import",
+            },
           ],
         },
       ],
@@ -155,7 +194,11 @@ describe("serializeGraph / deserializeGraph — round-trip", () => {
           lockfileHash: "hash",
         },
       ],
-      snapshot: { analyzerVersion: "1.0.0", graphVersion: 2, sessionId: SESSION },
+      snapshot: {
+        analyzerVersion: "1.0.0",
+        graphVersion: 2,
+        sessionId: SESSION,
+      },
     };
 
     expect(serializeGraph(b)).toBe(serializeGraph(a));

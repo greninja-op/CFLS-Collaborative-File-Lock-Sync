@@ -60,7 +60,10 @@ const sessionArb: fc.Arbitrary<SessionId> = fc.record({
 const scenarioArb = fc.record({
   session: sessionArb,
   deviceId: fc.constantFrom("dev-A", "dev-B"),
-  ops: fc.array(fc.integer({ min: 0, max: 2 }), { minLength: 1, maxLength: 40 }),
+  ops: fc.array(fc.integer({ min: 0, max: 2 }), {
+    minLength: 1,
+    maxLength: 40,
+  }),
 });
 
 /** Build a well-formed lock.acquire SignedEvent (signature not verified by the gate). */
@@ -129,7 +132,13 @@ describe(propertyTag(3, "Idempotency of duplicate Event_IDs"), () => {
             const id = `evt-new-${newIndex}`;
             const counter = nextCounter;
             const result = gate.ingest(
-              makeEvent(session, deviceId, id, counter, `nonce-new-${newIndex}`),
+              makeEvent(
+                session,
+                deviceId,
+                id,
+                counter,
+                `nonce-new-${newIndex}`,
+              ),
               apply,
             );
             expect(result.accepted).toBe(true);
@@ -141,17 +150,31 @@ describe(propertyTag(3, "Idempotency of duplicate Event_IDs"), () => {
           } else {
             // A duplicate resubmission of the target Event_ID. Snapshot the
             // authoritative state to prove the duplicate does not mutate it.
-            const before = appliedLog.map((entry) => [...entry] as [string, number]);
+            const before = appliedLog.map(
+              (entry) => [...entry] as [string, number],
+            );
             const beforeHighest = revisions.highest(session);
             const beforeApplyCount = targetApplyCount;
 
             const dup =
               op === 1
                 ? // Verbatim retransmission (same counter + nonce).
-                  makeEvent(session, deviceId, TARGET_ID, TARGET_COUNTER, TARGET_NONCE)
+                  makeEvent(
+                    session,
+                    deviceId,
+                    TARGET_ID,
+                    TARGET_COUNTER,
+                    TARGET_NONCE,
+                  )
                 : // Would-be-stale replay values: idempotency by Event_ID must win
                   // before the replay guard is ever consulted.
-                  makeEvent(session, deviceId, TARGET_ID, 0, `stale-${bogusNonce++}`);
+                  makeEvent(
+                    session,
+                    deviceId,
+                    TARGET_ID,
+                    0,
+                    `stale-${bogusNonce++}`,
+                  );
 
             const result = gate.ingest(dup, apply);
 
@@ -173,9 +196,7 @@ describe(propertyTag(3, "Idempotency of duplicate Event_IDs"), () => {
         // its original revision, and appears exactly once in the authoritative log.
         expect(targetApplyCount).toBe(1);
         expect(gate.appliedRevision(session, TARGET_ID)).toBe(originalRevision);
-        expect(
-          appliedLog.filter(([id]) => id === TARGET_ID),
-        ).toHaveLength(1);
+        expect(appliedLog.filter(([id]) => id === TARGET_ID)).toHaveLength(1);
 
         // Duplicates consumed no revisions: the counter advanced only for new events.
         expect(revisions.highest(session)).toBe(1 + newIndex);

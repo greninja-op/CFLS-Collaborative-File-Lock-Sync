@@ -17,7 +17,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 /** The HKCU Run key path where per-user startup entries live. */
-export const HKCU_RUN_KEY = "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
+export const HKCU_RUN_KEY =
+  "HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 
 /** Default registry value name / Startup launcher basename for the agent. */
 export const STARTUP_ENTRY_NAME = "CflsCoordinationAgent";
@@ -63,7 +64,10 @@ export interface StartupResult {
  * entry (Req 2.2). Pure and testable; the value is quoted so a path with spaces
  * is preserved.
  */
-export function buildRunKeyAddArgs(exePath: string, name: string = STARTUP_ENTRY_NAME): string[] {
+export function buildRunKeyAddArgs(
+  exePath: string,
+  name: string = STARTUP_ENTRY_NAME,
+): string[] {
   return [
     "add",
     HKCU_RUN_KEY,
@@ -78,7 +82,9 @@ export function buildRunKeyAddArgs(exePath: string, name: string = STARTUP_ENTRY
 }
 
 /** Build the `reg.exe delete` argument vector removing the HKCU Run entry. */
-export function buildRunKeyDeleteArgs(name: string = STARTUP_ENTRY_NAME): string[] {
+export function buildRunKeyDeleteArgs(
+  name: string = STARTUP_ENTRY_NAME,
+): string[] {
   return ["delete", HKCU_RUN_KEY, "/v", name, "/f"];
 }
 
@@ -86,8 +92,17 @@ export function buildRunKeyDeleteArgs(name: string = STARTUP_ENTRY_NAME): string
 export function startupFolderPath(): string {
   const appData = process.env["APPDATA"];
   const base =
-    appData && appData.length > 0 ? appData : join(homedir(), "AppData", "Roaming");
-  return join(base, "Microsoft", "Windows", "Start Menu", "Programs", "Startup");
+    appData && appData.length > 0
+      ? appData
+      : join(homedir(), "AppData", "Roaming");
+  return join(
+    base,
+    "Microsoft",
+    "Windows",
+    "Start Menu",
+    "Programs",
+    "Startup",
+  );
 }
 
 /**
@@ -115,7 +130,11 @@ export async function registerLoginStartup(
       mkdirSync(dir, { recursive: true });
     }
     const launcher = join(dir, `${name}.cmd`);
-    writeFileSync(launcher, `@echo off\r\nstart "" "${options.exePath}"\r\n`, "utf8");
+    writeFileSync(
+      launcher,
+      `@echo off\r\nstart "" "${options.exePath}"\r\n`,
+      "utf8",
+    );
     return {
       registered: true,
       strategy: "startup-folder",
@@ -138,7 +157,11 @@ export async function unregisterLoginStartup(
 ): Promise<StartupResult> {
   const name = options.name ?? STARTUP_ENTRY_NAME;
   if (process.platform !== "win32") {
-    return { registered: false, strategy: "unsupported", detail: "Non-Windows." };
+    return {
+      registered: false,
+      strategy: "unsupported",
+      detail: "Non-Windows.",
+    };
   }
   const runner = options.runner ?? defaultRunner;
   await runner("reg", buildRunKeyDeleteArgs(name));

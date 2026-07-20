@@ -5,7 +5,11 @@
  * offline/stale indicator.
  */
 
-import type { ConnectionSnapshot, GetRiskMapData, StalenessSnapshot } from "@cfls/mcp-server";
+import type {
+  ConnectionSnapshot,
+  GetRiskMapData,
+  StalenessSnapshot,
+} from "@cfls/mcp-server";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -19,7 +23,11 @@ const online: ConnectionSnapshot = {
   hostUrl: "wss://host.test:8443",
   lastSyncAt: "2024-01-01T00:00:00.000Z",
 };
-const offline: ConnectionSnapshot = { status: "offline", hostUrl: "wss://host.test:8443", lastSyncAt: null };
+const offline: ConnectionSnapshot = {
+  status: "offline",
+  hostUrl: "wss://host.test:8443",
+  lastSyncAt: null,
+};
 const fresh: StalenessSnapshot = { stale: false, secondsSinceSync: 1 };
 const staleSnap: StalenessSnapshot = { stale: true, secondsSinceSync: 42 };
 
@@ -47,7 +55,14 @@ const riskMap: GetRiskMapData = {
       ],
       explanation: {
         type: "indirect",
-        edges: [{ from: "src/routes.ts", to: "src/api.ts", kind: "runtime_import", confidence: "high" }],
+        edges: [
+          {
+            from: "src/routes.ts",
+            to: "src/api.ts",
+            kind: "runtime_import",
+            confidence: "high",
+          },
+        ],
         sharedContracts: ["openapi:orders"],
       },
       acknowledgementRequired: true,
@@ -59,7 +74,11 @@ const riskMap: GetRiskMapData = {
 
 describe("buildCoordinationViewModel (Req 3.4)", () => {
   it("projects per-path locks, presence, intents, and dependency risk by member", () => {
-    const vm = buildCoordinationViewModel({ riskMap, connection: online, staleness: fresh });
+    const vm = buildCoordinationViewModel({
+      riskMap,
+      connection: online,
+      staleness: fresh,
+    });
 
     const api = findPathView(vm, "src/api.ts");
     expect(api?.riskLevel).toBe("hard");
@@ -76,7 +95,11 @@ describe("buildCoordinationViewModel (Req 3.4)", () => {
   });
 
   it("surfaces the indirect dependency explanation (Req 3.4, 22)", () => {
-    const vm = buildCoordinationViewModel({ riskMap, connection: online, staleness: fresh });
+    const vm = buildCoordinationViewModel({
+      riskMap,
+      connection: online,
+      staleness: fresh,
+    });
     const routes = findPathView(vm, "src/routes.ts");
     expect(routes?.indirectRisk?.edges[0]).toMatchObject({
       from: "src/routes.ts",
@@ -87,14 +110,24 @@ describe("buildCoordinationViewModel (Req 3.4)", () => {
   });
 
   it("surfaces planned file creations with the contributing member", () => {
-    const vm = buildCoordinationViewModel({ riskMap, connection: online, staleness: fresh });
-    expect(vm.plannedFileCreations).toEqual([{ path: "src/new.ts", memberId: "bob" }]);
+    const vm = buildCoordinationViewModel({
+      riskMap,
+      connection: online,
+      staleness: fresh,
+    });
+    expect(vm.plannedFileCreations).toEqual([
+      { path: "src/new.ts", memberId: "bob" },
+    ]);
   });
 });
 
 describe("offline / stale indicator (Req 3.6, 33.3)", () => {
   it("marks the view model offline and stale when the agent is offline", () => {
-    const vm = buildCoordinationViewModel({ riskMap, connection: offline, staleness: staleSnap });
+    const vm = buildCoordinationViewModel({
+      riskMap,
+      connection: offline,
+      staleness: staleSnap,
+    });
     expect(vm.offline).toBe(true);
     expect(vm.stale).toBe(true);
     expect(vm.statusText).toMatch(/Offline/);
@@ -103,7 +136,11 @@ describe("offline / stale indicator (Req 3.6, 33.3)", () => {
   });
 
   it("reports online when connected and fresh", () => {
-    const vm = buildCoordinationViewModel({ riskMap, connection: online, staleness: fresh });
+    const vm = buildCoordinationViewModel({
+      riskMap,
+      connection: online,
+      staleness: fresh,
+    });
     expect(vm.offline).toBe(false);
     expect(vm.stale).toBe(false);
     expect(vm.statusText).toBe("Online");

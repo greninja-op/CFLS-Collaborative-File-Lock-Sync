@@ -13,7 +13,11 @@
 
 import { createEncryptedFileStore } from "./encrypted-file-store";
 import { createOsCredentialStore } from "./os-credential-store";
-import type { SecretStore, SecretStoreBackend, SecretStoreOptions } from "./secret-store";
+import type {
+  SecretStore,
+  SecretStoreBackend,
+  SecretStoreOptions,
+} from "./secret-store";
 import { SecureStorageUnavailableError } from "./secret-store";
 
 /**
@@ -23,7 +27,9 @@ import { SecureStorageUnavailableError } from "./secret-store";
  * `disableOsStore` / `disableFileStore` options can constrain the candidates
  * (e.g. to force the fallback in a test/CI environment).
  */
-export function createSecretStore(options: SecretStoreOptions = {}): SecretStore {
+export function createSecretStore(
+  options: SecretStoreOptions = {},
+): SecretStore {
   const candidates: SecretStore[] = [];
   if (options.disableOsStore !== true) {
     candidates.push(createOsCredentialStore(options.serviceName));
@@ -31,8 +37,12 @@ export function createSecretStore(options: SecretStoreOptions = {}): SecretStore
   if (options.disableFileStore !== true) {
     candidates.push(
       createEncryptedFileStore({
-        ...(options.fileStoreDir !== undefined ? { fileStoreDir: options.fileStoreDir } : {}),
-        ...(options.appSecret !== undefined ? { appSecret: options.appSecret } : {}),
+        ...(options.fileStoreDir !== undefined
+          ? { fileStoreDir: options.fileStoreDir }
+          : {}),
+        ...(options.appSecret !== undefined
+          ? { appSecret: options.appSecret }
+          : {}),
       }),
     );
   }

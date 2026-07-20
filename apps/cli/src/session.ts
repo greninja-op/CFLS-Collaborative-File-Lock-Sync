@@ -41,7 +41,10 @@ export function resolveRepositorySession(
   input: ResolveRepositorySessionInput,
 ): ResolvedSession {
   const teamId = input.teamId ?? DEFAULT_TEAM_ID;
-  const facts = collectGitFacts(input.repoRoot, input.gitRunner ?? defaultGitRunner);
+  const facts = collectGitFacts(
+    input.repoRoot,
+    input.gitRunner ?? defaultGitRunner,
+  );
   const remoteUrl = input.remoteUrlOverride ?? facts.remoteUrl ?? undefined;
 
   return resolveSession({
@@ -55,6 +58,9 @@ export function resolveRepositorySession(
 
 /** A short, human-readable one-line description of a session (no secrets). */
 export function describeSession(session: SessionId): string {
-  const base = session.baseRevision === null ? "(no base revision)" : session.baseRevision.slice(0, 10);
+  const base =
+    session.baseRevision === null
+      ? "(no base revision)"
+      : session.baseRevision.slice(0, 10);
   return `repo=${session.repoId} team=${session.teamId} branch=${session.branch} base=${base}`;
 }

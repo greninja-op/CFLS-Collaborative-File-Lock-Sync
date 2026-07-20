@@ -55,7 +55,12 @@ class FakeTransport implements FrameTransport {
 /** A deterministic {@link Scheduler}: nothing fires unless explicitly triggered. */
 class FakeScheduler implements Scheduler {
   private seq = 0;
-  entries: { handle: number; handler: () => void; ms: number; cleared: boolean }[] = [];
+  entries: {
+    handle: number;
+    handler: () => void;
+    ms: number;
+    cleared: boolean;
+  }[] = [];
 
   setInterval(handler: () => void, ms: number): unknown {
     const handle = ++this.seq;
@@ -130,8 +135,14 @@ describe("LocalApiClient request/response correlation", () => {
     const { client, transport } = makeClient();
     await authAndSettle(client, transport);
 
-    const pending = client.request("get_risk_map", { session: { repoId: "r" } });
-    const frame = transport.sent.at(-1) as { type: string; id: number; method: string };
+    const pending = client.request("get_risk_map", {
+      session: { repoId: "r" },
+    });
+    const frame = transport.sent.at(-1) as {
+      type: string;
+      id: number;
+      method: string;
+    };
     expect(frame.type).toBe("request");
     expect(frame.method).toBe("get_risk_map");
 
@@ -145,13 +156,25 @@ describe("LocalApiClient request/response correlation", () => {
     await authAndSettle(client, transport);
 
     const received: unknown[] = [];
-    const pending = client.subscribe({ session: { repoId: "r" } }, (u) => received.push(u));
+    const pending = client.subscribe({ session: { repoId: "r" } }, (u) =>
+      received.push(u),
+    );
     const frame = transport.sent.at(-1) as { id: number };
-    transport.inject({ type: "response", id: frame.id, body: { ok: true, data: { subscriptionId: "s1" } } });
+    transport.inject({
+      type: "response",
+      id: frame.id,
+      body: { ok: true, data: { subscriptionId: "s1" } },
+    });
     await pending;
 
-    transport.inject({ type: "update", payload: { entryType: "soft_lock", op: "added" } });
-    transport.inject({ type: "update", payload: { entryType: "presence", op: "added" } });
+    transport.inject({
+      type: "update",
+      payload: { entryType: "soft_lock", op: "added" },
+    });
+    transport.inject({
+      type: "update",
+      payload: { entryType: "presence", op: "added" },
+    });
     expect(received).toHaveLength(2);
   });
 
@@ -166,7 +189,9 @@ describe("LocalApiClient request/response correlation", () => {
 
 describe("LocalApiClient heartbeats (Req 26.6)", () => {
   it("sends periodic heartbeats to the agent after authenticating", async () => {
-    const { client, transport, scheduler } = makeClient({ heartbeatIntervalMs: 10_000 });
+    const { client, transport, scheduler } = makeClient({
+      heartbeatIntervalMs: 10_000,
+    });
     await authAndSettle(client, transport);
 
     expect(transport.requestsFor(HEARTBEAT_METHOD)).toHaveLength(0);
@@ -176,7 +201,9 @@ describe("LocalApiClient heartbeats (Req 26.6)", () => {
   });
 
   it("does not send heartbeats before authentication", () => {
-    const { client, scheduler, transport } = makeClient({ heartbeatIntervalMs: 10_000 });
+    const { client, scheduler, transport } = makeClient({
+      heartbeatIntervalMs: 10_000,
+    });
     // startHeartbeats guards on authentication; firing a stray tick sends nothing.
     client.startHeartbeats();
     scheduler.fire(10_000);
@@ -188,7 +215,11 @@ describe("LocalApiClient editor-event forwarding (Req 3.2)", () => {
   it("sends an editor_event request frame", async () => {
     const { client, transport } = makeClient();
     await authAndSettle(client, transport);
-    client.sendEditorEvent({ kind: "file_saved", path: "src/a.ts", at: Date.now() });
+    client.sendEditorEvent({
+      kind: "file_saved",
+      path: "src/a.ts",
+      at: Date.now(),
+    });
     const frames = transport.requestsFor(EDITOR_EVENT_METHOD) as {
       params: { kind: string; path: string };
     }[];
@@ -198,7 +229,10 @@ describe("LocalApiClient editor-event forwarding (Req 3.2)", () => {
 });
 
 /** Authenticate the client and let the auth_ok microtask settle. */
-async function authAndSettle(client: LocalApiClient, transport: FakeTransport): Promise<void> {
+async function authAndSettle(
+  client: LocalApiClient,
+  transport: FakeTransport,
+): Promise<void> {
   const pending = client.authenticate();
   transport.inject({ type: "auth_ok" });
   await pending;

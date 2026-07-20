@@ -48,7 +48,13 @@ const MEMBER_IDS = ["alice", "bob", "carol", "dave"] as const;
 const DEVICE_IDS = ["laptop", "desktop", "ci"] as const;
 const BRANCHES = ["main", "feature-x"] as const;
 /** File paths that dependency edges also reference, so indirect risk can fire. */
-const PATHS = ["src/a.ts", "src/b.ts", "src/c.ts", "src/d.ts", "api/routes.ts"] as const;
+const PATHS = [
+  "src/a.ts",
+  "src/b.ts",
+  "src/c.ts",
+  "src/d.ts",
+  "api/routes.ts",
+] as const;
 
 const memberArb: fc.Arbitrary<MemberRef> = fc.record({
   memberId: fc.constantFrom(...MEMBER_IDS),
@@ -66,24 +72,26 @@ const pathArb = fc.constantFrom(...PATHS);
 const scopeKindArb: fc.Arbitrary<ScopeKind> = fc.constantFrom("file", "folder");
 
 let lockCounter = 0;
-const lockArb: fc.Arbitrary<Lock> = fc.record({
-  scope: pathArb,
-  scopeKind: scopeKindArb,
-  mode: modeArb,
-  holder: memberArb,
-  branch: branchArb,
-  concurrent: fc.boolean(),
-}).map((partial) => ({
-  lockId: `lock-${lockCounter++}`,
-  scope: partial.scope,
-  scopeKind: partial.scopeKind,
-  mode: partial.mode,
-  holder: partial.holder,
-  branch: partial.branch,
-  eventRevision: 1,
-  acquiredAt: "2024-01-01T00:00:00.000Z",
-  concurrent: partial.concurrent,
-}));
+const lockArb: fc.Arbitrary<Lock> = fc
+  .record({
+    scope: pathArb,
+    scopeKind: scopeKindArb,
+    mode: modeArb,
+    holder: memberArb,
+    branch: branchArb,
+    concurrent: fc.boolean(),
+  })
+  .map((partial) => ({
+    lockId: `lock-${lockCounter++}`,
+    scope: partial.scope,
+    scopeKind: partial.scopeKind,
+    mode: partial.mode,
+    holder: partial.holder,
+    branch: partial.branch,
+    eventRevision: 1,
+    acquiredAt: "2024-01-01T00:00:00.000Z",
+    concurrent: partial.concurrent,
+  }));
 
 const presenceArb: fc.Arbitrary<Presence> = fc.record({
   member: memberArb,
@@ -93,34 +101,37 @@ const presenceArb: fc.Arbitrary<Presence> = fc.record({
 });
 
 let intentCounter = 0;
-const intentArb: fc.Arbitrary<DeclaredIntent> = fc.record({
-  owner: memberArb,
-  modifyPaths: fc.array(pathArb, { maxLength: 3 }),
-  createPaths: fc.array(pathArb, { maxLength: 2 }),
-  branch: branchArb,
-}).map((partial) => ({
-  intentId: `intent-${intentCounter++}`,
-  owner: partial.owner,
-  agentId: `agent-${partial.owner.memberId}`,
-  modifyPaths: partial.modifyPaths,
-  createPaths: partial.createPaths.map((path) => ({ path })),
-  scopeKind: "file" as ScopeKind,
-  branch: partial.branch,
-  description: "planned work",
-  eventRevision: 1,
-}));
+const intentArb: fc.Arbitrary<DeclaredIntent> = fc
+  .record({
+    owner: memberArb,
+    modifyPaths: fc.array(pathArb, { maxLength: 3 }),
+    createPaths: fc.array(pathArb, { maxLength: 2 }),
+    branch: branchArb,
+  })
+  .map((partial) => ({
+    intentId: `intent-${intentCounter++}`,
+    owner: partial.owner,
+    agentId: `agent-${partial.owner.memberId}`,
+    modifyPaths: partial.modifyPaths,
+    createPaths: partial.createPaths.map((path) => ({ path })),
+    scopeKind: "file" as ScopeKind,
+    branch: partial.branch,
+    description: "planned work",
+    eventRevision: 1,
+  }));
 
-const edgeArb: fc.Arbitrary<DependencyGraph["modules"][number]["edges"][number]> =
-  fc.record({
-    from: pathArb,
-    to: pathArb,
-    kind: fc.constantFrom(
-      "runtime_import",
-      "type_only_import",
-      "dynamic_unknown",
-    ),
-    confidence: fc.constantFrom("high", "medium", "low", "unknown"),
-  });
+const edgeArb: fc.Arbitrary<
+  DependencyGraph["modules"][number]["edges"][number]
+> = fc.record({
+  from: pathArb,
+  to: pathArb,
+  kind: fc.constantFrom(
+    "runtime_import",
+    "type_only_import",
+    "dynamic_unknown",
+  ),
+  confidence: fc.constantFrom("high", "medium", "low", "unknown"),
+});
 
 const graphArb: fc.Arbitrary<DependencyGraph> = fc
   .record({
@@ -155,13 +166,25 @@ const graphArb: fc.Arbitrary<DependencyGraph> = fc
 
 /** A rules config over a soft default with an optional escalating glob. */
 const rulesArb: fc.Arbitrary<RepositoryRulesConfig> = fc
-  .array(fc.record({ glob: fc.constantFrom("src/**", "api/**", "**"), mode: modeArb }), {
-    maxLength: 3,
-  })
+  .array(
+    fc.record({
+      glob: fc.constantFrom("src/**", "api/**", "**"),
+      mode: modeArb,
+    }),
+    {
+      maxLength: 3,
+    },
+  )
   .map((rules) => {
-    const result = parseRulesConfig({ version: 1, defaults: { mode: "soft" }, rules });
+    const result = parseRulesConfig({
+      version: 1,
+      defaults: { mode: "soft" },
+      rules,
+    });
     if (result.malformed) {
-      throw new Error(`unexpected malformed rules: ${JSON.stringify(result.errors)}`);
+      throw new Error(
+        `unexpected malformed rules: ${JSON.stringify(result.errors)}`,
+      );
     }
     return result.config;
   });
@@ -184,19 +207,24 @@ const contextArb: fc.Arbitrary<RiskMapContext> = fc
     ...(graph !== undefined ? { graph } : {}),
   }));
 
-describe(propertyTag(13, "a member's own activity is excluded from its own Risk_Map"), () => {
-  it("never lists the requesting member as a contributor in its own Risk_Map (Req 31.5)", () => {
-    assertProperty(
-      fc.property(contextArb, (context) => {
-        const map = buildRiskMap(context);
-        for (const entry of map) {
-          for (const contributor of entry.contributors) {
-            // The requester's own activity must never be attributed back to it,
-            // regardless of which device it acted from (exclusion is by memberId).
-            expect(contributor.member.memberId).not.toBe(context.requester.memberId);
+describe(
+  propertyTag(13, "a member's own activity is excluded from its own Risk_Map"),
+  () => {
+    it("never lists the requesting member as a contributor in its own Risk_Map (Req 31.5)", () => {
+      assertProperty(
+        fc.property(contextArb, (context) => {
+          const map = buildRiskMap(context);
+          for (const entry of map) {
+            for (const contributor of entry.contributors) {
+              // The requester's own activity must never be attributed back to it,
+              // regardless of which device it acted from (exclusion is by memberId).
+              expect(contributor.member.memberId).not.toBe(
+                context.requester.memberId,
+              );
+            }
           }
-        }
-      }),
-    );
-  });
-});
+        }),
+      );
+    });
+  },
+);

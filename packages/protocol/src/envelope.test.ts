@@ -132,7 +132,9 @@ describe("canonicalize", () => {
   });
 
   it("is stable regardless of envelope key insertion order", () => {
-    const env = buildEnvelope(lockAcquireInput({ sentAt: "2024-01-01T00:00:00.000Z" }));
+    const env = buildEnvelope(
+      lockAcquireInput({ sentAt: "2024-01-01T00:00:00.000Z" }),
+    );
     // Rebuild the same logical envelope with keys in a shuffled order.
     const shuffled = {
       payload: env.payload,
@@ -151,7 +153,9 @@ describe("canonicalize", () => {
 
 describe("envelope JSON round-trip", () => {
   it("survives construct → canonicalize → JSON.parse preserving structure", () => {
-    const env = buildEnvelope(lockAcquireInput({ sentAt: "2024-01-01T00:00:00.000Z" }));
+    const env = buildEnvelope(
+      lockAcquireInput({ sentAt: "2024-01-01T00:00:00.000Z" }),
+    );
 
     const serialized = canonicalize(env);
     const parsed = JSON.parse(serialized) as typeof env;
@@ -160,7 +164,9 @@ describe("envelope JSON round-trip", () => {
   });
 
   it("re-canonicalizes to identical bytes after a parse round-trip (signable stability)", () => {
-    const env = buildEnvelope(lockAcquireInput({ sentAt: "2024-01-01T00:00:00.000Z" }));
+    const env = buildEnvelope(
+      lockAcquireInput({ sentAt: "2024-01-01T00:00:00.000Z" }),
+    );
 
     const first = canonicalEnvelopeString(env);
     const parsed = JSON.parse(JSON.stringify(env)) as typeof env;
@@ -170,18 +176,24 @@ describe("envelope JSON round-trip", () => {
   });
 
   it("canonicalEnvelopeString excludes the signature field", () => {
-    const env = buildEnvelope(lockAcquireInput({ sentAt: "2024-01-01T00:00:00.000Z" }));
+    const env = buildEnvelope(
+      lockAcquireInput({ sentAt: "2024-01-01T00:00:00.000Z" }),
+    );
     const signed = toSignedEvent(env, "c2lnbmF0dXJl");
 
     // A signed event round-trips through JSON and its envelope's canonical form
     // is unchanged by the presence of the detached signature.
     const parsed = JSON.parse(JSON.stringify(signed)) as typeof signed;
-    expect(canonicalEnvelopeString(parsed.envelope)).toBe(canonicalEnvelopeString(env));
+    expect(canonicalEnvelopeString(parsed.envelope)).toBe(
+      canonicalEnvelopeString(env),
+    );
     expect(canonicalEnvelopeString(env)).not.toContain("c2lnbmF0dXJl");
   });
 
   it("a SignedEvent survives a full JSON round-trip preserving envelope and signature", () => {
-    const env = buildEnvelope(lockAcquireInput({ sentAt: "2024-01-01T00:00:00.000Z" }));
+    const env = buildEnvelope(
+      lockAcquireInput({ sentAt: "2024-01-01T00:00:00.000Z" }),
+    );
     const signed = toSignedEvent(env, "c2lnbmF0dXJl");
 
     const parsed = JSON.parse(JSON.stringify(signed)) as typeof signed;

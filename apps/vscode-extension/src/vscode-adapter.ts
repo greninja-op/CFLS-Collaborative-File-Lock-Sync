@@ -10,7 +10,16 @@
  */
 
 import type { RiskLevel } from "@cfls/protocol";
+import { existsSync, readFileSync } from "node:fs";
+import { join } from "node:path";
+
 import * as vscode from "vscode";
+
+import {
+  ALL_SOFT_CONFIG,
+  parseRulesConfig,
+  type RepositoryRulesConfig,
+} from "@cfls/core-state";
 
 import {
   EmitterEditorHost,
@@ -86,6 +95,31 @@ const RISK_PRESENTATION: Record<
 };
 
 /**
+ * Load the team's committed Repository_Rules_Config from
+ * `<workspaceFolder>/.coordination/rules.json` so cooperative hard-stop and the
+ * risk view resolve path modes exactly as the agent does (Req 15). A missing or
+ * malformed file yields the fail-safe all-soft config (Req 15.5) — a broken
+ * rules file never silently escalates a path to hard/coordination-required.
+ */
+export function readRepositoryRules(): RepositoryRulesConfig {
+  const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (workspaceFolder === undefined) {
+    return ALL_SOFT_CONFIG;
+  }
+  const rulesPath = join(workspaceFolder, ".coordination", "rules.json");
+  if (!existsSync(rulesPath)) {
+    return ALL_SOFT_CONFIG;
+  }
+  try {
+    const raw: unknown = JSON.parse(readFileSync(rulesPath, "utf8"));
+    return parseRulesConfig(raw).config;
+  } catch {
+    // Present-but-unreadable rules file → fail safe to all-soft (Req 15.5).
+    return ALL_SOFT_CONFIG;
+  }
+}
+
+/**
  * Read the extension's Local_API settings from VS Code configuration, falling
  * back to the `cfls agent` discovery file when no token is configured.
  */
@@ -112,14 +146,19 @@ export interface NotificationOptions {
 }
 
 /** Register a save observer and expose only its repository-relative path. */
-export function onWillSaveTextDocument(listener: (path: string) => void): vscode.Disposable {
+export function onWillSaveTextDocument(
+  listener: (path: string) => void,
+): vscode.Disposable {
   return vscode.workspace.onWillSaveTextDocument((event) => {
     listener(toRepoRelativePath(event.document.uri));
   });
 }
 
 /** Register a no-argument command without leaking the VS Code API to callers. */
-export function registerCommand(command: string, callback: () => void): vscode.Disposable {
+export function registerCommand(
+  command: string,
+  callback: () => void,
+): vscode.Disposable {
   return vscode.commands.registerCommand(command, callback);
 }
 
@@ -134,7 +173,10 @@ export function showWarningMessage(message: string): void {
 }
 
 /** Surface an explicit, user-requested coordination detail message. */
-export function showInformationMessage(message: string, options?: NotificationOptions): void {
+export function showInformationMessage(
+  message: string,
+  options?: NotificationOptions,
+): void {
   if (options === undefined) {
     void vscode.window.showInformationMessage(message);
     return;
@@ -159,7 +201,11 @@ export class VsCodeEditorHost implements EditorHost {
     return this.emitter.onEditorEvent(listener);
   }
 
-  private fire(kind: EditorEventKind, uri?: vscode.Uri, oldUri?: vscode.Uri): void {
+  private fire(
+    kind: EditorEventKind,
+    uri?: vscode.Uri,
+    oldUri?: vscode.Uri,
+  ): void {
     const event: EditorEvent = {
       kind,
       at: Date.now(),
@@ -175,8 +221,12 @@ export class VsCodeEditorHost implements EditorHost {
       queueMicrotask(() => this.fire("workspace_opened"));
     }
     this.disposables.push(
-      vscode.workspace.onDidChangeWorkspaceFolders(() => this.fire("workspace_opened")),
-      vscode.workspace.onDidOpenTextDocument((doc) => this.fire("file_opened", doc.uri)),
+      vscode.workspace.onDidChangeWorkspaceFolders(() =>
+        this.fire("workspace_opened"),
+      ),
+      vscode.workspace.onDidOpenTextDocument((doc) =>
+        this.fire("file_opened", doc.uri),
+      ),
       vscode.window.onDidChangeActiveTextEditor((editor) => {
         if (editor !== undefined) {
           this.fire("active_editor_changed", editor.document.uri);
@@ -187,8 +237,12 @@ export class VsCodeEditorHost implements EditorHost {
           this.fire("editing_started", e.document.uri);
         }
       }),
-      vscode.workspace.onDidSaveTextDocument((doc) => this.fire("file_saved", doc.uri)),
-      vscode.workspace.onDidCloseTextDocument((doc) => this.fire("file_closed", doc.uri)),
+      vscode.workspace.onDidSaveTextDocument((doc) =>
+        this.fire("file_saved", doc.uri),
+      ),
+      vscode.workspace.onDidCloseTextDocument((doc) =>
+        this.fire("file_closed", doc.uri),
+      ),
       vscode.workspace.onDidRenameFiles((e) => {
         for (const f of e.files) {
           this.fire("file_renamed", f.newUri, f.oldUri);
@@ -217,21 +271,33 @@ export class VsCodeEditorHost implements EditorHost {
  */
 export class StatusBarRenderer {
   private readonly item: vscode.StatusBarItem;
-  private readonly selfMemberId: string;
+  private selfMemberId: string;
 
   constructor(options: CoordinationUiOptions = {}) {
     this.selfMemberId = options.selfMemberId ?? DEFAULT_SELF_MEMBER_ID;
-    this.item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
+    this.item = vscode.window.createStatusBarItem(
+      vscode.StatusBarAlignment.Left,
+      100,
+    );
     this.item.command = "cfls.showCoordinationStatus";
     this.item.show();
+  }
+
+  setSelfMemberId(selfMemberId: string): void {
+    this.selfMemberId = selfMemberId;
   }
 
   render(vm: CoordinationViewModel): void {
     const coordinatedPaths = vm.paths.filter(
       (path) => decorateForPath(vm, path.path, this.selfMemberId) !== null,
     );
-    const hasActiveCoordination = !vm.offline && !vm.stale && coordinatedPaths.length > 0;
-    const icon = vm.offline ? "$(cloud-offline)" : vm.stale ? "$(sync)" : "$(check)";
+    const hasActiveCoordination =
+      !vm.offline && !vm.stale && coordinatedPaths.length > 0;
+    const icon = vm.offline
+      ? "$(cloud-offline)"
+      : vm.stale
+        ? "$(sync)"
+        : "$(check)";
     const summary = hasActiveCoordination
       ? `${coordinatedPaths.length} file(s) in play`
       : vm.statusText;
@@ -240,7 +306,9 @@ export class StatusBarRenderer {
       ? new vscode.ThemeColor("statusBarItem.warningBackground")
       : undefined;
 
-    const tooltip = new vscode.MarkdownString(buildStatusTooltip(vm, this.selfMemberId));
+    const tooltip = new vscode.MarkdownString(
+      buildStatusTooltip(vm, this.selfMemberId),
+    );
     tooltip.isTrusted = false;
     this.item.tooltip = tooltip;
   }
@@ -258,12 +326,22 @@ export class StatusBarRenderer {
 class CoordinationFileDecorationProvider
   implements vscode.FileDecorationProvider, vscode.Disposable
 {
-  private readonly emitter = new vscode.EventEmitter<vscode.Uri | vscode.Uri[] | undefined>();
+  private readonly emitter = new vscode.EventEmitter<
+    vscode.Uri | vscode.Uri[] | undefined
+  >();
   private viewModel: CoordinationViewModel | undefined;
 
   readonly onDidChangeFileDecorations = this.emitter.event;
 
-  constructor(private readonly selfMemberId: string) {}
+  constructor(private selfMemberId: string) {}
+
+  setSelfMemberId(selfMemberId: string): void {
+    if (this.selfMemberId === selfMemberId) {
+      return;
+    }
+    this.selfMemberId = selfMemberId;
+    this.emitter.fire(undefined);
+  }
 
   setViewModel(viewModel: CoordinationViewModel | undefined): void {
     this.viewModel = viewModel;
@@ -276,7 +354,11 @@ class CoordinationFileDecorationProvider
     if (uri.scheme !== "file" || this.viewModel === undefined) {
       return undefined;
     }
-    const cue = fileBadgeForPath(this.viewModel, toRepoRelativePath(uri), this.selfMemberId);
+    const cue = fileBadgeForPath(
+      this.viewModel,
+      toRepoRelativePath(uri),
+      this.selfMemberId,
+    );
     if (cue === null) {
       return undefined;
     }
@@ -303,8 +385,11 @@ class CoordinationFileDecorationProvider
 export class CoordinationUiController implements vscode.Disposable {
   readonly statusBar: StatusBarRenderer;
 
-  private readonly selfMemberId: string;
-  private readonly decorationTypes: Record<RiskLevel, vscode.TextEditorDecorationType>;
+  private selfMemberId: string;
+  private readonly decorationTypes: Record<
+    RiskLevel,
+    vscode.TextEditorDecorationType
+  >;
   private readonly fileDecorationProvider: CoordinationFileDecorationProvider;
   private readonly disposables: vscode.Disposable[] = [];
   private viewModel: CoordinationViewModel | undefined;
@@ -316,10 +401,14 @@ export class CoordinationUiController implements vscode.Disposable {
   constructor(options: CoordinationUiOptions = {}) {
     this.selfMemberId = options.selfMemberId ?? DEFAULT_SELF_MEMBER_ID;
     this.statusBar = new StatusBarRenderer({ selfMemberId: this.selfMemberId });
-    this.fileDecorationProvider = new CoordinationFileDecorationProvider(this.selfMemberId);
+    this.fileDecorationProvider = new CoordinationFileDecorationProvider(
+      this.selfMemberId,
+    );
     this.decorationTypes = {
       soft: this.createDecorationType("soft"),
-      "coordination-required": this.createDecorationType("coordination-required"),
+      "coordination-required": this.createDecorationType(
+        "coordination-required",
+      ),
       hard: this.createDecorationType("hard"),
     };
   }
@@ -342,7 +431,9 @@ export class CoordinationUiController implements vscode.Disposable {
             provideHover: (document) => this.provideHover(document),
           },
         ),
-        vscode.window.registerFileDecorationProvider(this.fileDecorationProvider),
+        vscode.window.registerFileDecorationProvider(
+          this.fileDecorationProvider,
+        ),
         vscode.window.onDidChangeActiveTextEditor(() => {
           this.applyActiveEditorDecoration();
         }),
@@ -373,7 +464,23 @@ export class CoordinationUiController implements vscode.Disposable {
     this.render(viewModel);
   }
 
-  private createDecorationType(riskLevel: RiskLevel): vscode.TextEditorDecorationType {
+  /** Update the local identity once the agent resolves it after authentication. */
+  setSelfMemberId(selfMemberId: string): void {
+    if (this.disposed || this.selfMemberId === selfMemberId) {
+      return;
+    }
+    this.selfMemberId = selfMemberId;
+    this.statusBar.setSelfMemberId(selfMemberId);
+    this.fileDecorationProvider.setSelfMemberId(selfMemberId);
+    if (this.viewModel !== undefined) {
+      this.statusBar.render(this.viewModel);
+      this.applyActiveEditorDecoration();
+    }
+  }
+
+  private createDecorationType(
+    riskLevel: RiskLevel,
+  ): vscode.TextEditorDecorationType {
     const presentation = RISK_PRESENTATION[riskLevel];
     return vscode.window.createTextEditorDecorationType({
       isWholeLine: true,
@@ -388,7 +495,9 @@ export class CoordinationUiController implements vscode.Disposable {
     });
   }
 
-  private provideHover(document: vscode.TextDocument): vscode.Hover | undefined {
+  private provideHover(
+    document: vscode.TextDocument,
+  ): vscode.Hover | undefined {
     if (this.viewModel === undefined) {
       return undefined;
     }
@@ -435,7 +544,9 @@ export class CoordinationUiController implements vscode.Disposable {
     }
 
     const firstLine = editor.document.lineAt(0);
-    const range = firstLine.range.isEmpty ? firstLine.rangeIncludingLineBreak : firstLine.range;
+    const range = firstLine.range.isEmpty
+      ? firstLine.rangeIncludingLineBreak
+      : firstLine.range;
     if (range.isEmpty) {
       return;
     }
@@ -458,11 +569,17 @@ export class CoordinationUiController implements vscode.Disposable {
     this.decoratedEditor = editor;
   }
 
-  private createHoverMarkdown(uri: vscode.Uri): vscode.MarkdownString | undefined {
+  private createHoverMarkdown(
+    uri: vscode.Uri,
+  ): vscode.MarkdownString | undefined {
     if (this.viewModel === undefined) {
       return undefined;
     }
-    const markdown = buildHoverMarkdown(this.viewModel, toRepoRelativePath(uri), this.selfMemberId);
+    const markdown = buildHoverMarkdown(
+      this.viewModel,
+      toRepoRelativePath(uri),
+      this.selfMemberId,
+    );
     if (markdown === null) {
       return undefined;
     }

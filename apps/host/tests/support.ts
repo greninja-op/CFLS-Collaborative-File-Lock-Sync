@@ -80,7 +80,13 @@ export class Counter {
 export function signedEvent<T extends MessageTypeName>(
   type: T,
   payload: MessagePayloadMap[T],
-  args: { session: SessionId; device: TestDevice; counter: number; eventId: string; nonce?: string },
+  args: {
+    session: SessionId;
+    device: TestDevice;
+    counter: number;
+    eventId: string;
+    nonce?: string;
+  },
 ): SignedEvent {
   const envelope = buildEnvelope({
     type,
@@ -110,7 +116,10 @@ type WireMessage = any;
 export class TestClient {
   private readonly ws: WebSocket;
   private readonly inbox: WireMessage[] = [];
-  private waiters: Array<{ predicate: (m: WireMessage) => boolean; resolve: (m: WireMessage) => void }> = [];
+  private waiters: Array<{
+    predicate: (m: WireMessage) => boolean;
+    resolve: (m: WireMessage) => void;
+  }> = [];
   private readonly counter = new Counter();
   highestRevision = 0;
 
@@ -140,11 +149,17 @@ export class TestClient {
   }
 
   /** Wait for a message matching `predicate` (or time out). */
-  waitFor(predicate: (m: WireMessage) => boolean, timeoutMs = 4000): Promise<WireMessage> {
+  waitFor(
+    predicate: (m: WireMessage) => boolean,
+    timeoutMs = 4000,
+  ): Promise<WireMessage> {
     const existing = this.inbox.find((m) => predicate(m));
     if (existing !== undefined) return Promise.resolve(existing);
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error("Timed out waiting for message")), timeoutMs);
+      const timer = setTimeout(
+        () => reject(new Error("Timed out waiting for message")),
+        timeoutMs,
+      );
       this.waiters.push({
         predicate,
         resolve: (m) => {
@@ -196,7 +211,9 @@ export class TestClient {
         version: MESSAGE_FORMAT_VERSION,
       },
     });
-    const first = await this.waitFor((m) => m?.type === "auth.challenge" || m?.type === "auth.error");
+    const first = await this.waitFor(
+      (m) => m?.type === "auth.challenge" || m?.type === "auth.error",
+    );
     if (first.type === "auth.error") {
       return { ok: false, code: first.payload.code };
     }
@@ -205,7 +222,9 @@ export class TestClient {
       type: "auth.response",
       payload: { signature: signChallenge(nonce, device.key.privateKey) },
     });
-    const second = await this.waitFor((m) => m?.type === "auth.ok" || m?.type === "auth.error");
+    const second = await this.waitFor(
+      (m) => m?.type === "auth.ok" || m?.type === "auth.error",
+    );
     if (second.type === "auth.error") {
       return { ok: false, code: second.payload.code };
     }

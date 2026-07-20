@@ -76,7 +76,9 @@ describe("LockRegistry.acquire — uncontended (Req 12.1–12.3)", () => {
   it("re-acquisition by the current holder is idempotent (no new claim)", () => {
     const registry = new LockRegistry("case-sensitive");
     registry.acquire(acq({ eventRevision: 1 }));
-    const outcome = registry.acquire(acq({ lockId: "lock-1b", eventRevision: 2 }));
+    const outcome = registry.acquire(
+      acq({ lockId: "lock-1b", eventRevision: 2 }),
+    );
 
     expect(outcome.contended).toBe(false);
     expect(outcome.lock.lockId).toBe("lock-1"); // original winner returned
@@ -98,9 +100,9 @@ describe("LockRegistry.acquire — contention (Req 12.4)", () => {
     expect(outcome.winner.holder).toEqual(alice);
     expect(outcome.winner.eventRevision).toBe(1);
     // Alice remains the single winning lock.
-    expect(registry.winningLock(session, "src/api.ts", "file", "main")?.holder).toEqual(
-      alice,
-    );
+    expect(
+      registry.winningLock(session, "src/api.ts", "file", "main")?.holder,
+    ).toEqual(alice);
   });
 
   it("resolves the winner by earliest Event_Revision regardless of arrival order (Req 8.2, 12.4)", () => {
@@ -132,7 +134,9 @@ describe("LockRegistry.acquire — contention (Req 12.4)", () => {
 
   it("reports the winning member + revision as conflict info on a losing claim (Req 8.4)", () => {
     const registry = new LockRegistry("case-sensitive");
-    registry.acquire(acq({ holder: alice, lockId: "lock-1", eventRevision: 1 }));
+    registry.acquire(
+      acq({ holder: alice, lockId: "lock-1", eventRevision: 1 }),
+    );
     const outcome = registry.acquire(
       acq({ holder: bob, lockId: "lock-2", eventRevision: 2 }),
     );
@@ -148,7 +152,12 @@ describe("LockRegistry.acquire — contention (Req 12.4)", () => {
     const registry = new LockRegistry("case-sensitive");
     registry.acquire(acq({ holder: alice, branch: "main", eventRevision: 1 }));
     const outcome = registry.acquire(
-      acq({ lockId: "lock-2", holder: bob, branch: "feature/x", eventRevision: 2 }),
+      acq({
+        lockId: "lock-2",
+        holder: bob,
+        branch: "feature/x",
+        eventRevision: 2,
+      }),
     );
     expect(outcome.contended).toBe(false);
     expect(outcome.lock.concurrent).toBe(false);
@@ -158,7 +167,12 @@ describe("LockRegistry.acquire — contention (Req 12.4)", () => {
     const registry = new LockRegistry("case-sensitive");
     registry.acquire(acq({ scope: "src/api.ts", eventRevision: 1 }));
     const outcome = registry.acquire(
-      acq({ lockId: "lock-2", holder: bob, scope: "src/db.ts", eventRevision: 2 }),
+      acq({
+        lockId: "lock-2",
+        holder: bob,
+        scope: "src/db.ts",
+        eventRevision: 2,
+      }),
     );
     expect(outcome.contended).toBe(false);
   });
@@ -169,7 +183,12 @@ describe("LockRegistry path-equivalence keying (Req 10.3–10.4)", () => {
     const registry = new LockRegistry("case-sensitive");
     registry.acquire(acq({ scope: "src/api.ts", eventRevision: 1 }));
     const outcome = registry.acquire(
-      acq({ lockId: "lock-2", holder: bob, scope: "./src/./api.ts", eventRevision: 2 }),
+      acq({
+        lockId: "lock-2",
+        holder: bob,
+        scope: "./src/./api.ts",
+        eventRevision: 2,
+      }),
     );
     expect(outcome.contended).toBe(true);
   });
@@ -178,7 +197,12 @@ describe("LockRegistry path-equivalence keying (Req 10.3–10.4)", () => {
     const registry = new LockRegistry("case-insensitive");
     registry.acquire(acq({ scope: "src/API.ts", eventRevision: 1 }));
     const outcome = registry.acquire(
-      acq({ lockId: "lock-2", holder: bob, scope: "src/api.ts", eventRevision: 2 }),
+      acq({
+        lockId: "lock-2",
+        holder: bob,
+        scope: "src/api.ts",
+        eventRevision: 2,
+      }),
     );
     expect(outcome.contended).toBe(true);
   });
@@ -197,7 +221,9 @@ describe("LockRegistry.release (Req 12.6–12.8)", () => {
     });
 
     expect(result.ok).toBe(true);
-    expect(registry.winningLock(session, "src/api.ts", "file", "main")).toBeUndefined();
+    expect(
+      registry.winningLock(session, "src/api.ts", "file", "main"),
+    ).toBeUndefined();
     expect(registry.allLocks(session)).toHaveLength(0);
   });
 
@@ -226,9 +252,9 @@ describe("LockRegistry.release (Req 12.6–12.8)", () => {
 
     expect(result).toEqual({ ok: false, code: "NOT_LOCK_HOLDER" });
     // Lock is retained unchanged.
-    expect(registry.winningLock(session, "src/api.ts", "file", "main")?.holder).toEqual(
-      alice,
-    );
+    expect(
+      registry.winningLock(session, "src/api.ts", "file", "main")?.holder,
+    ).toEqual(alice);
   });
 
   it("rejects release for a path with no active lock with NO_ACTIVE_LOCK (Req 12.8)", () => {
@@ -256,7 +282,9 @@ describe("LockRegistry.release (Req 12.6–12.8)", () => {
 
   it("promotes the earliest remaining claim to winner on release", () => {
     const registry = new LockRegistry("case-sensitive");
-    registry.acquire(acq({ holder: alice, lockId: "lock-1", eventRevision: 1 }));
+    registry.acquire(
+      acq({ holder: alice, lockId: "lock-1", eventRevision: 1 }),
+    );
     registry.acquire(acq({ holder: bob, lockId: "lock-2", eventRevision: 2 }));
 
     const result = registry.release({

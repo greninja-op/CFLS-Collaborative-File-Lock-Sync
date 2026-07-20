@@ -108,9 +108,15 @@ export interface Store {
    */
   hasAppliedEventId(session: SessionId, eventId: string): number | null;
   /** Record that an `eventId` was applied at a revision (Req 7.4). */
-  recordApplied(session: SessionId, eventId: string, eventRevision: number): void;
+  recordApplied(
+    session: SessionId,
+    eventId: string,
+    eventRevision: number,
+  ): void;
   /** Every applied `(eventId, revision)` for a session — to reseed the gate on restart. */
-  appliedEvents(session: SessionId): { eventId: string; eventRevision: number }[];
+  appliedEvents(
+    session: SessionId,
+  ): { eventId: string; eventRevision: number }[];
   /**
    * The highest replay counter persisted per device across all sessions — used
    * to reseed the replay guard on restart so a pre-restart counter cannot be
@@ -126,7 +132,10 @@ export interface Store {
   /** The Membership_Registry view for a session (Req 5.2). */
   membership(session: SessionId): MembershipRegistryEntry[];
   /** Replace the Membership_Registry for a session. */
-  replaceMembership(session: SessionId, entries: readonly MembershipRegistryEntry[]): void;
+  replaceMembership(
+    session: SessionId,
+    entries: readonly MembershipRegistryEntry[],
+  ): void;
   /** The authorized admin Device_Public_Keys for a session (Req 5.5). */
   adminKeys(session: SessionId): string[];
   /** Replace the authorized admin keys for a session. */
@@ -345,12 +354,15 @@ export class SqliteStore implements Store {
         `SELECT event_revision FROM applied_events WHERE session_key = ? AND event_id = ?`,
       )
       .get(sessionKey(session), eventId) as
-      | { event_revision: number }
-      | undefined;
+      { event_revision: number } | undefined;
     return row?.event_revision ?? null;
   }
 
-  recordApplied(session: SessionId, eventId: string, eventRevision: number): void {
+  recordApplied(
+    session: SessionId,
+    eventId: string,
+    eventRevision: number,
+  ): void {
     this.db
       .prepare(
         `INSERT OR IGNORE INTO applied_events (session_key, event_id, event_revision) VALUES (?, ?, ?)`,
@@ -358,7 +370,9 @@ export class SqliteStore implements Store {
       .run(sessionKey(session), eventId, eventRevision);
   }
 
-  appliedEvents(session: SessionId): { eventId: string; eventRevision: number }[] {
+  appliedEvents(
+    session: SessionId,
+  ): { eventId: string; eventRevision: number }[] {
     const rows = this.db
       .prepare(
         `SELECT event_id, event_revision FROM applied_events WHERE session_key = ?`,
@@ -367,7 +381,10 @@ export class SqliteStore implements Store {
       event_id: string;
       event_revision: number;
     }>;
-    return rows.map((r) => ({ eventId: r.event_id, eventRevision: r.event_revision }));
+    return rows.map((r) => ({
+      eventId: r.event_id,
+      eventRevision: r.event_revision,
+    }));
   }
 
   deviceCounters(): { deviceId: string; highestCounter: number }[] {
@@ -421,7 +438,9 @@ export class SqliteStore implements Store {
       targetScope: r.target_scope,
       eventRevision: r.event_revision,
       time: r.created_at,
-      ...(r.override_reason !== null ? { overrideReason: r.override_reason } : {}),
+      ...(r.override_reason !== null
+        ? { overrideReason: r.override_reason }
+        : {}),
     }));
   }
 
@@ -447,7 +466,10 @@ export class SqliteStore implements Store {
     }));
   }
 
-  replaceMembership(session: SessionId, entries: readonly MembershipRegistryEntry[]): void {
+  replaceMembership(
+    session: SessionId,
+    entries: readonly MembershipRegistryEntry[],
+  ): void {
     const key = sessionKey(session);
     this.transaction(() => {
       this.db.prepare(`DELETE FROM membership WHERE session_key = ?`).run(key);

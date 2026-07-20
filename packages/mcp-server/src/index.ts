@@ -74,7 +74,4 @@ export type {
 } from "./port";
 
 // ---- Reference in-memory port backed by core-state (tests) ----
-export {
-  CoreStateAgentPort,
-  type CoreStateAgentOptions,
-} from "./fake-agent";
+export { CoreStateAgentPort, type CoreStateAgentOptions } from "./fake-agent";

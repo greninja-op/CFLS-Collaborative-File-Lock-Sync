@@ -133,11 +133,17 @@ export function createEncryptedFileStore(
         const key = deriveKey(passphrase, salt);
         const iv = randomBytes(IV_LEN);
         const cipher = createCipheriv(ALGORITHM, key, iv);
-        const enc = Buffer.concat([cipher.update("probe", "utf8"), cipher.final()]);
+        const enc = Buffer.concat([
+          cipher.update("probe", "utf8"),
+          cipher.final(),
+        ]);
         const tag = cipher.getAuthTag();
         const decipher = createDecipheriv(ALGORITHM, key, iv);
         decipher.setAuthTag(tag);
-        const dec = Buffer.concat([decipher.update(enc), decipher.final()]).toString("utf8");
+        const dec = Buffer.concat([
+          decipher.update(enc),
+          decipher.final(),
+        ]).toString("utf8");
         return dec === "probe";
       } catch {
         return false;
@@ -168,7 +174,10 @@ export function createEncryptedFileStore(
       const key = deriveKey(passphrase, salt);
       const decipher = createDecipheriv(ALGORITHM, key, iv);
       decipher.setAuthTag(authTag);
-      const plaintext = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+      const plaintext = Buffer.concat([
+        decipher.update(ciphertext),
+        decipher.final(),
+      ]);
       return plaintext.toString("utf8");
     },
 
@@ -192,7 +201,10 @@ export function createEncryptedFileStore(
         ciphertext: ciphertext.toString("base64"),
       };
       // Write with owner-only permissions; { mode } applies on creation.
-      await writeFile(path, JSON.stringify(record), { encoding: "utf8", mode: 0o600 });
+      await writeFile(path, JSON.stringify(record), {
+        encoding: "utf8",
+        mode: 0o600,
+      });
       try {
         await chmod(path, 0o600);
       } catch {

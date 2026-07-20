@@ -25,8 +25,12 @@ const config = (
 
 describe("mostRestrictive (Req 15.4)", () => {
   it("orders hard > coordination-required > soft", () => {
-    expect(mostRestrictive(["soft", "hard", "coordination-required"])).toBe("hard");
-    expect(mostRestrictive(["soft", "coordination-required"])).toBe("coordination-required");
+    expect(mostRestrictive(["soft", "hard", "coordination-required"])).toBe(
+      "hard",
+    );
+    expect(mostRestrictive(["soft", "coordination-required"])).toBe(
+      "coordination-required",
+    );
     expect(mostRestrictive(["soft", "soft"])).toBe("soft");
   });
 
@@ -37,9 +41,15 @@ describe("mostRestrictive (Req 15.4)", () => {
 
 describe("globMatch", () => {
   it("matches a globstar across nested directories", () => {
-    expect(globMatch("src/db/migrations/**", "src/db/migrations/0001_init.sql")).toBe(true);
-    expect(globMatch("src/db/migrations/**", "src/db/migrations/a/b/c.sql")).toBe(true);
-    expect(globMatch("src/db/migrations/**", "src/db/models/user.ts")).toBe(false);
+    expect(
+      globMatch("src/db/migrations/**", "src/db/migrations/0001_init.sql"),
+    ).toBe(true);
+    expect(
+      globMatch("src/db/migrations/**", "src/db/migrations/a/b/c.sql"),
+    ).toBe(true);
+    expect(globMatch("src/db/migrations/**", "src/db/models/user.ts")).toBe(
+      false,
+    );
   });
 
   it("globstar matches zero intermediate segments", () => {
@@ -77,7 +87,9 @@ describe("resolveMode", () => {
       { glob: "openapi/**/*.yaml", mode: "coordination-required" },
     ]);
     expect(resolveMode("src/db/migrations/0001.sql", cfg)).toBe("hard");
-    expect(resolveMode("openapi/v1/users.yaml", cfg)).toBe("coordination-required");
+    expect(resolveMode("openapi/v1/users.yaml", cfg)).toBe(
+      "coordination-required",
+    );
   });
 
   it("picks the most restrictive mode when multiple globs match (Req 15.4)", () => {
@@ -105,14 +117,19 @@ describe("resolveMode", () => {
   });
 
   it("honors a non-soft default mode", () => {
-    const cfg = config([{ glob: "docs/**", mode: "soft" }], "coordination-required");
+    const cfg = config(
+      [{ glob: "docs/**", mode: "soft" }],
+      "coordination-required",
+    );
     expect(resolveMode("README.md", cfg)).toBe("coordination-required");
     // The matching soft rule cannot lower below the default (most-restrictive-wins).
     expect(resolveMode("docs/intro.md", cfg)).toBe("coordination-required");
   });
 
   it("resolves everything to soft under the all-soft fallback", () => {
-    expect(resolveMode("src/db/migrations/0001.sql", ALL_SOFT_CONFIG)).toBe("soft");
+    expect(resolveMode("src/db/migrations/0001.sql", ALL_SOFT_CONFIG)).toBe(
+      "soft",
+    );
   });
 });
 
@@ -161,7 +178,9 @@ describe("parseRulesConfig", () => {
     expect(result.config).toBe(ALL_SOFT_CONFIG);
     // A broken file must not silently escalate any path.
     expect(resolveMode("src/db/migrations/1.sql", result.config)).toBe("soft");
-    expect(result.errors.some((e) => e.location === "rules[0].mode")).toBe(true);
+    expect(result.errors.some((e) => e.location === "rules[0].mode")).toBe(
+      true,
+    );
   });
 
   it("rejects an empty or non-string glob and identifies the offending entry", () => {
@@ -170,11 +189,16 @@ describe("parseRulesConfig", () => {
       rules: [{ glob: "   ", mode: "hard" }],
     });
     expect(result.malformed).toBe(true);
-    expect(result.errors.some((e) => e.location === "rules[0].glob")).toBe(true);
+    expect(result.errors.some((e) => e.location === "rules[0].glob")).toBe(
+      true,
+    );
   });
 
   it("rejects a non-array rules field", () => {
-    const result = parseRulesConfig({ version: 1, rules: { glob: "x", mode: "hard" } });
+    const result = parseRulesConfig({
+      version: 1,
+      rules: { glob: "x", mode: "hard" },
+    });
     expect(result.malformed).toBe(true);
     expect(result.errors.some((e) => e.location === "rules")).toBe(true);
   });

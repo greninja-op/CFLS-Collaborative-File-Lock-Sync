@@ -16,7 +16,11 @@
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { CoordinationAgent, generateLocalAuthToken, loadRulesConfig } from "@cfls/agent";
+import {
+  CoordinationAgent,
+  generateLocalAuthToken,
+  loadRulesConfig,
+} from "@cfls/agent";
 import { startHost } from "@cfls/host";
 import type { SessionId } from "@cfls/protocol";
 import { deriveDeviceId, issueInvitation } from "@cfls/security";
@@ -52,7 +56,11 @@ import {
 import { buildCommitMessage, startGitSyncLoop } from "./git-sync";
 import { openInEditor } from "./editor";
 import { decodeInvitation, encodeInvitation } from "./invitation";
-import { createAdminKey, loadAdminKey, loadOrCreateThisDeviceKey } from "./keys";
+import {
+  createAdminKey,
+  loadAdminKey,
+  loadOrCreateThisDeviceKey,
+} from "./keys";
 import {
   boolOption,
   log,
@@ -76,24 +84,38 @@ const DEFAULT_HOST_URL = "wss://0.0.0.0:8730";
 
 /** `cfls admin-init` — create + store the team admin key, register it in host.json. */
 async function cmdAdminInit(args: ParsedArgs): Promise<void> {
-  const teamId = stringOption(args, "team") ?? readHostConfig(hostConfigPath())?.teamId ?? DEFAULT_TEAM_ID;
+  const teamId =
+    stringOption(args, "team") ??
+    readHostConfig(hostConfigPath())?.teamId ??
+    DEFAULT_TEAM_ID;
   const adminKey = await createAdminKey(teamId);
-  const config = appendAdminPublicKey(hostConfigPath(), adminKey.publicKey, teamId);
+  const config = appendAdminPublicKey(
+    hostConfigPath(),
+    adminKey.publicKey,
+    teamId,
+  );
 
   log.info(`Admin key created for team "${teamId}".`);
-  log.info(`Admin private key stored securely (never written to disk in plaintext).`);
+  log.info(
+    `Admin private key stored securely (never written to disk in plaintext).`,
+  );
   log.info(`Host config: ${hostConfigPath()}`);
   log.info("");
   log.info("Admin Device_Public_Key (share/keep for reference):");
   log.info(adminKey.publicKey);
   log.info("");
-  log.info(`Authorized admin keys for this host: ${config.authorizedAdminPublicKeys.length}`);
+  log.info(
+    `Authorized admin keys for this host: ${config.authorizedAdminPublicKeys.length}`,
+  );
 }
 
 /** `cfls host` — start the CoordinationHost for this repo's session. */
 async function cmdHost(args: ParsedArgs, cwd: string): Promise<void> {
   const hostConfig = readHostConfig(hostConfigPath());
-  if (hostConfig === null || hostConfig.authorizedAdminPublicKeys.length === 0) {
+  if (
+    hostConfig === null ||
+    hostConfig.authorizedAdminPublicKeys.length === 0
+  ) {
     throw new Error(
       `No admin keys found in ${hostConfigPath()}. Run "cfls admin-init" first.`,
     );
@@ -122,17 +144,25 @@ async function cmdHost(args: ParsedArgs, cwd: string): Promise<void> {
     );
   }
 
-  const dbPath = stringOption(args, "db") ?? process.env["CFLS_DB_PATH"] ?? "host.db";
+  const dbPath =
+    stringOption(args, "db") ?? process.env["CFLS_DB_PATH"] ?? "host.db";
   const running = await startHost(
     { hostUrl, tls, dbPath },
     { expirySweepIntervalMs: 15_000 },
   );
-  running.authority.registerSession(session, hostConfig.authorizedAdminPublicKeys);
+  running.authority.registerSession(
+    session,
+    hostConfig.authorizedAdminPublicKeys,
+  );
 
   const shown = hostUrl.replace("0.0.0.0", "<this-machine-ip>");
-  log.info(`CoordinationHost listening on ${shown} (bound port ${running.port}).`);
+  log.info(
+    `CoordinationHost listening on ${shown} (bound port ${running.port}).`,
+  );
   log.info(`Serving session: ${describeSession(session)}`);
-  log.info(`Authorized admin keys: ${hostConfig.authorizedAdminPublicKeys.length}`);
+  log.info(
+    `Authorized admin keys: ${hostConfig.authorizedAdminPublicKeys.length}`,
+  );
   log.info("Press Ctrl+C to stop.");
 
   await waitForShutdown(() => running.stop());
@@ -141,7 +171,8 @@ async function cmdHost(args: ParsedArgs, cwd: string): Promise<void> {
 /** `cfls id` — ensure this device has a key; print its public key + deviceId. */
 async function cmdId(cwd: string): Promise<void> {
   const repoRoot = resolveRepoRoot(cwd);
-  const teamId = readAgentConfig(agentConfigPath(repoRoot)).teamId ?? DEFAULT_TEAM_ID;
+  const teamId =
+    readAgentConfig(agentConfigPath(repoRoot)).teamId ?? DEFAULT_TEAM_ID;
   const { session } = resolveRepositorySession({ repoRoot, teamId });
   const deviceKey = await loadOrCreateThisDeviceKey(session.repoId);
   const deviceId = deriveDeviceId(deviceKey.publicKey);
@@ -164,7 +195,9 @@ async function cmdInvite(args: ParsedArgs, cwd: string): Promise<void> {
 
   const hostConfig = readHostConfig(hostConfigPath());
   if (hostConfig === null) {
-    throw new Error(`No ${hostConfigPath()} found. Run "cfls admin-init" first.`);
+    throw new Error(
+      `No ${hostConfigPath()} found. Run "cfls admin-init" first.`,
+    );
   }
 
   const repoRoot = resolveRepoRoot(cwd);
@@ -186,7 +219,9 @@ async function cmdInvite(args: ParsedArgs, cwd: string): Promise<void> {
     adminKey.privateKey,
   );
 
-  log.info(`Invitation for "${memberName}" (session: ${describeSession(session)}):`);
+  log.info(
+    `Invitation for "${memberName}" (session: ${describeSession(session)}):`,
+  );
   log.info("");
   log.info(encodeInvitation(invitation));
   log.info("");
@@ -197,7 +232,9 @@ async function cmdInvite(args: ParsedArgs, cwd: string): Promise<void> {
 async function cmdJoin(args: ParsedArgs, cwd: string): Promise<void> {
   const hostUrl = stringOption(args, "host");
   if (hostUrl === undefined) {
-    throw new Error("Usage: cfls join --host <wss-url> [--name <memberName>] [--team <id>]");
+    throw new Error(
+      "Usage: cfls join --host <wss-url> [--name <memberName>] [--team <id>]",
+    );
   }
   const repoRoot = resolveRepoRoot(cwd);
   const memberName = stringOption(args, "name");
@@ -223,8 +260,10 @@ async function cmdJoin(args: ParsedArgs, cwd: string): Promise<void> {
   log.info("");
   log.info("Next steps:");
   log.info("  1. Send the public key above to your team admin.");
-  log.info('  2. The admin runs:  cfls invite <yourName> <thePublicKey>');
-  log.info("  3. Paste the invitation they return into:  cfls connect <invitation>");
+  log.info("  2. The admin runs:  cfls invite <yourName> <thePublicKey>");
+  log.info(
+    "  3. Paste the invitation they return into:  cfls connect <invitation>",
+  );
   log.info("  4. Then start coordinating:  cfls agent --insecure-tls");
 }
 
@@ -254,10 +293,14 @@ async function cmdAgent(args: ParsedArgs, cwd: string): Promise<void> {
   const repoRoot = resolveRepoRoot(cwd);
   const config = readAgentConfig(agentConfigPath(repoRoot));
   if (config.hostUrl === undefined) {
-    throw new Error('No Host_URL saved. Run "cfls join --host <wss-url>" first.');
+    throw new Error(
+      'No Host_URL saved. Run "cfls join --host <wss-url>" first.',
+    );
   }
   if (config.invitation === undefined) {
-    throw new Error('No invitation saved. Run "cfls connect <invitation>" first.');
+    throw new Error(
+      'No invitation saved. Run "cfls connect <invitation>" first.',
+    );
   }
 
   // The invitation carries the authoritative session the host will accept, so we
@@ -270,7 +313,7 @@ async function cmdAgent(args: ParsedArgs, cwd: string): Promise<void> {
   if (deviceKey.publicKey !== invitation.claims.devicePublicKey) {
     throw new Error(
       "This device's key does not match the invitation. The admin must issue an " +
-        "invitation for the public key shown by \"cfls id\" on THIS machine.",
+        'invitation for the public key shown by "cfls id" on THIS machine.',
     );
   }
 
@@ -278,8 +321,14 @@ async function cmdAgent(args: ParsedArgs, cwd: string): Promise<void> {
   const self = { memberId, deviceId: deriveDeviceId(deviceKey.publicKey) };
   const rules = loadRulesConfig(repoRoot).config;
 
-  const localApiPort = Number.parseInt(stringOption(args, "local-port") ?? "", 10);
-  const port = Number.isInteger(localApiPort) && localApiPort > 0 ? localApiPort : DEFAULT_LOCAL_API_PORT;
+  const localApiPort = Number.parseInt(
+    stringOption(args, "local-port") ?? "",
+    10,
+  );
+  const port =
+    Number.isInteger(localApiPort) && localApiPort > 0
+      ? localApiPort
+      : DEFAULT_LOCAL_API_PORT;
   const localAuthToken = generateLocalAuthToken();
 
   // Publish the Local_API address + token so the VS Code extension auto-connects
@@ -309,9 +358,13 @@ async function cmdAgent(args: ParsedArgs, cwd: string): Promise<void> {
 
   log.info(`CoordinationAgent started for "${memberId}".`);
   log.info(`Host_URL:  ${config.hostUrl}`);
-  log.info(`Local_API: ws://127.0.0.1:${port} (extension auto-discovers via ${localApiConfigPath(repoRoot)})`);
+  log.info(
+    `Local_API: ws://127.0.0.1:${port} (extension auto-discovers via ${localApiConfigPath(repoRoot)})`,
+  );
   log.info(`Session:   ${describeSession(session)}`);
-  log.info("Open this repo in VS Code (with the CFLS extension installed) — it goes Online automatically.");
+  log.info(
+    "Open this repo in VS Code (with the CFLS extension installed) — it goes Online automatically.",
+  );
 
   // OPT-IN automatic git sync (Model A). A strict no-op unless the team's
   // committed .coordination/config.json sets autoSync.enabled = true, so default
@@ -387,8 +440,11 @@ function heldPathsByOthers(
 function resolveSyncMember(repoRoot: string, args: ParsedArgs): string {
   const config = readAgentConfig(agentConfigPath(repoRoot));
   const fromInvitation =
-    config.invitation !== undefined ? decodeInvitation(config.invitation).claims.memberId : undefined;
-  const member = stringOption(args, "name") ?? config.memberName ?? fromInvitation;
+    config.invitation !== undefined
+      ? decodeInvitation(config.invitation).claims.memberId
+      : undefined;
+  const member =
+    stringOption(args, "name") ?? config.memberName ?? fromInvitation;
   if (member === undefined || member === "") {
     throw new Error(
       'No member name found. Run "cfls join --name <you>" / "cfls connect <invitation>" first, ' +
@@ -407,22 +463,32 @@ function cmdSyncStatus(args: ParsedArgs, cwd: string): void {
   const myBranch = userBranchName(autoSync.branchPrefix, member);
   const changes = workingTreeChanges(repoRoot);
 
-  log.info(`Auto-sync:      ${autoSync.enabled ? "ENABLED" : "disabled (opt-in)"}`);
+  log.info(
+    `Auto-sync:      ${autoSync.enabled ? "ENABLED" : "disabled (opt-in)"}`,
+  );
   log.info(`Current branch: ${branch}`);
   log.info(`My publish br.: ${myBranch}  (remote: ${autoSync.remote})`);
-  log.info(`Working tree:   ${changes.length === 0 ? "clean" : `${changes.length} changed path(s)`}`);
+  log.info(
+    `Working tree:   ${changes.length === 0 ? "clean" : `${changes.length} changed path(s)`}`,
+  );
   log.info("");
 
-  const branches = listTrackingBranches(autoSync.remote, autoSync.branchPrefix, repoRoot).filter(
-    (b) => b.branch !== myBranch,
-  );
+  const branches = listTrackingBranches(
+    autoSync.remote,
+    autoSync.branchPrefix,
+    repoRoot,
+  ).filter((b) => b.branch !== myBranch);
   if (branches.length === 0) {
-    log.info(`No other ${autoSync.branchPrefix}* branches on ${autoSync.remote} yet.`);
+    log.info(
+      `No other ${autoSync.branchPrefix}* branches on ${autoSync.remote} yet.`,
+    );
     return;
   }
   log.info("Teammate branches:");
   for (const b of branches) {
-    log.info(`  ${b.branch}  (behind you ${b.behind}, ahead of you ${b.ahead})`);
+    log.info(
+      `  ${b.branch}  (behind you ${b.behind}, ahead of you ${b.ahead})`,
+    );
   }
 }
 
@@ -442,7 +508,9 @@ function cmdSyncPush(args: ParsedArgs, cwd: string): void {
   const paths = changes.map((c) => c.path);
   const staged = stagePaths(paths, repoRoot);
   if (!staged.ok) {
-    throw new Error("Failed to stage changes (git add). Resolve manually and retry.");
+    throw new Error(
+      "Failed to stage changes (git add). Resolve manually and retry.",
+    );
   }
   const committed = commit(buildCommitMessage(member, paths.length), repoRoot);
   if (!committed.ok) {
@@ -456,7 +524,9 @@ function cmdSyncPush(args: ParsedArgs, cwd: string): void {
         "(auth or non-fast-forward). Check credentials or fetch/merge, then retry.",
     );
   }
-  log.info(`Published ${paths.length} file(s) to ${autoSync.remote}/${branch}.`);
+  log.info(
+    `Published ${paths.length} file(s) to ${autoSync.remote}/${branch}.`,
+  );
 }
 
 /**
@@ -494,19 +564,29 @@ function cmdSyncMerge(args: ParsedArgs, cwd: string): void {
       );
       return;
     }
-    log.warn(`Merge of ${ref} has conflicts in ${result.conflictedFiles.length} file(s):`);
+    log.warn(
+      `Merge of ${ref} has conflicts in ${result.conflictedFiles.length} file(s):`,
+    );
     for (const f of result.conflictedFiles) {
       log.warn(`  ${f}`);
     }
     const opened = openInEditor(result.conflictedFiles, repoRoot);
     log.info("");
     if (opened !== null) {
-      log.info(`Opened the conflicted files in ${opened}. Use its merge editor to resolve each,`);
-      log.info('then run:  git commit   (the merge is in progress — do NOT run "git merge --abort"');
+      log.info(
+        `Opened the conflicted files in ${opened}. Use its merge editor to resolve each,`,
+      );
+      log.info(
+        'then run:  git commit   (the merge is in progress — do NOT run "git merge --abort"',
+      );
       log.info("unless you want to throw the merge away).");
     } else {
-      log.info("Could not launch an editor automatically. Open the files above, resolve the");
-      log.info("<<<<<<< / >>>>>>> markers, then run:  git add -A  &&  git commit");
+      log.info(
+        "Could not launch an editor automatically. Open the files above, resolve the",
+      );
+      log.info(
+        "<<<<<<< / >>>>>>> markers, then run:  git add -A  &&  git commit",
+      );
     }
     log.info(`To cancel this merge entirely:  git merge --abort`);
     return;
@@ -571,7 +651,12 @@ async function cmdClone(args: ParsedArgs): Promise<void> {
   }
 
   // Derive the checkout directory git created (last path segment, minus .git).
-  const tail = repoUrl.replace(/\.git$/, "").replace(/[/\\]+$/, "").split(/[/\\]/).pop() ?? "repo";
+  const tail =
+    repoUrl
+      .replace(/\.git$/, "")
+      .replace(/[/\\]+$/, "")
+      .split(/[/\\]/)
+      .pop() ?? "repo";
   const repoRoot = resolve(process.cwd(), tail);
 
   const hostUrl = stringOption(args, "host");
@@ -587,8 +672,12 @@ async function cmdClone(args: ParsedArgs): Promise<void> {
   log.info(`Scaffolded ${agentConfigPath(repoRoot)}.`);
   log.info("");
   log.info("Next steps (from inside the repo):");
-  log.info("  1. cfls id                 # share this device's public key with your admin");
-  log.info("  2. cfls connect <invite>   # paste the invitation the admin returns");
+  log.info(
+    "  1. cfls id                 # share this device's public key with your admin",
+  );
+  log.info(
+    "  2. cfls connect <invite>   # paste the invitation the admin returns",
+  );
   log.info("  3. cfls agent --insecure-tls");
   log.info("");
   log.info("Note: pushing/pulling files still uses YOUR own GitHub access.");
@@ -627,7 +716,9 @@ function printUsage(): void {
 }
 
 /** CLI entrypoint. */
-export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<number> {
+export async function main(
+  argv: readonly string[] = process.argv.slice(2),
+): Promise<number> {
   const [command, ...rest] = argv;
   const args = parseArgs(rest);
   const cwd = process.cwd();

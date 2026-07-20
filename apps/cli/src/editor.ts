@@ -13,7 +13,11 @@
 import { execFileSync } from "node:child_process";
 
 /** Launch `cmd args` in `cwd`; returns true on success, false on any failure. */
-export type Launcher = (cmd: string, args: readonly string[], cwd: string) => boolean;
+export type Launcher = (
+  cmd: string,
+  args: readonly string[],
+  cwd: string,
+) => boolean;
 
 /** The editor CLIs we try, in order. Both open files in an existing window. */
 export const EDITOR_COMMANDS: readonly string[] = ["code", "kiro"];

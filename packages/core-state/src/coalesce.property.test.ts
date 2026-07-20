@@ -34,7 +34,11 @@ import { describe, expect, it } from "vitest";
 
 import type { MemberRef } from "@cfls/protocol";
 
-import { Coalescer, type CoalescableKind, type OutboundEvent } from "./coalesce";
+import {
+  Coalescer,
+  type CoalescableKind,
+  type OutboundEvent,
+} from "./coalesce";
 import { normalizePathKey } from "./path";
 
 /** Fixed platform behavior so key derivation is deterministic across machines. */
@@ -50,7 +54,13 @@ const MEMBERS: readonly MemberRef[] = [
 const PATHS = ["a.ts", "src/b.ts", "src/nested/c.ts", "d.ts"] as const;
 
 /** A small state pool so exact-duplicate states on a key occur frequently. */
-const STATES = ["started", "editing", "stopped", "acquired", "released"] as const;
+const STATES = [
+  "started",
+  "editing",
+  "stopped",
+  "acquired",
+  "released",
+] as const;
 
 const KINDS: readonly CoalescableKind[] = ["presence", "lock"];
 

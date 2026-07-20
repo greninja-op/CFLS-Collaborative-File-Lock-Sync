@@ -22,7 +22,11 @@ import { fileURLToPath } from "node:url";
 import { CoordinationAgent, generateLocalAuthToken } from "@cfls/agent";
 import { ALL_SOFT_CONFIG } from "@cfls/core-state";
 import { startHost } from "@cfls/host";
-import { deriveDeviceId, generateDeviceKey, issueInvitation } from "@cfls/security";
+import {
+  deriveDeviceId,
+  generateDeviceKey,
+  issueInvitation,
+} from "@cfls/security";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 // playground/ lives at the repo root (tests/demo/src -> ../../../playground).
@@ -52,7 +56,9 @@ async function main() {
   mkdirSync(PLAYGROUND_ROOT, { recursive: true });
   const admin = generateDeviceKey();
 
-  console.log(`${BOLD}${CYAN}Starting CoordinationHost on wss://127.0.0.1:${HOST_PORT} …${RESET}`);
+  console.log(
+    `${BOLD}${CYAN}Starting CoordinationHost on wss://127.0.0.1:${HOST_PORT} …${RESET}`,
+  );
   const host = await startHost(
     {
       hostUrl: `wss://127.0.0.1:${HOST_PORT}`,
@@ -68,7 +74,10 @@ async function main() {
   const agents = [];
   for (const t of TEAMMATES) {
     const deviceKey = generateDeviceKey();
-    const member = { memberId: t.name, deviceId: deriveDeviceId(deviceKey.publicKey) };
+    const member = {
+      memberId: t.name,
+      deviceId: deriveDeviceId(deviceKey.publicKey),
+    };
     const invitation = Buffer.from(
       JSON.stringify(
         issueInvitation(
@@ -124,15 +133,25 @@ async function main() {
     });
     await agent.start();
     agents.push({ ...t, agent, workspace });
-    console.log(`${GREEN}✓${RESET} agent ${BOLD}${t.name}${RESET} — Local_API ws://127.0.0.1:${t.localApiPort} — workspace ${DIM}${workspace}${RESET}`);
+    console.log(
+      `${GREEN}✓${RESET} agent ${BOLD}${t.name}${RESET} — Local_API ws://127.0.0.1:${t.localApiPort} — workspace ${DIM}${workspace}${RESET}`,
+    );
   }
 
   console.log(`\n${BOLD}${GREEN}Playground is running.${RESET}`);
   console.log(`${BOLD}Next:${RESET}`);
-  console.log(`  1. In this repo, press ${BOLD}F5${RESET} and pick "Run CFLS Extension — alice" (opens alice's window).`);
-  console.log(`  2. Press ${BOLD}F5${RESET} again and pick "…— bob" (and "…— carol") for more teammates.`);
-  console.log(`  3. Edit ${BOLD}src/shared.ts${RESET} in one window; watch the CFLS status bar update in the others.`);
-  console.log(`\n${DIM}Press Ctrl+C to stop the host and all agents.${RESET}\n`);
+  console.log(
+    `  1. In this repo, press ${BOLD}F5${RESET} and pick "Run CFLS Extension — alice" (opens alice's window).`,
+  );
+  console.log(
+    `  2. Press ${BOLD}F5${RESET} again and pick "…— bob" (and "…— carol") for more teammates.`,
+  );
+  console.log(
+    `  3. Edit ${BOLD}src/shared.ts${RESET} in one window; watch the CFLS status bar update in the others.`,
+  );
+  console.log(
+    `\n${DIM}Press Ctrl+C to stop the host and all agents.${RESET}\n`,
+  );
 
   const shutdown = async () => {
     console.log(`\n${DIM}Shutting down…${RESET}`);

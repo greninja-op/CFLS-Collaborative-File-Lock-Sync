@@ -160,9 +160,9 @@ scoping, and durable persistence with restart recovery.
 
 ```typescript
 interface CoordinationHost {
-  start(config: HostConfig): Promise<void>;                 // start within 10s
-  handleConnection(conn: AgentConnection): Promise<void>;   // auth handshake
-  ingest(event: SignedEvent): Promise<IngestResult>;        // verify + apply
+  start(config: HostConfig): Promise<void>; // start within 10s
+  handleConnection(conn: AgentConnection): Promise<void>; // auth handshake
+  ingest(event: SignedEvent): Promise<IngestResult>; // verify + apply
   syncFrom(session: SessionId, fromRevision: number): Promise<SyncResponse>;
   health(): HealthStatus;
   diagnostics(): DiagnosticsReport;
@@ -170,8 +170,8 @@ interface CoordinationHost {
 
 interface IngestResult {
   accepted: boolean;
-  eventRevision?: number;   // assigned revision when accepted
-  duplicateOf?: number;     // idempotent replay of Event_ID
+  eventRevision?: number; // assigned revision when accepted
+  duplicateOf?: number; // idempotent replay of Event_ID
   error?: ErrorCode;
   conflict?: ConflictInfo;
 }
@@ -187,13 +187,13 @@ cache, multi-client fan-in under one identity, and path-change/deletion notifica
 
 ```typescript
 interface CoordinationAgent {
-  bootstrap(): Promise<void>;                      // key, cache, Local_API, connect
-  connect(hostUrl: string): Promise<void>;         // WSS, exponential backoff
+  bootstrap(): Promise<void>; // key, cache, Local_API, connect
+  connect(hostUrl: string): Promise<void>; // WSS, exponential backoff
   submit(intent: LocalMutation): Promise<MutationResult>;
   getRiskMap(session: SessionId, requesterId: ClientId): RiskMap; // own activity excluded
   onCoordinationUpdate(cb: (u: CoordinationUpdate) => void): void;
   connectionStatus(): ConnectionStatus;
-  state(): 'online' | 'offline';
+  state(): "online" | "offline";
 }
 ```
 
@@ -230,7 +230,11 @@ interface McpEnvelope<T> {
   ok: boolean;
   data?: T;
   error?: { code: ErrorCode; message: string; details?: unknown };
-  connection: { status: 'online' | 'offline'; hostUrl: string; lastSyncAt: string | null };
+  connection: {
+    status: "online" | "offline";
+    hostUrl: string;
+    lastSyncAt: string | null;
+  };
   staleness: { stale: boolean; secondsSinceSync: number | null };
 }
 ```
@@ -243,9 +247,14 @@ indicators, and sends heartbeats to the agent.
 
 ```typescript
 type EditorEventKind =
-  | 'workspace_opened' | 'file_opened' | 'active_editor_changed'
-  | 'editing_started' | 'file_saved' | 'file_closed'
-  | 'file_renamed' | 'file_deleted';
+  | "workspace_opened"
+  | "file_opened"
+  | "active_editor_changed"
+  | "editing_started"
+  | "file_saved"
+  | "file_closed"
+  | "file_renamed"
+  | "file_deleted";
 ```
 
 ### Shared protocol package (`packages/protocol`)

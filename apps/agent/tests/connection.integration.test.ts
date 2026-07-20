@@ -16,7 +16,14 @@ import type { RunningHost } from "@cfls/host";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { CoordinationAgent } from "../src/agent";
-import { invitationFor, makeDevice, makeSession, startDevHost, waitUntil, type TestDevice } from "./support";
+import {
+  invitationFor,
+  makeDevice,
+  makeSession,
+  startDevHost,
+  waitUntil,
+  type TestDevice,
+} from "./support";
 
 const session: SessionId = makeSession();
 
@@ -26,7 +33,10 @@ let cacheDir: string;
 let agents: CoordinationAgent[];
 
 function selfOf(device: TestDevice): MemberRef {
-  return { memberId: device.memberId, deviceId: deriveDeviceId(device.key.publicKey) };
+  return {
+    memberId: device.memberId,
+    deviceId: deriveDeviceId(device.key.publicKey),
+  };
 }
 
 async function startAgent(
@@ -129,7 +139,9 @@ describe("reconnect sync-from-revision convergence (Req 9.4, 6.6)", () => {
       onlineCount += 1;
     });
 
-    await agent.agentPort().acquireLock({ session, scope: "src/api.ts", scopeKind: "file" });
+    await agent
+      .agentPort()
+      .acquireLock({ session, scope: "src/api.ts", scopeKind: "file" });
     await waitUntil(() =>
       agent.view.entries(session).some((e) => e.path === "src/api.ts"),
     );
@@ -148,9 +160,11 @@ describe("reconnect sync-from-revision convergence (Req 9.4, 6.6)", () => {
       6000,
     );
 
-    expect(agent.view.entries(session).some((e) => e.path === "src/api.ts")).toBe(true);
-    expect(host.authority.snapshot(session).locks.map((l) => l.scope)).toContain(
-      "src/api.ts",
-    );
+    expect(
+      agent.view.entries(session).some((e) => e.path === "src/api.ts"),
+    ).toBe(true);
+    expect(
+      host.authority.snapshot(session).locks.map((l) => l.scope),
+    ).toContain("src/api.ts");
   });
 });

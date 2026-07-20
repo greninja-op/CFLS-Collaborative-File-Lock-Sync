@@ -32,8 +32,15 @@ function challengeMessage(nonce: string): Buffer {
  * Sign a challenge `nonce` with a `Device_Private_Key`, returning the base64
  * Ed25519 signature the agent sends in `auth.response` (Req 5.3).
  */
-export function signChallenge(nonce: string, privateKey: DevicePrivateKey): string {
-  return sign(null, challengeMessage(nonce), privateKeyObject(privateKey)).toString("base64");
+export function signChallenge(
+  nonce: string,
+  privateKey: DevicePrivateKey,
+): string {
+  return sign(
+    null,
+    challengeMessage(nonce),
+    privateKeyObject(privateKey),
+  ).toString("base64");
 }
 
 /**

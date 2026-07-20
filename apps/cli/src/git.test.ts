@@ -40,7 +40,9 @@ function mockRunner(map: Record<string, string>): GitRunner {
   return (args) => {
     const key = args.join(" ");
     const stdout = map[key];
-    return stdout === undefined ? { ok: false, stdout: "" } : { ok: true, stdout };
+    return stdout === undefined
+      ? { ok: false, stdout: "" }
+      : { ok: true, stdout };
   };
 }
 
@@ -169,7 +171,8 @@ describe("branch naming", () => {
 describe("parsePorcelain", () => {
   it("parses NUL-delimited porcelain into changed paths (ignored excluded by git)", () => {
     // `git status --porcelain=v1 -z` output: entries joined by NUL.
-    const stdout = [" M src/a.ts", "A  src/b.ts", "?? new.txt"].join("\0") + "\0";
+    const stdout =
+      [" M src/a.ts", "A  src/b.ts", "?? new.txt"].join("\0") + "\0";
     expect(parsePorcelain(stdout)).toEqual([
       { status: " M", path: "src/a.ts" },
       { status: "A ", path: "src/b.ts" },
@@ -178,7 +181,8 @@ describe("parsePorcelain", () => {
   });
 
   it("keeps the destination path of a rename and skips its 'from' token", () => {
-    const stdout = ["R  new/name.ts", "old/name.ts", " M other.ts"].join("\0") + "\0";
+    const stdout =
+      ["R  new/name.ts", "old/name.ts", " M other.ts"].join("\0") + "\0";
     expect(parsePorcelain(stdout)).toEqual([
       { status: "R ", path: "new/name.ts" },
       { status: " M", path: "other.ts" },
@@ -239,8 +243,18 @@ describe("parseForEachRef / parseLeftRightCount", () => {
       "origin/feature/x ddd444", // not under the prefix
     ].join("\n");
     expect(parseForEachRef(stdout, "origin", "cfls/")).toEqual([
-      { ref: "origin/cfls/alice", branch: "cfls/alice", member: "alice", commit: "aaa111" },
-      { ref: "origin/cfls/bob", branch: "cfls/bob", member: "bob", commit: "bbb222" },
+      {
+        ref: "origin/cfls/alice",
+        branch: "cfls/alice",
+        member: "alice",
+        commit: "aaa111",
+      },
+      {
+        ref: "origin/cfls/bob",
+        branch: "cfls/bob",
+        member: "bob",
+        commit: "bbb222",
+      },
     ]);
   });
 
@@ -281,14 +295,18 @@ describe("listTrackingBranches", () => {
   });
 
   it("returns [] when for-each-ref fails", () => {
-    expect(listTrackingBranches("origin", "cfls/", "/repo", mockRunner({}))).toEqual([]);
+    expect(
+      listTrackingBranches("origin", "cfls/", "/repo", mockRunner({})),
+    ).toEqual([]);
   });
 });
 
 describe("mergeNoConflict", () => {
   it("returns ok on a clean merge and never aborts", () => {
     const { runner, calls } = recordingRunner((args) =>
-      args[0] === "merge" ? { ok: true, stdout: "Fast-forward" } : { ok: true, stdout: "" },
+      args[0] === "merge"
+        ? { ok: true, stdout: "Fast-forward" }
+        : { ok: true, stdout: "" },
     );
     expect(mergeNoConflict("origin/cfls/alice", "/repo", runner)).toEqual({
       ok: true,
@@ -338,7 +356,10 @@ describe("listConflictedFiles", () => {
     const runner = mockRunner({
       "diff --name-only --diff-filter=U -z": "src/a.ts\0src/b.ts\0",
     });
-    expect(listConflictedFiles("/repo", runner)).toEqual(["src/a.ts", "src/b.ts"]);
+    expect(listConflictedFiles("/repo", runner)).toEqual([
+      "src/a.ts",
+      "src/b.ts",
+    ]);
   });
 
   it("returns [] on git failure", () => {
@@ -352,10 +373,9 @@ describe("filesChangedBetween", () => {
       ok: true,
       stdout: "src/x.ts\0src/y.ts\0",
     }));
-    expect(filesChangedBetween("HEAD", "origin/cfls/bob", "/repo", runner)).toEqual([
-      "src/x.ts",
-      "src/y.ts",
-    ]);
+    expect(
+      filesChangedBetween("HEAD", "origin/cfls/bob", "/repo", runner),
+    ).toEqual(["src/x.ts", "src/y.ts"]);
     expect(calls[0]).toEqual([
       "diff",
       "--name-only",
@@ -376,23 +396,29 @@ describe("mergeReportingConflicts", () => {
       }
       return { ok: true, stdout: "" };
     });
-    expect(mergeReportingConflicts("origin/cfls/bob", "/repo", runner)).toEqual({
-      ok: false,
-      conflicted: true,
-      conflictedFiles: ["src/a.ts"],
-    });
+    expect(mergeReportingConflicts("origin/cfls/bob", "/repo", runner)).toEqual(
+      {
+        ok: false,
+        conflicted: true,
+        conflictedFiles: ["src/a.ts"],
+      },
+    );
     // Must have aborted to restore the tree.
     expect(calls).toContainEqual(["merge", "--abort"]);
   });
 
   it("reports a clean merge with no conflicted files", () => {
-    const runner = mockRunner({ "merge --no-edit origin/cfls/bob": "Fast-forward" });
-    expect(mergeReportingConflicts("origin/cfls/bob", "/repo", runner)).toEqual({
-      ok: true,
-      conflicted: false,
-      alreadyUpToDate: false,
-      conflictedFiles: [],
+    const runner = mockRunner({
+      "merge --no-edit origin/cfls/bob": "Fast-forward",
     });
+    expect(mergeReportingConflicts("origin/cfls/bob", "/repo", runner)).toEqual(
+      {
+        ok: true,
+        conflicted: false,
+        alreadyUpToDate: false,
+        conflictedFiles: [],
+      },
+    );
   });
 });
 

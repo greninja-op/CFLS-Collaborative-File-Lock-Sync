@@ -21,10 +21,7 @@
 
 import type { EventEnvelope, SignedEvent } from "./models";
 import type { ProtocolError } from "./errors";
-import {
-  MESSAGE_FORMAT_VERSION,
-  type TypedEventEnvelope,
-} from "./envelope";
+import { MESSAGE_FORMAT_VERSION, type TypedEventEnvelope } from "./envelope";
 import {
   MESSAGE_TYPES,
   isMessageType,
@@ -126,7 +123,11 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /** Validate `value` against `spec`; return an error string or `null` if valid. */
-function checkField(value: unknown, spec: FieldSpec, path: string): string | null {
+function checkField(
+  value: unknown,
+  spec: FieldSpec,
+  path: string,
+): string | null {
   switch (spec.kind) {
     case "string":
       return typeof value === "string"
@@ -723,7 +724,9 @@ export const ENVELOPE_SCHEMA: ObjectSchema = {
     replay: { spec: { kind: "object", schema: replayGuardSchema } },
     sentAt: { spec: { kind: "string" } },
     // `payload` presence is required here; its shape is validated per-type.
-    payload: { spec: { kind: "object", schema: { name: "payload", fields: {} } } },
+    payload: {
+      spec: { kind: "object", schema: { name: "payload", fields: {} } },
+    },
   },
 };
 
@@ -827,7 +830,9 @@ export function validateSignedEvent(
   if (!isPlainObject(input)) {
     return {
       ok: false,
-      error: formatError(`SignedEvent must be an object (got ${typeName(input)})`),
+      error: formatError(
+        `SignedEvent must be an object (got ${typeName(input)})`,
+      ),
     };
   }
   if (typeof input.signature !== "string") {
@@ -854,4 +859,5 @@ export function validateSignedEvent(
 }
 
 /** All catalog message types that have a registered payload schema. */
-export const VALIDATED_MESSAGE_TYPES: readonly MessageTypeName[] = MESSAGE_TYPES;
+export const VALIDATED_MESSAGE_TYPES: readonly MessageTypeName[] =
+  MESSAGE_TYPES;

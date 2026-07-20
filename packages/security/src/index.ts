@@ -39,21 +39,13 @@ export {
   deriveKeyId,
   deriveDeviceId,
 } from "./keys";
-export type {
-  DeviceKey,
-  DevicePublicKey,
-  DevicePrivateKey,
-} from "./keys";
+export type { DeviceKey, DevicePublicKey, DevicePrivateKey } from "./keys";
 
 // ---- Signing / verification of canonical envelopes (design §8.3; Req 7.1, 7.2) ----
 export { signEnvelope, verifySignedEvent } from "./signing";
 
 // ---- Replay protection: per-device monotonic counter + nonce (design §4.4; Req 7.5) ----
-export {
-  createReplayGuard,
-  evaluateReplay,
-  emptyReplayRecord,
-} from "./replay";
+export { createReplayGuard, evaluateReplay, emptyReplayRecord } from "./replay";
 export type {
   ReplayGuard,
   ReplayRecord,

@@ -53,7 +53,9 @@ export async function dispatchLocalRequest(
     case "get_risk_map":
       return wrap(port.getRiskMap({ session: p.session as SessionId }));
     case "get_dependency_impact":
-      return wrap(port.getDependencyImpact({ paths: (p.paths as string[]) ?? [] }));
+      return wrap(
+        port.getDependencyImpact({ paths: (p.paths as string[]) ?? [] }),
+      );
     case "get_dependencies":
       return wrap(port.getDependencies({ path: p.path as string }));
     case "get_dependents":
@@ -65,7 +67,9 @@ export async function dispatchLocalRequest(
           modifyPaths: (p.modifyPaths as string[]) ?? [],
           createPaths: (p.createPaths as string[]) ?? [],
           description: (p.description as string) ?? "",
-          ...(p.scopeKind !== undefined ? { scopeKind: p.scopeKind as ScopeKind } : {}),
+          ...(p.scopeKind !== undefined
+            ? { scopeKind: p.scopeKind as ScopeKind }
+            : {}),
         }),
       );
     case "update_intent":
@@ -101,7 +105,10 @@ export async function dispatchLocalRequest(
     default:
       return wrap({
         ok: false,
-        error: { code: "FORMAT_ERROR", message: `Unknown Local_API method '${method}'.` },
+        error: {
+          code: "FORMAT_ERROR",
+          message: `Unknown Local_API method '${method}'.`,
+        },
       });
   }
 }

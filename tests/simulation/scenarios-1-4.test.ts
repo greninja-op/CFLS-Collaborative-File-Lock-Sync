@@ -13,7 +13,11 @@
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { CoordinationUpdate, DependencyGraph, SessionId } from "@cfls/protocol";
+import type {
+  CoordinationUpdate,
+  DependencyGraph,
+  SessionId,
+} from "@cfls/protocol";
 
 import { Simulation } from "./harness";
 
@@ -25,23 +29,44 @@ afterEach(async () => {
 });
 
 /** Does an agent's view hold an active `presence` entry for `path` by `memberId`? */
-function hasPresence(entries: CoordinationUpdate[], path: string, memberId: string): boolean {
+function hasPresence(
+  entries: CoordinationUpdate[],
+  path: string,
+  memberId: string,
+): boolean {
   return entries.some(
-    (e) => e.entryType === "presence" && e.path === path && e.member.memberId === memberId,
+    (e) =>
+      e.entryType === "presence" &&
+      e.path === path &&
+      e.member.memberId === memberId,
   );
 }
 
 /** Does an agent's view hold an active `intent` entry for `path` by `memberId`? */
-function hasIntent(entries: CoordinationUpdate[], path: string, memberId: string): boolean {
+function hasIntent(
+  entries: CoordinationUpdate[],
+  path: string,
+  memberId: string,
+): boolean {
   return entries.some(
-    (e) => e.entryType === "intent" && e.path === path && e.member.memberId === memberId,
+    (e) =>
+      e.entryType === "intent" &&
+      e.path === path &&
+      e.member.memberId === memberId,
   );
 }
 
 /** Does an agent's view hold a `soft_lock` for `path` won by `memberId`? */
-function hasLock(entries: CoordinationUpdate[], path: string, memberId: string): boolean {
+function hasLock(
+  entries: CoordinationUpdate[],
+  path: string,
+  memberId: string,
+): boolean {
   return entries.some(
-    (e) => e.entryType === "soft_lock" && e.path === path && e.member.memberId === memberId,
+    (e) =>
+      e.entryType === "soft_lock" &&
+      e.path === path &&
+      e.member.memberId === memberId,
   );
 }
 
@@ -92,7 +117,9 @@ describe("Scenario 2 — declared intent broadcast + reconciliation with saves (
     // observed alongside the still-active intent (Req 17.1, 17.5).
     sim.save(0, path);
     await sim.waitForConverged(
-      (entries) => hasIntent(entries, path, "agent-0") && hasPresence(entries, path, "agent-0"),
+      (entries) =>
+        hasIntent(entries, path, "agent-0") &&
+        hasPresence(entries, path, "agent-0"),
       { label: "save reconciliation" },
     );
 
@@ -121,14 +148,17 @@ describe("Scenario 3 — direct conflict, deterministic winner by revision (Req 
 
     // The whole cluster converges on agent-0 as the single holder.
     await sim.waitForConverged(
-      (entries) => hasLock(entries, path, "agent-0") && !hasLock(entries, path, "agent-1"),
+      (entries) =>
+        hasLock(entries, path, "agent-0") && !hasLock(entries, path, "agent-1"),
       { label: "conflict convergence" },
     );
 
     // The host authority agrees: agent-0's is the winning (non-concurrent) lock,
     // and it is the earliest-revision claim.
     const snapshot = sim.host.authority.snapshot(sim.session);
-    const winners = snapshot.locks.filter((l) => l.scope === path && !l.concurrent);
+    const winners = snapshot.locks.filter(
+      (l) => l.scope === path && !l.concurrent,
+    );
     expect(winners).toHaveLength(1);
     expect(winners[0]?.holder.memberId).toBe("agent-0");
     expect(winners[0]?.eventRevision).toBe(winningRevision);
@@ -151,11 +181,25 @@ describe("Scenario 4 — indirect dependency conflict via a Dependency_Edge (Req
       baseRevision: null,
     };
     const graph: DependencyGraph = {
-      snapshot: { sessionId: graphSession, graphVersion: 1, analyzerVersion: "sim" },
+      snapshot: {
+        sessionId: graphSession,
+        graphVersion: 1,
+        analyzerVersion: "sim",
+      },
       packages: [],
       modules: [
-        { sourceFile: X, edges: [{ from: X, to: Y, kind: "runtime_import", confidence: "high" }] },
-        { sourceFile: Y, edges: [{ from: Y, to: Z, kind: "runtime_import", confidence: "high" }] },
+        {
+          sourceFile: X,
+          edges: [
+            { from: X, to: Y, kind: "runtime_import", confidence: "high" },
+          ],
+        },
+        {
+          sourceFile: Y,
+          edges: [
+            { from: Y, to: Z, kind: "runtime_import", confidence: "high" },
+          ],
+        },
       ],
       contracts: [],
     };
@@ -168,7 +212,8 @@ describe("Scenario 4 — indirect dependency conflict via a Dependency_Edge (Req
     // Both agents' views must include the other's lock before risk is projected.
     await sim.waitUntil(
       () =>
-        hasLock(sim!.entries(0), Z, "agent-1") && hasLock(sim!.entries(1), X, "agent-0"),
+        hasLock(sim!.entries(0), Z, "agent-1") &&
+        hasLock(sim!.entries(1), X, "agent-0"),
       { label: "cross-agent lock visibility" },
     );
 
@@ -189,6 +234,8 @@ describe("Scenario 4 — indirect dependency conflict via a Dependency_Edge (Req
     expect(y1?.contributors.map((c) => c.memberId)).toContain("agent-0");
 
     // The contributing edge (with its confidence) travels with the risk (Req 22.4).
-    expect(y0?.explanation.edges?.some((e) => e.confidence === "high")).toBe(true);
+    expect(y0?.explanation.edges?.some((e) => e.confidence === "high")).toBe(
+      true,
+    );
   });
 });

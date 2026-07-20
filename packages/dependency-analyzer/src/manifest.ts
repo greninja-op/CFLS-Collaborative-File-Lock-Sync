@@ -103,7 +103,10 @@ export function extractPackageMetadata(
   const included = filterIncluded(files);
   const byPath = new Map(included.map((file) => [file.path, file]));
   const manifests = included
-    .filter((file) => file.path === "package.json" || file.path.endsWith("/package.json"))
+    .filter(
+      (file) =>
+        file.path === "package.json" || file.path.endsWith("/package.json"),
+    )
     .sort((a, b) => a.path.localeCompare(b.path));
 
   const result: PackageDependencyMetadata[] = [];

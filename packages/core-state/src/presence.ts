@@ -23,7 +23,11 @@
 
 import type { MemberRef, Presence, SessionId } from "@cfls/protocol";
 
-import { normalizePath, pathMatchKey, type PlatformCaseSensitivity } from "./path";
+import {
+  normalizePath,
+  pathMatchKey,
+  type PlatformCaseSensitivity,
+} from "./path";
 import { sessionKey } from "./session";
 
 /** A presence report; `eventRevision` is assigned by the caller (host counter). */
@@ -78,7 +82,10 @@ export class PresenceRegistry {
     const key = entryKey(report.member, report.path, this.sensitivity);
     const existing = entries.get(key);
 
-    if (existing !== undefined && report.eventRevision < existing.eventRevision) {
+    if (
+      existing !== undefined &&
+      report.eventRevision < existing.eventRevision
+    ) {
       // Stale event: a newer state already applied. Leave state unchanged.
       return existing;
     }
@@ -133,7 +140,10 @@ export class PresenceRegistry {
     for (const item of presence) {
       const key = entryKey(item.member, item.path, this.sensitivity);
       const existing = entries.get(key);
-      if (existing !== undefined && item.eventRevision < existing.eventRevision) {
+      if (
+        existing !== undefined &&
+        item.eventRevision < existing.eventRevision
+      ) {
         continue;
       }
       entries.set(key, {

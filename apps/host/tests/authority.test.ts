@@ -6,7 +6,11 @@
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
-import type { AuthHelloPayload, SignedEvent } from "@cfls/protocol";
+import type {
+  AuthHelloPayload,
+  DependencyGraph,
+  SignedEvent,
+} from "@cfls/protocol";
 
 import { CoordinationAuthority, type AuthPrincipal } from "../src/authority";
 import { signChallenge } from "../src/challenge";
@@ -37,7 +41,8 @@ function hello(device: TestDevice, invitationB64: string): AuthHelloPayload {
 function authenticate(device: TestDevice): AuthPrincipal {
   const h = hello(device, invitationFor(session, admin.key, device));
   const challenge = authority.prepareChallenge(h);
-  if (!challenge.ok) throw new Error(`prepareChallenge failed: ${challenge.code}`);
+  if (!challenge.ok)
+    throw new Error(`prepareChallenge failed: ${challenge.code}`);
   const sig = signChallenge(challenge.nonce, device.key.privateKey);
   const result = authority.finalizeHandshake(h, challenge.nonce, sig);
   if (!result.ok) throw new Error(`finalizeHandshake failed: ${result.code}`);
@@ -55,7 +60,10 @@ afterEach(() => store.close());
 
 describe("handshake (Req 5.3–5.6, 7.6, 10.7)", () => {
   it("rejects an unsupported message-format version with FORMAT_ERROR", () => {
-    const h = { ...hello(admin, invitationFor(session, admin.key, admin)), version: 999 };
+    const h = {
+      ...hello(admin, invitationFor(session, admin.key, admin)),
+      version: 999,
+    };
     const result = authority.prepareChallenge(h);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("FORMAT_ERROR");
@@ -63,7 +71,10 @@ describe("handshake (Req 5.3–5.6, 7.6, 10.7)", () => {
 
   it("rejects an unknown session with AUTH_SESSION_FORBIDDEN", () => {
     const other = makeSession({ branch: "unknown" });
-    const h = { ...hello(admin, invitationFor(session, admin.key, admin)), session: other };
+    const h = {
+      ...hello(admin, invitationFor(session, admin.key, admin)),
+      session: other,
+    };
     const result = authority.prepareChallenge(h);
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("AUTH_SESSION_FORBIDDEN");
@@ -72,7 +83,9 @@ describe("handshake (Req 5.3–5.6, 7.6, 10.7)", () => {
   it("rejects a non-admin invitation issuer with AUTH_ISSUER_NOT_ADMIN", () => {
     const notAdmin = makeDevice("intruder");
     const bob = makeDevice("bob");
-    const result = authority.prepareChallenge(hello(bob, invitationFor(session, notAdmin.key, bob)));
+    const result = authority.prepareChallenge(
+      hello(bob, invitationFor(session, notAdmin.key, bob)),
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("AUTH_ISSUER_NOT_ADMIN");
   });
@@ -108,7 +121,11 @@ describe("ingest pipeline (Req 7, 8, 10.7, 29)", () => {
     expect(outcome.accepted).toBe(true);
     expect(outcome.eventRevision).toBe(1);
     expect(outcome.broadcasts).toHaveLength(1);
-    expect(outcome.broadcasts[0]).toMatchObject({ entryType: "soft_lock", op: "added", path: "src/a.ts" });
+    expect(outcome.broadcasts[0]).toMatchObject({
+      entryType: "soft_lock",
+      op: "added",
+      path: "src/a.ts",
+    });
   });
 
   it("is idempotent for a duplicate Event_ID (Req 7.4)", () => {
@@ -172,7 +189,10 @@ describe("ingest pipeline (Req 7, 8, 10.7, 29)", () => {
     // Tamper with the payload after signing.
     const tampered: SignedEvent = {
       ...event,
-      envelope: { ...event.envelope, payload: { scope: "src/evil.ts", scopeKind: "file", mode: "hard" } },
+      envelope: {
+        ...event.envelope,
+        payload: { scope: "src/evil.ts", scopeKind: "file", mode: "hard" },
+      },
     };
     const outcome = authority.ingest(principal, tampered);
     expect(outcome.accepted).toBe(false);
@@ -224,7 +244,12 @@ describe("locks, intents, overrides (Req 12, 13, 16)", () => {
       principal,
       signedEvent(
         "lock.override",
-        { scope: "openapi/orders.yaml", scopeKind: "file", mode: "coordination-required", overrideReason: "   " },
+        {
+          scope: "openapi/orders.yaml",
+          scopeKind: "file",
+          mode: "coordination-required",
+          overrideReason: "   ",
+        },
         { session, device: admin, counter: 1, eventId: "ov-1" },
       ),
     );
@@ -238,7 +263,12 @@ describe("locks, intents, overrides (Req 12, 13, 16)", () => {
       principal,
       signedEvent(
         "lock.override",
-        { scope: "openapi/orders.yaml", scopeKind: "file", mode: "coordination-required", overrideReason: "hotfix" },
+        {
+          scope: "openapi/orders.yaml",
+          scopeKind: "file",
+          mode: "coordination-required",
+          overrideReason: "hotfix",
+        },
         { session, device: admin, counter: 1, eventId: "ov-1" },
       ),
     );
@@ -265,12 +295,216 @@ describe("locks, intents, overrides (Req 12, 13, 16)", () => {
       bobPrincipal,
       signedEvent(
         "intent.update",
-        { intentId: "intent-1", modifyPaths: ["src/b.ts"], createPaths: [], description: "steal" },
+        {
+          intentId: "intent-1",
+          modifyPaths: ["src/b.ts"],
+          createPaths: [],
+          description: "steal",
+        },
         { session, device: bob, counter: 1, eventId: "intent-upd" },
       ),
     );
     expect(update.accepted).toBe(false);
     expect(update.error).toBe("NOT_OWNER");
+  });
+});
+
+describe("path changes (Req 30)", () => {
+  it("transfers a lock from the old path to the new path on rename (Req 30.2)", () => {
+    const principal = authenticate(admin);
+    authority.ingest(
+      principal,
+      signedEvent(
+        "lock.acquire",
+        { scope: "src/a.ts", scopeKind: "file", mode: "soft" },
+        { session, device: admin, counter: 1, eventId: "lock-a" },
+      ),
+    );
+
+    const renamed = authority.ingest(
+      principal,
+      signedEvent(
+        "path.renamed",
+        { fromPath: "src/a.ts", toPath: "src/b.ts" },
+        { session, device: admin, counter: 2, eventId: "rename-1" },
+      ),
+    );
+    expect(renamed.accepted).toBe(true);
+    expect(renamed.broadcasts).toContainEqual(
+      expect.objectContaining({
+        entryType: "soft_lock",
+        op: "removed",
+        path: "src/a.ts",
+      }),
+    );
+    expect(renamed.broadcasts).toContainEqual(
+      expect.objectContaining({
+        entryType: "soft_lock",
+        op: "added",
+        path: "src/b.ts",
+      }),
+    );
+
+    const locks = authority.snapshot(session).locks;
+    expect(locks.map((l) => l.scope)).toContain("src/b.ts");
+    expect(locks.map((l) => l.scope)).not.toContain("src/a.ts");
+  });
+
+  it("releases the deleting member's lock on delete and broadcasts the removal (Req 30.5)", () => {
+    const principal = authenticate(admin);
+    authority.ingest(
+      principal,
+      signedEvent(
+        "lock.acquire",
+        { scope: "src/gone.ts", scopeKind: "file", mode: "soft" },
+        { session, device: admin, counter: 1, eventId: "lock-g" },
+      ),
+    );
+
+    const deleted = authority.ingest(
+      principal,
+      signedEvent(
+        "path.deleted",
+        { path: "src/gone.ts" },
+        { session, device: admin, counter: 2, eventId: "del-1" },
+      ),
+    );
+    expect(deleted.accepted).toBe(true);
+    expect(deleted.broadcasts).toContainEqual(
+      expect.objectContaining({
+        entryType: "soft_lock",
+        op: "removed",
+        path: "src/gone.ts",
+      }),
+    );
+    expect(authority.snapshot(session).locks.map((l) => l.scope)).not.toContain(
+      "src/gone.ts",
+    );
+  });
+
+  it("retires a matching Planned_File_Creation when the file is actually created (Req 17.2)", () => {
+    const principal = authenticate(admin);
+    authority.ingest(
+      principal,
+      signedEvent(
+        "intent.declare",
+        {
+          modifyPaths: [],
+          createPaths: ["src/new.ts"],
+          description: "create it",
+        },
+        { session, device: admin, counter: 1, eventId: "intent-new" },
+      ),
+    );
+
+    const created = authority.ingest(
+      principal,
+      signedEvent(
+        "file.created",
+        { path: "src/new.ts" },
+        { session, device: admin, counter: 2, eventId: "created-1" },
+      ),
+    );
+    expect(created.accepted).toBe(true);
+    expect(created.broadcasts).toContainEqual(
+      expect.objectContaining({
+        entryType: "planned_file_creation",
+        op: "removed",
+        path: "src/new.ts",
+      }),
+    );
+    const intents = authority.snapshot(session).intents;
+    const stillPlanned = intents.some((i) =>
+      i.createPaths.some((c) => c.path === "src/new.ts"),
+    );
+    expect(stillPlanned).toBe(false);
+  });
+});
+
+describe("dependency graph (Req 19, 20)", () => {
+  it("persists an uploaded dep.snapshot and exposes it for distribution", () => {
+    const principal = authenticate(admin);
+    const graph: DependencyGraph = {
+      snapshot: {
+        sessionId: session,
+        graphVersion: 1,
+        analyzerVersion: "test",
+      },
+      packages: [],
+      modules: [
+        {
+          sourceFile: "src/a.ts",
+          edges: [
+            {
+              from: "src/a.ts",
+              to: "src/b.ts",
+              kind: "runtime_import",
+              confidence: "high",
+            },
+          ],
+        },
+      ],
+      contracts: [],
+    };
+    const outcome = authority.ingest(
+      principal,
+      signedEvent(
+        "dep.snapshot",
+        { graph },
+        { session, device: admin, counter: 1, eventId: "dep-1" },
+      ),
+    );
+    expect(outcome.accepted).toBe(true);
+
+    const stored = authority.dependencyGraph(session);
+    expect(stored).not.toBeNull();
+    expect(stored?.modules[0]?.edges[0]).toMatchObject({
+      from: "src/a.ts",
+      to: "src/b.ts",
+    });
+  });
+
+  it("survives a restart by reloading the persisted graph from the store", () => {
+    const principal = authenticate(admin);
+    const graph: DependencyGraph = {
+      snapshot: {
+        sessionId: session,
+        graphVersion: 1,
+        analyzerVersion: "test",
+      },
+      packages: [],
+      modules: [
+        {
+          sourceFile: "src/x.ts",
+          edges: [
+            {
+              from: "src/x.ts",
+              to: "src/y.ts",
+              kind: "runtime_import",
+              confidence: "high",
+            },
+          ],
+        },
+      ],
+      contracts: [],
+    };
+    authority.ingest(
+      principal,
+      signedEvent(
+        "dep.snapshot",
+        { graph },
+        { session, device: admin, counter: 1, eventId: "dep-x" },
+      ),
+    );
+
+    // A fresh authority over the SAME store must reload the graph (Req 1.5).
+    const reloaded = new CoordinationAuthority(store, { expiry: {} });
+    reloaded.registerSession(session, [admin.key.publicKey]);
+    const stored = reloaded.dependencyGraph(session);
+    expect(stored?.modules[0]?.edges[0]).toMatchObject({
+      from: "src/x.ts",
+      to: "src/y.ts",
+    });
   });
 });
 

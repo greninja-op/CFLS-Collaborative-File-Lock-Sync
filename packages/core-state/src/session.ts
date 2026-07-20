@@ -39,9 +39,7 @@ export function sessionKey(session: SessionId): string {
     session.branch,
     session.baseRevision === null ? "\u0000null" : `s:${session.baseRevision}`,
   ];
-  const canonical = fields
-    .map((value) => `${value.length}:${value}`)
-    .join("|");
+  const canonical = fields.map((value) => `${value.length}:${value}`).join("|");
   return createHash("sha256").update(canonical, "utf8").digest("base64url");
 }
 

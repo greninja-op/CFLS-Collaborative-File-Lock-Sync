@@ -12,7 +12,11 @@
  * `invitations.test.ts`; this file intentionally does not repeat them.
  */
 
-import { buildEnvelope, type EventEnvelope, type SessionId } from "@cfls/protocol";
+import {
+  buildEnvelope,
+  type EventEnvelope,
+  type SessionId,
+} from "@cfls/protocol";
 import { describe, expect, it } from "vitest";
 
 import { generateDeviceKey } from "./keys";
@@ -91,7 +95,9 @@ describe("device lifecycle: keygen → sign → invite → admit → rotate → 
     const signed = signEnvelope(envelopeFrom("device"), device.privateKey);
     // Both gates pass: cryptographically authentic and admitted.
     expect(verifySignedEvent(signed, device.publicKey)).toBe(true);
-    expect(eventAccepted(admission.registry, device.publicKey, signed)).toBe(true);
+    expect(eventAccepted(admission.registry, device.publicKey, signed)).toBe(
+      true,
+    );
   });
 
   it("rejects events from a device that was never admitted, even if the signature is valid (Req 5.4)", () => {
@@ -113,7 +119,9 @@ describe("device lifecycle: keygen → sign → invite → admit → rotate → 
     if (!admission.admitted) throw new Error("expected admission");
 
     const signed = signEnvelope(envelopeFrom("device"), device.privateKey);
-    expect(eventAccepted(admission.registry, device.publicKey, signed)).toBe(true);
+    expect(eventAccepted(admission.registry, device.publicKey, signed)).toBe(
+      true,
+    );
 
     const revoked = revokeDevice(admission.registry, device.publicKey);
     // Signature still verifies, but the revoked key is no longer authorised.
@@ -142,10 +150,14 @@ describe("device lifecycle: keygen → sign → invite → admit → rotate → 
     const newSigned = signEnvelope(envelopeFrom("new"), newKey.privateKey);
 
     // New key: authentic and authorised.
-    expect(eventAccepted(rotation.registry, newKey.publicKey, newSigned)).toBe(true);
+    expect(eventAccepted(rotation.registry, newKey.publicKey, newSigned)).toBe(
+      true,
+    );
     // Old key: signature still verifies, but the retired key is not authorised.
     expect(verifySignedEvent(oldSigned, oldKey.publicKey)).toBe(true);
-    expect(eventAccepted(rotation.registry, oldKey.publicKey, oldSigned)).toBe(false);
+    expect(eventAccepted(rotation.registry, oldKey.publicKey, oldSigned)).toBe(
+      false,
+    );
   });
 
   it("leaves an already-admitted device authorised when a non-admin issues an invitation (Req 5.5)", () => {

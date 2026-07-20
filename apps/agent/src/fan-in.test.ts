@@ -23,8 +23,15 @@ const session: SessionId = {
 
 const alice: MemberRef = { memberId: "alice", deviceId: "dev-a1" };
 
-function makePort(): { port: AgentCoordinationPort; gateway: LocalHostGateway } {
-  const gateway = new LocalHostGateway({ session, self: alice, rules: ALL_SOFT_CONFIG });
+function makePort(): {
+  port: AgentCoordinationPort;
+  gateway: LocalHostGateway;
+} {
+  const gateway = new LocalHostGateway({
+    session,
+    self: alice,
+    rules: ALL_SOFT_CONFIG,
+  });
   const port = new AgentCoordinationPort({
     session,
     self: alice,
@@ -92,8 +99,20 @@ describe("multi-client fan-in (Req 31.1)", () => {
     const bobDev1: MemberRef = { memberId: "bob", deviceId: "dev-b1" };
     const bobDev2: MemberRef = { memberId: "bob", deviceId: "dev-b2" };
     const updates: CoordinationUpdate[] = [
-      { entryType: "soft_lock", op: "added", path: "src/peer1.ts", member: bobDev1, eventRevision: 50 },
-      { entryType: "intent", op: "added", path: "src/peer2.ts", member: bobDev2, eventRevision: 51 },
+      {
+        entryType: "soft_lock",
+        op: "added",
+        path: "src/peer1.ts",
+        member: bobDev1,
+        eventRevision: 50,
+      },
+      {
+        entryType: "intent",
+        op: "added",
+        path: "src/peer2.ts",
+        member: bobDev2,
+        eventRevision: 51,
+      },
     ];
     for (const u of updates) {
       gateway.injectRemote(u);
@@ -117,7 +136,11 @@ describe("multi-client fan-in (Req 31.1)", () => {
   it("returns OFFLINE_QUEUED for mutations while offline, without mutating the view", async () => {
     const { port, gateway } = makePort();
     gateway.setOnline(false);
-    const result = await port.acquireLock({ session, scope: "src/x.ts", scopeKind: "file" });
+    const result = await port.acquireLock({
+      session,
+      scope: "src/x.ts",
+      scopeKind: "file",
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("OFFLINE_QUEUED");

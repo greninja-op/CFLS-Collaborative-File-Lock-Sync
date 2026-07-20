@@ -39,7 +39,9 @@ function url(): string {
   return `wss://127.0.0.1:${host.port}`;
 }
 
-async function startFreshHost(overrides: HostConfigInput = {}): Promise<RunningHost> {
+async function startFreshHost(
+  overrides: HostConfigInput = {},
+): Promise<RunningHost> {
   return startHost(
     {
       hostUrl: "wss://127.0.0.1:0",
@@ -101,7 +103,11 @@ afterEach(async () => {
 describe("authentication handshake (Req 5.3, 5.4)", () => {
   it("admits an admin device presenting a self-issued invitation", async () => {
     const client = await TestClient.open(url());
-    const result = await client.handshake(session, admin, invitationFor(session, admin.key, admin));
+    const result = await client.handshake(
+      session,
+      admin,
+      invitationFor(session, admin.key, admin),
+    );
     expect(result).toEqual({ ok: true });
     expect(client.highestRevision).toBe(0);
     client.close();
@@ -110,7 +116,11 @@ describe("authentication handshake (Req 5.3, 5.4)", () => {
   it("admits a second device invited by the admin", async () => {
     const bob = makeDevice("bob");
     const client = await TestClient.open(url());
-    const result = await client.handshake(session, bob, invitationFor(session, admin.key, bob));
+    const result = await client.handshake(
+      session,
+      bob,
+      invitationFor(session, admin.key, bob),
+    );
     expect(result).toEqual({ ok: true });
     client.close();
   });
@@ -134,13 +144,25 @@ describe("authentication handshake (Req 5.3, 5.4)", () => {
     const bob = makeDevice("bob");
     // First admit bob so a membership entry exists, then revoke it.
     const first = await TestClient.open(url());
-    expect((await first.handshake(session, bob, invitationFor(session, admin.key, bob))).ok).toBe(true);
+    expect(
+      (
+        await first.handshake(
+          session,
+          bob,
+          invitationFor(session, admin.key, bob),
+        )
+      ).ok,
+    ).toBe(true);
     first.close();
 
     host.authority.revoke(session, bob.key.publicKey);
 
     const second = await TestClient.open(url());
-    const result = await second.handshake(session, bob, invitationFor(session, admin.key, bob));
+    const result = await second.handshake(
+      session,
+      bob,
+      invitationFor(session, admin.key, bob),
+    );
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.code).toBe("AUTH_INVALID_DEVICE");
     second.close();
@@ -172,12 +194,19 @@ describe("dashboard HTTP", () => {
 
     const initial = await getHttp("/api/coordination");
     expect(initial.statusCode).toBe(200);
-    expect(String(initial.headers["content-type"])).toMatch(/^application\/json/);
+    expect(String(initial.headers["content-type"])).toMatch(
+      /^application\/json/,
+    );
     const initialState = JSON.parse(initial.body) as {
-      sessions: Array<{ repoId: string; branch: string; connectedDevices: string[] }>;
+      sessions: Array<{
+        repoId: string;
+        branch: string;
+        connectedDevices: string[];
+      }>;
     };
     const initialSession = initialState.sessions.find(
-      (entry) => entry.repoId === session.repoId && entry.branch === session.branch,
+      (entry) =>
+        entry.repoId === session.repoId && entry.branch === session.branch,
     );
     expect(initialSession?.connectedDevices).toContain(deviceIdOf(admin));
 
@@ -213,7 +242,8 @@ describe("dashboard HTTP", () => {
       }>;
     };
     const liveSession = liveState.sessions.find(
-      (entry) => entry.repoId === session.repoId && entry.branch === session.branch,
+      (entry) =>
+        entry.repoId === session.repoId && entry.branch === session.branch,
     );
     expect(liveSession?.locks).toContainEqual({
       path: "src/dashboard-live.ts",
@@ -248,20 +278,38 @@ describe("ingest → broadcast (Req 7, 8.1, 25)", () => {
     const bob = makeDevice("bob");
 
     const a = await TestClient.open(url());
-    expect((await a.handshake(session, alice, invitationFor(session, admin.key, alice))).ok).toBe(true);
+    expect(
+      (
+        await a.handshake(
+          session,
+          alice,
+          invitationFor(session, admin.key, alice),
+        )
+      ).ok,
+    ).toBe(true);
     const b = await TestClient.open(url());
-    expect((await b.handshake(session, bob, invitationFor(session, admin.key, bob))).ok).toBe(true);
+    expect(
+      (await b.handshake(session, bob, invitationFor(session, admin.key, bob)))
+        .ok,
+    ).toBe(true);
 
     a.sendEvent(
       signedEvent(
         "lock.acquire",
         { scope: "src/api.ts", scopeKind: "file", mode: "soft" },
-        { session, device: alice, counter: a.nextCounter(), eventId: "evt-lock-1" },
+        {
+          session,
+          device: alice,
+          counter: a.nextCounter(),
+          eventId: "evt-lock-1",
+        },
       ),
     );
 
     const update = await b.waitFor(
-      (m) => m?.type === "coordination.update" && m.payload.entryType === "soft_lock",
+      (m) =>
+        m?.type === "coordination.update" &&
+        m.payload.entryType === "soft_lock",
     );
     expect(update.payload.op).toBe("added");
     expect(update.payload.path).toBe("src/api.ts");
@@ -314,15 +362,24 @@ describe("sync-from-revision (Req 9.3)", () => {
       signedEvent(
         "sync.request",
         { fromRevision: 0 },
-        { session, device: alice, counter: a.nextCounter(), eventId: "evt-sync" },
+        {
+          session,
+          device: alice,
+          counter: a.nextCounter(),
+          eventId: "evt-sync",
+        },
       ),
     );
-    const sync = await a.waitFor((m) => m?.type === "sync.events" || m?.type === "sync.snapshot");
+    const sync = await a.waitFor(
+      (m) => m?.type === "sync.events" || m?.type === "sync.snapshot",
+    );
     if (sync.type === "sync.events") {
       const paths = sync.payload.events.map((e: { path?: string }) => e.path);
       expect(paths).toContain("src/one.ts");
     } else {
-      expect(sync.payload.state.locks.map((l: { scope: string }) => l.scope)).toContain("src/one.ts");
+      expect(
+        sync.payload.state.locks.map((l: { scope: string }) => l.scope),
+      ).toContain("src/one.ts");
     }
     a.close();
   });
@@ -337,7 +394,12 @@ describe("restart recovery (Req 1.5, 1.6)", () => {
       signedEvent(
         "lock.acquire",
         { scope: "src/persist.ts", scopeKind: "file", mode: "soft" },
-        { session, device: alice, counter: a.nextCounter(), eventId: "evt-persist" },
+        {
+          session,
+          device: alice,
+          counter: a.nextCounter(),
+          eventId: "evt-persist",
+        },
       ),
     );
     await a.waitFor((m) => m?.type === "coordination.update");
@@ -355,7 +417,11 @@ describe("restart recovery (Req 1.5, 1.6)", () => {
     // The revision counter resumes strictly above the persisted highest.
     host.authority.registerSession(session, [admin.key.publicKey]);
     const reconnect = await TestClient.open(url());
-    const result = await reconnect.handshake(session, alice, invitationFor(session, admin.key, alice));
+    const result = await reconnect.handshake(
+      session,
+      alice,
+      invitationFor(session, admin.key, alice),
+    );
     expect(result.ok).toBe(true);
     expect(reconnect.highestRevision).toBeGreaterThanOrEqual(revisionBefore);
     reconnect.close();

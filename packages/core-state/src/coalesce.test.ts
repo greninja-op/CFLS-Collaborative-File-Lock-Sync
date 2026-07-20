@@ -58,7 +58,9 @@ describe("Coalescer window configuration (Req 34.1)", () => {
   it("rejects a non-positive-integer rate bound", () => {
     expect(() => new Coalescer({ maxEventsPerWindow: 0 })).toThrow(RangeError);
     expect(() => new Coalescer({ maxEventsPerWindow: -1 })).toThrow(RangeError);
-    expect(() => new Coalescer({ maxEventsPerWindow: 1.5 })).toThrow(RangeError);
+    expect(() => new Coalescer({ maxEventsPerWindow: 1.5 })).toThrow(
+      RangeError,
+    );
   });
 });
 

@@ -43,8 +43,7 @@ export interface OverrideRequest {
 
 /** Result of {@link validateOverride}. */
 export type OverrideResult =
-  | { ok: true; audit: AuditRecord }
-  | { ok: false; code: OverrideError };
+  { ok: true; audit: AuditRecord } | { ok: false; code: OverrideError };
 
 /**
  * Validate a coordination-required override (Req 13.3, 13.4).

@@ -76,13 +76,21 @@ import type {
   ScopeKind,
 } from "@cfls/protocol";
 
-import { normalizePath, normalizePathKey, type PlatformCaseSensitivity } from "./path";
+import {
+  normalizePath,
+  normalizePathKey,
+  type PlatformCaseSensitivity,
+} from "./path";
 import { resolveMode, type RepositoryRulesConfig } from "./rules";
 
 /** Contention-kind labels surfaced in {@link RiskMapEntry.contributors} (Req 21.2, 24.7). */
 export const ContentionKind = {
-  /** An active coordination lock (soft/coordination-required/hard). */
-  Lock: "lock",
+  /** An active Soft_Lock. */
+  SoftLock: "soft_lock",
+  /** An active Coordination_Required_Lock. */
+  CoordinationRequiredLock: "coordination_required_lock",
+  /** An active Hard_Lock. */
+  HardLock: "hard_lock",
   /** A Presence_Event (started/editing). */
   Presence: "presence",
   /** A Declared_Intent to modify the path. */
@@ -96,6 +104,20 @@ export const ContentionKind = {
   /** The path shares a Public_Contract_Fingerprint with another member's path. */
   SharedContract: "shared-contract",
 } as const;
+
+/**
+ * The contributor {@link ContentionKind} for a lock of the given coordination
+ * mode (Req 21.2). Carrying the lock's mode in the contributor kind lets a
+ * consumer (e.g. the Editor_Extension's cooperative hard-stop) identify the
+ * holder of a *hard* lock specifically, rather than a generic "lock".
+ */
+export function lockContentionKind(mode: RiskLevel): string {
+  return mode === "hard"
+    ? ContentionKind.HardLock
+    : mode === "coordination-required"
+      ? ContentionKind.CoordinationRequiredLock
+      : ContentionKind.SoftLock;
+}
 
 /**
  * Inputs to {@link buildRiskMap}. All coordination state is supplied as plain
@@ -169,12 +191,11 @@ export function buildRiskMap(context: RiskMapContext): RiskMapEntry[] {
   const ownKeys = new Set<string>();
 
   const keyOf = (path: string, scopeKind: ScopeKind): string =>
-    scopeKind === "glob" ? `glob\u0000${path}` : normalizePathKey(path, sensitivity);
+    scopeKind === "glob"
+      ? `glob\u0000${path}`
+      : normalizePathKey(path, sensitivity);
 
-  const candidateFor = (
-    path: string,
-    scopeKind: ScopeKind,
-  ): Candidate => {
+  const candidateFor = (path: string, scopeKind: ScopeKind): Candidate => {
     const display = scopeKind === "glob" ? path : normalizePath(path);
     const key = keyOf(display, scopeKind);
     let candidate = candidates.get(key);
@@ -204,7 +225,11 @@ export function buildRiskMap(context: RiskMapContext): RiskMapEntry[] {
     }
   };
 
-  const noteMemberPath = (path: string, scopeKind: ScopeKind, member: MemberRef): void => {
+  const noteMemberPath = (
+    path: string,
+    scopeKind: ScopeKind,
+    member: MemberRef,
+  ): void => {
     if (scopeKind === "glob") {
       return; // globs/folders never align with file-path dependency edges.
     }
@@ -242,31 +267,54 @@ export function buildRiskMap(context: RiskMapContext): RiskMapEntry[] {
     const candidate = candidateFor(path, scopeKind);
     // Presence carries no Branch_Context (it is session-scoped, and the session
     // is already branch-scoped) so it always contends under the query branch.
-    const sameBranch = activityBranch === undefined || activityBranch === branch;
+    const sameBranch =
+      activityBranch === undefined || activityBranch === branch;
     if (sameBranch) {
       candidate.directContended = true;
       addContributor(candidate, member, baseKind);
     } else {
       // Reduced/no direct conflict: report the distinct Branch_Context (Req 21.3).
-      addContributor(candidate, member, `${baseKind} (branch: ${activityBranch})`);
+      addContributor(
+        candidate,
+        member,
+        `${baseKind} (branch: ${activityBranch})`,
+      );
     }
     noteMemberPath(candidate.displayPath, scopeKind, member);
   };
 
   for (const lock of context.locks) {
-    recordActivity(lock.scope, lock.scopeKind, lock.holder, ContentionKind.Lock, lock.branch);
+    recordActivity(
+      lock.scope,
+      lock.scopeKind,
+      lock.holder,
+      lockContentionKind(lock.mode),
+      lock.branch,
+    );
   }
 
   for (const entry of context.presence) {
     if (entry.state === "stopped") {
       continue;
     }
-    recordActivity(entry.path, "file", entry.member, ContentionKind.Presence, undefined);
+    recordActivity(
+      entry.path,
+      "file",
+      entry.member,
+      ContentionKind.Presence,
+      undefined,
+    );
   }
 
   for (const intent of context.intents) {
     for (const modifyPath of intent.modifyPaths) {
-      recordActivity(modifyPath, intent.scopeKind, intent.owner, ContentionKind.Intent, intent.branch);
+      recordActivity(
+        modifyPath,
+        intent.scopeKind,
+        intent.owner,
+        ContentionKind.Intent,
+        intent.branch,
+      );
     }
     for (const creation of intent.createPaths) {
       recordActivity(
@@ -336,8 +384,22 @@ export function buildRiskMap(context: RiskMapContext): RiskMapEntry[] {
         // dependency risk on the members changing `to` (Req 22.1). When `from`
         // is changed, `to` carries a reverse-dependency risk on the members
         // changing `from` (Req 22.2).
-        linkEndpoint(edge.from, fromKey, fromMembers, toMembers, edge, ContentionKind.Dependency);
-        linkEndpoint(edge.to, toKey, toMembers, fromMembers, edge, ContentionKind.ReverseDependency);
+        linkEndpoint(
+          edge.from,
+          fromKey,
+          fromMembers,
+          toMembers,
+          edge,
+          ContentionKind.Dependency,
+        );
+        linkEndpoint(
+          edge.to,
+          toKey,
+          toMembers,
+          fromMembers,
+          edge,
+          ContentionKind.ReverseDependency,
+        );
       }
     }
 
@@ -429,8 +491,8 @@ export function buildRiskMap(context: RiskMapContext): RiskMapEntry[] {
       );
     }
     if (candidate.sharedContracts.size > 0) {
-      explanation.sharedContracts = [...candidate.sharedContracts].sort((a, b) =>
-        a.localeCompare(b),
+      explanation.sharedContracts = [...candidate.sharedContracts].sort(
+        (a, b) => a.localeCompare(b),
       );
     }
 

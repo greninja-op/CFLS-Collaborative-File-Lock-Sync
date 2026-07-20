@@ -50,7 +50,9 @@ function acq(overrides: Partial<LockAcquisition> = {}): LockAcquisition {
   };
 }
 
-function decl(overrides: Partial<DeclareIntentRequest> = {}): DeclareIntentRequest {
+function decl(
+  overrides: Partial<DeclareIntentRequest> = {},
+): DeclareIntentRequest {
   return {
     session,
     intentId: "int-1",
@@ -149,7 +151,12 @@ describe("cross-branch non-conflict (Req 12.4, 18, 21.3)", () => {
     const registry = new LockRegistry("case-sensitive");
     registry.acquire(acq({ holder: alice, branch: "main", eventRevision: 1 }));
     const outcome = registry.acquire(
-      acq({ lockId: "lock-2", holder: bob, branch: "feature/x", eventRevision: 2 }),
+      acq({
+        lockId: "lock-2",
+        holder: bob,
+        branch: "feature/x",
+        eventRevision: 2,
+      }),
     );
 
     expect(outcome.contended).toBe(false);
@@ -195,7 +202,12 @@ describe("cross-branch non-conflict (Req 12.4, 18, 21.3)", () => {
     const registry = new LockRegistry("case-sensitive");
     // Bob holds a lock on the SAME path but under a DIFFERENT branch.
     registry.acquire(
-      acq({ holder: bob, branch: "feature/x", scope: "src/api.ts", eventRevision: 1 }),
+      acq({
+        holder: bob,
+        branch: "feature/x",
+        scope: "src/api.ts",
+        eventRevision: 1,
+      }),
     );
 
     // Alice queries the Risk_Map on `main`.
@@ -222,7 +234,12 @@ describe("cross-branch non-conflict (Req 12.4, 18, 21.3)", () => {
   it("treats same-path same-branch other-member lock activity as a direct conflict (Req 21.1 contrast)", () => {
     const registry = new LockRegistry("case-sensitive");
     registry.acquire(
-      acq({ holder: bob, branch: "main", scope: "src/api.ts", eventRevision: 1 }),
+      acq({
+        holder: bob,
+        branch: "main",
+        scope: "src/api.ts",
+        eventRevision: 1,
+      }),
     );
 
     const entries = buildRiskMap({
@@ -290,7 +307,9 @@ describe("coordination-required override reason (Req 13.3, 13.4)", () => {
 describe("lock rename/move/delete tracking (Req 30.2, 30.5, 30.7)", () => {
   it("transfers a member's lock to the new path on rename, retaining the holder and stamping a new revision (Req 30.2)", () => {
     const registry = new LockRegistry("case-sensitive");
-    registry.acquire(acq({ holder: alice, scope: "src/old.ts", eventRevision: 1 }));
+    registry.acquire(
+      acq({ holder: alice, scope: "src/old.ts", eventRevision: 1 }),
+    );
 
     const moved = registry.transferPath({
       session,
@@ -317,8 +336,22 @@ describe("lock rename/move/delete tracking (Req 30.2, 30.5, 30.7)", () => {
 
   it("leaves other members' claims intact on the source path after a transfer (Req 30.2)", () => {
     const registry = new LockRegistry("case-sensitive");
-    registry.acquire(acq({ holder: alice, lockId: "lock-a", scope: "src/old.ts", eventRevision: 1 }));
-    registry.acquire(acq({ holder: bob, lockId: "lock-b", scope: "src/old.ts", eventRevision: 2 }));
+    registry.acquire(
+      acq({
+        holder: alice,
+        lockId: "lock-a",
+        scope: "src/old.ts",
+        eventRevision: 1,
+      }),
+    );
+    registry.acquire(
+      acq({
+        holder: bob,
+        lockId: "lock-b",
+        scope: "src/old.ts",
+        eventRevision: 2,
+      }),
+    );
 
     registry.transferPath({
       session,
@@ -353,10 +386,30 @@ describe("lock rename/move/delete tracking (Req 30.2, 30.5, 30.7)", () => {
 
   it("releases the deleting member's lock on deletion, leaving others intact (Req 30.5)", () => {
     const registry = new LockRegistry("case-sensitive");
-    registry.acquire(acq({ holder: alice, lockId: "lock-a", scope: "src/gone.ts", eventRevision: 1 }));
-    registry.acquire(acq({ holder: bob, lockId: "lock-b", scope: "src/gone.ts", eventRevision: 2 }));
+    registry.acquire(
+      acq({
+        holder: alice,
+        lockId: "lock-a",
+        scope: "src/gone.ts",
+        eventRevision: 1,
+      }),
+    );
+    registry.acquire(
+      acq({
+        holder: bob,
+        lockId: "lock-b",
+        scope: "src/gone.ts",
+        eventRevision: 2,
+      }),
+    );
 
-    const removed = registry.releaseOnDelete(session, "src/gone.ts", "file", "main", alice);
+    const removed = registry.releaseOnDelete(
+      session,
+      "src/gone.ts",
+      "file",
+      "main",
+      alice,
+    );
     expect(removed?.holder).toEqual(alice);
     // Bob's claim survives and is promoted.
     expect(
@@ -366,8 +419,16 @@ describe("lock rename/move/delete tracking (Req 30.2, 30.5, 30.7)", () => {
 
   it("returns undefined for a deletion of a path the member does not lock (Req 30.7)", () => {
     const registry = new LockRegistry("case-sensitive");
-    registry.acquire(acq({ holder: bob, scope: "src/gone.ts", eventRevision: 1 }));
-    const removed = registry.releaseOnDelete(session, "src/gone.ts", "file", "main", alice);
+    registry.acquire(
+      acq({ holder: bob, scope: "src/gone.ts", eventRevision: 1 }),
+    );
+    const removed = registry.releaseOnDelete(
+      session,
+      "src/gone.ts",
+      "file",
+      "main",
+      alice,
+    );
     expect(removed).toBeUndefined();
     // Bob's lock is untouched.
     expect(
@@ -420,9 +481,15 @@ describe("intent rename/move/delete tracking (Req 30.3, 30.5, 30.7)", () => {
   it("returns no updated intents when a renamed path is not referenced (Req 30.7)", () => {
     const registry = new IntentRegistry("case-sensitive");
     registry.declare(decl({ modifyPaths: ["src/other.ts"], eventRevision: 1 }));
-    const updated = registry.renamePath(session, "src/absent.ts", "src/moved.ts");
+    const updated = registry.renamePath(
+      session,
+      "src/absent.ts",
+      "src/moved.ts",
+    );
     expect(updated).toHaveLength(0);
-    expect(registry.getIntent(session, "int-1")?.modifyPaths).toEqual(["src/other.ts"]);
+    expect(registry.getIntent(session, "int-1")?.modifyPaths).toEqual([
+      "src/other.ts",
+    ]);
   });
 
   it("removes the deleting member's references but leaves other members' intents intact (Req 30.5)", () => {
@@ -446,9 +513,13 @@ describe("intent rename/move/delete tracking (Req 30.3, 30.5, 30.7)", () => {
 
     const updated = registry.deletePathForMember(session, "src/gone.ts", alice);
     expect(updated.map((i) => i.intentId)).toEqual(["int-a"]);
-    expect(registry.getIntent(session, "int-a")?.modifyPaths).toEqual(["src/keep.ts"]);
+    expect(registry.getIntent(session, "int-a")?.modifyPaths).toEqual([
+      "src/keep.ts",
+    ]);
     // Bob's intent still references the deleted path (not the deleting member).
-    expect(registry.getIntent(session, "int-b")?.modifyPaths).toEqual(["src/gone.ts"]);
+    expect(registry.getIntent(session, "int-b")?.modifyPaths).toEqual([
+      "src/gone.ts",
+    ]);
   });
 
   it("drops a deleted path from the tracked-file set (Req 30.7)", () => {
@@ -460,7 +531,9 @@ describe("intent rename/move/delete tracking (Req 30.3, 30.5, 30.7)", () => {
 
   it("returns no updated intents when the deleting member references no such path (Req 30.7)", () => {
     const registry = new IntentRegistry("case-sensitive");
-    registry.declare(decl({ owner: alice, modifyPaths: ["src/keep.ts"], eventRevision: 1 }));
+    registry.declare(
+      decl({ owner: alice, modifyPaths: ["src/keep.ts"], eventRevision: 1 }),
+    );
     const updated = registry.deletePathForMember(session, "src/gone.ts", alice);
     expect(updated).toHaveLength(0);
   });
@@ -473,14 +546,32 @@ describe("intent rename/move/delete tracking (Req 30.3, 30.5, 30.7)", () => {
 describe("presence edge cases (Req 11)", () => {
   it("excludes a stopped member from active presence", () => {
     const registry = new PresenceRegistry("case-sensitive");
-    registry.report({ session, member: bob, path: "src/api.ts", state: "editing", eventRevision: 1 });
-    registry.report({ session, member: bob, path: "src/api.ts", state: "stopped", eventRevision: 2 });
+    registry.report({
+      session,
+      member: bob,
+      path: "src/api.ts",
+      state: "editing",
+      eventRevision: 1,
+    });
+    registry.report({
+      session,
+      member: bob,
+      path: "src/api.ts",
+      state: "stopped",
+      eventRevision: 2,
+    });
     expect(registry.active(session)).toHaveLength(0);
   });
 
   it("ignores a stale (lower-revision) presence report (Req 11.3)", () => {
     const registry = new PresenceRegistry("case-sensitive");
-    registry.report({ session, member: bob, path: "src/api.ts", state: "editing", eventRevision: 5 });
+    registry.report({
+      session,
+      member: bob,
+      path: "src/api.ts",
+      state: "editing",
+      eventRevision: 5,
+    });
     const applied = registry.report({
       session,
       member: bob,

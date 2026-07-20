@@ -19,7 +19,10 @@ export interface GitCommandResult {
 }
 
 /** Runs a git subcommand (args after `git`) in a working directory. */
-export type GitRunner = (args: readonly string[], cwd: string) => GitCommandResult;
+export type GitRunner = (
+  args: readonly string[],
+  cwd: string,
+) => GitCommandResult;
 
 /** The three git facts the CLI cares about; each is `null` when unavailable. */
 export interface GitFacts {
@@ -97,7 +100,10 @@ export function userBranchName(branchPrefix: string, member: string): string {
 }
 
 /** `git rev-parse --abbrev-ref HEAD`, or `null` when unavailable. */
-export function currentBranch(cwd: string, runner: GitRunner = defaultGitRunner): string | null {
+export function currentBranch(
+  cwd: string,
+  runner: GitRunner = defaultGitRunner,
+): string | null {
   const res = runner(["rev-parse", "--abbrev-ref", "HEAD"], cwd);
   return res.ok && res.stdout !== "" ? res.stdout : null;
 }
@@ -229,7 +235,9 @@ export function parseForEachRef(
   remote: string,
   branchPrefix: string,
 ): Array<Pick<TrackingBranch, "ref" | "branch" | "member" | "commit">> {
-  const rows: Array<Pick<TrackingBranch, "ref" | "branch" | "member" | "commit">> = [];
+  const rows: Array<
+    Pick<TrackingBranch, "ref" | "branch" | "member" | "commit">
+  > = [];
   for (const line of stdout.split("\n")) {
     const trimmed = line.trim();
     if (trimmed === "") {
@@ -249,7 +257,12 @@ export function parseForEachRef(
     if (!branch.startsWith(branchPrefix)) {
       continue;
     }
-    rows.push({ ref, branch, member: branch.slice(branchPrefix.length), commit });
+    rows.push({
+      ref,
+      branch,
+      member: branch.slice(branchPrefix.length),
+      commit,
+    });
   }
   return rows;
 }
@@ -259,12 +272,18 @@ export function parseForEachRef(
  * Returns `{ left, right }` where, for `HEAD...<ref>`, `left` = commits on HEAD
  * only (HEAD behind the ref by `right`), `right` = commits on the ref only.
  */
-export function parseLeftRightCount(stdout: string): { left: number; right: number } {
+export function parseLeftRightCount(stdout: string): {
+  left: number;
+  right: number;
+} {
   const match = stdout.trim().match(/^(\d+)\s+(\d+)$/);
   if (match === null) {
     return { left: 0, right: 0 };
   }
-  return { left: Number.parseInt(match[1] as string, 10), right: Number.parseInt(match[2] as string, 10) };
+  return {
+    left: Number.parseInt(match[1] as string, 10),
+    right: Number.parseInt(match[2] as string, 10),
+  };
 }
 
 /**
@@ -323,7 +342,10 @@ export interface MergeResult {
  * conflict-avoidance). Idempotent and best-effort: a failure is reported as
  * `{ ok: false }` and never throws. Runs `git config rerere.enabled true`.
  */
-export function enableRerere(cwd: string, runner: GitRunner = defaultGitRunner): GitCommandResult {
+export function enableRerere(
+  cwd: string,
+  runner: GitRunner = defaultGitRunner,
+): GitCommandResult {
   return runner(["config", "rerere.enabled", "true"], cwd);
 }
 
@@ -356,7 +378,10 @@ export function filesChangedBetween(
   cwd: string,
   runner: GitRunner = defaultGitRunner,
 ): string[] {
-  const res = runner(["diff", "--name-only", "-z", `${fromRef}...${toRef}`], cwd);
+  const res = runner(
+    ["diff", "--name-only", "-z", `${fromRef}...${toRef}`],
+    cwd,
+  );
   if (!res.ok) {
     return [];
   }
@@ -384,7 +409,12 @@ export function mergeReportingConflicts(
   const merge = runner(["merge", "--no-edit", branch], cwd);
   if (merge.ok) {
     const alreadyUpToDate = /already up to date/i.test(merge.stdout);
-    return { ok: true, conflicted: false, alreadyUpToDate, conflictedFiles: [] };
+    return {
+      ok: true,
+      conflicted: false,
+      alreadyUpToDate,
+      conflictedFiles: [],
+    };
   }
   const conflictedFiles = listConflictedFiles(cwd, runner);
   runner(["merge", "--abort"], cwd);
@@ -407,7 +437,12 @@ export function mergeLeavingConflicts(
   const merge = runner(["merge", "--no-edit", branch], cwd);
   if (merge.ok) {
     const alreadyUpToDate = /already up to date/i.test(merge.stdout);
-    return { ok: true, conflicted: false, alreadyUpToDate, conflictedFiles: [] };
+    return {
+      ok: true,
+      conflicted: false,
+      alreadyUpToDate,
+      conflictedFiles: [],
+    };
   }
   // Leave the in-progress merge as-is for manual resolution.
   const conflictedFiles = listConflictedFiles(cwd, runner);

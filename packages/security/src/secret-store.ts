@@ -55,7 +55,8 @@ export interface SecretStore {
 }
 
 /** Which backend a store resolves to. */
-export type SecretStoreBackend = "os-credential-store" | "encrypted-file" | "unavailable";
+export type SecretStoreBackend =
+  "os-credential-store" | "encrypted-file" | "unavailable";
 
 /**
  * Typed error surfaced when neither the OS credential store nor the encrypted-file
@@ -67,7 +68,10 @@ export class SecureStorageUnavailableError extends Error {
   readonly code: Extract<ErrorCode, "SECURE_STORAGE_UNAVAILABLE"> =
     "SECURE_STORAGE_UNAVAILABLE";
 
-  constructor(message = "No secure secret store is available", options?: { cause?: unknown }) {
+  constructor(
+    message = "No secure secret store is available",
+    options?: { cause?: unknown },
+  ) {
     super(message, options);
     this.name = "SecureStorageUnavailableError";
     // Restore prototype chain for correct `instanceof` under transpilation.

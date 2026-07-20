@@ -6,7 +6,13 @@
  * files, and that excluded directories are never scanned.
  */
 
-import { mkdirSync, mkdtempSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -54,9 +60,14 @@ describe("watcher-driven reconciliation (Req 30.1)", () => {
     watcher.prime();
     renameSync(join(dir, "old.ts"), join(dir, "new.ts"));
     const events = watcher.scanOnce();
-    expect(events).toEqual([{ kind: "renamed", path: "new.ts", fromPath: "old.ts" }]);
+    expect(events).toEqual([
+      { kind: "renamed", path: "new.ts", fromPath: "old.ts" },
+    ]);
     expect(reconcileFileChange(events[0]!)).toEqual([
-      { type: "path.renamed", payload: { fromPath: "old.ts", toPath: "new.ts" } },
+      {
+        type: "path.renamed",
+        payload: { fromPath: "old.ts", toPath: "new.ts" },
+      },
     ]);
   });
 
@@ -79,7 +90,10 @@ describe("watcher-driven reconciliation (Req 30.1)", () => {
     watcher = new FolderWatcher({ folder: dir });
     watcher.prime();
     // Adding another file inside node_modules must not surface as a change.
-    writeFileSync(join(dir, "node_modules", "pkg", "extra.js"), "still ignored");
+    writeFileSync(
+      join(dir, "node_modules", "pkg", "extra.js"),
+      "still ignored",
+    );
     writeFileSync(join(dir, "tracked2.ts"), "yes");
     const events = watcher.scanOnce();
     expect(events).toEqual([{ kind: "created", path: "tracked2.ts" }]);

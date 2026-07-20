@@ -141,7 +141,12 @@ export function resolveSession(input: ResolveSessionInput): ResolvedSession {
 export function loadRulesConfig(repoRoot: string): LoadedRules {
   const raw = readFirstJson([join(repoRoot, ".coordination", "rules.json")]);
   if (raw === null) {
-    return { config: ALL_SOFT_CONFIG, errors: [], malformed: false, found: false };
+    return {
+      config: ALL_SOFT_CONFIG,
+      errors: [],
+      malformed: false,
+      found: false,
+    };
   }
   if (
     typeof raw === "object" &&
@@ -150,7 +155,9 @@ export function loadRulesConfig(repoRoot: string): LoadedRules {
   ) {
     return {
       config: ALL_SOFT_CONFIG,
-      errors: [{ location: "<file>", message: "Rules file is not valid JSON." }],
+      errors: [
+        { location: "<file>", message: "Rules file is not valid JSON." },
+      ],
       malformed: true,
       found: true,
     };

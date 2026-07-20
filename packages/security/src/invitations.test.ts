@@ -42,7 +42,11 @@ function actors() {
 function invite(
   admin: ReturnType<typeof generateDeviceKey>,
   device: ReturnType<typeof generateDeviceKey>,
-  overrides: { memberId?: string; issuedAt?: string; expiresAt?: string | null } = {},
+  overrides: {
+    memberId?: string;
+    issuedAt?: string;
+    expiresAt?: string | null;
+  } = {},
 ): SignedInvitation {
   const params: IssueInvitationParams = {
     session: SESSION,

@@ -61,28 +61,45 @@ describe("resolveExpiryConfig (Req 26.1, 26.3, 26.5)", () => {
   });
 
   it("accepts the interval bounds 5000–60000 ms", () => {
-    expect(resolveExpiryConfig({ heartbeatIntervalMs: 5_000, lockExpiryIntervalMs: 15_000 }))
-      .toMatchObject({ heartbeatIntervalMs: 5_000 });
-    expect(resolveExpiryConfig({ heartbeatIntervalMs: 60_000, lockExpiryIntervalMs: 180_000 }))
-      .toMatchObject({ heartbeatIntervalMs: 60_000 });
+    expect(
+      resolveExpiryConfig({
+        heartbeatIntervalMs: 5_000,
+        lockExpiryIntervalMs: 15_000,
+      }),
+    ).toMatchObject({ heartbeatIntervalMs: 5_000 });
+    expect(
+      resolveExpiryConfig({
+        heartbeatIntervalMs: 60_000,
+        lockExpiryIntervalMs: 180_000,
+      }),
+    ).toMatchObject({ heartbeatIntervalMs: 60_000 });
   });
 
   it("rejects a heartbeat interval below 5000 ms", () => {
-    expect(() => resolveExpiryConfig({ heartbeatIntervalMs: 4_999 })).toThrow(RangeError);
+    expect(() => resolveExpiryConfig({ heartbeatIntervalMs: 4_999 })).toThrow(
+      RangeError,
+    );
   });
 
   it("rejects a heartbeat interval above 60000 ms", () => {
-    expect(() => resolveExpiryConfig({ heartbeatIntervalMs: 60_001 })).toThrow(RangeError);
+    expect(() => resolveExpiryConfig({ heartbeatIntervalMs: 60_001 })).toThrow(
+      RangeError,
+    );
   });
 
   it("rejects a Lock_Expiry_Interval below 3× the heartbeat interval", () => {
     expect(() =>
-      resolveExpiryConfig({ heartbeatIntervalMs: 15_000, lockExpiryIntervalMs: 44_999 }),
+      resolveExpiryConfig({
+        heartbeatIntervalMs: 15_000,
+        lockExpiryIntervalMs: 44_999,
+      }),
     ).toThrow(RangeError);
   });
 
   it("rejects a non-positive soft-lock max age", () => {
-    expect(() => resolveExpiryConfig({ softLockMaxAgeMs: 0 })).toThrow(RangeError);
+    expect(() => resolveExpiryConfig({ softLockMaxAgeMs: 0 })).toThrow(
+      RangeError,
+    );
   });
 });
 
@@ -104,7 +121,9 @@ describe("ExpiryEngine.recordHeartbeat / lastSeen (Req 26.2)", () => {
 
   it("rejects a non-finite heartbeat time", () => {
     const { engine } = harness();
-    expect(() => engine.recordHeartbeat(session, alice.deviceId, Number.NaN)).toThrow(RangeError);
+    expect(() =>
+      engine.recordHeartbeat(session, alice.deviceId, Number.NaN),
+    ).toThrow(RangeError);
   });
 
   it("isolates heartbeat tables per session", () => {
@@ -119,11 +138,13 @@ describe("ExpiryEngine.staleDevices (Req 26.3)", () => {
     const { engine } = harness(); // lockExpiry = 45000
     engine.recordHeartbeat(session, alice.deviceId, 0);
     // now - lastSeen == interval → not yet stale
-    expect(engine.staleDevices(session, DEFAULT_LOCK_EXPIRY_INTERVAL_MS)).toEqual([]);
+    expect(
+      engine.staleDevices(session, DEFAULT_LOCK_EXPIRY_INTERVAL_MS),
+    ).toEqual([]);
     // now - lastSeen > interval → stale
-    expect(engine.staleDevices(session, DEFAULT_LOCK_EXPIRY_INTERVAL_MS + 1)).toEqual([
-      alice.deviceId,
-    ]);
+    expect(
+      engine.staleDevices(session, DEFAULT_LOCK_EXPIRY_INTERVAL_MS + 1),
+    ).toEqual([alice.deviceId]);
   });
 
   it("never reports a device with no recorded heartbeat", () => {
@@ -194,8 +215,12 @@ describe("ExpiryEngine.sweep — heartbeat expiry (Req 26.3, 26.4)", () => {
 
     expect(result.expiredDevices).toEqual([alice.deviceId]);
     // Alice's lock + intent removed; Bob's untouched.
-    expect(h.locks.allLocks(session).map((l) => l.lockId)).toEqual(["lock-bob"]);
-    expect(h.intents.allIntents(session).map((i) => i.intentId)).toEqual(["intent-bob"]);
+    expect(h.locks.allLocks(session).map((l) => l.lockId)).toEqual([
+      "lock-bob",
+    ]);
+    expect(h.intents.allIntents(session).map((i) => i.intentId)).toEqual([
+      "intent-bob",
+    ]);
   });
 
   it("emits a removed update per released entry with fresh Event_Revisions", () => {
@@ -291,7 +316,9 @@ describe("ExpiryEngine.expireStaleSoftLocks — soft-lock max age (Req 26.5)", (
       path: "src/old.ts",
       member: alice,
     });
-    expect(h.locks.allLocks(session).map((l) => l.lockId)).toEqual(["hard-old"]);
+    expect(h.locks.allLocks(session).map((l) => l.lockId)).toEqual([
+      "hard-old",
+    ]);
   });
 
   it("keeps a soft lock exactly at the max-age boundary", () => {

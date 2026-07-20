@@ -437,7 +437,11 @@ export function findMinimizationViolations(
 /** Result of the host-side data-minimization gate. */
 export type MinimizationCheckResult =
   | { readonly ok: true }
-  | { readonly ok: false; readonly error: ProtocolError; readonly violations: readonly MinimizationViolation[] };
+  | {
+      readonly ok: false;
+      readonly error: ProtocolError;
+      readonly violations: readonly MinimizationViolation[];
+    };
 
 /**
  * Host-side gate (Req 29.5): reject any inbound message carrying source

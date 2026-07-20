@@ -51,9 +51,16 @@ describe("buildCommitMessage", () => {
 describe("decideProducer", () => {
   it("skips cleanly when the working tree has no changes", () => {
     const { runner, calls } = scriptedRunner((key) =>
-      key === "status --porcelain=v1 -z" ? { ok: true, stdout: "" } : { ok: true, stdout: "" },
+      key === "status --porcelain=v1 -z"
+        ? { ok: true, stdout: "" }
+        : { ok: true, stdout: "" },
     );
-    const deps: SyncDeps = { cwd: "/repo", config: cfg(), member: "alice", runner };
+    const deps: SyncDeps = {
+      cwd: "/repo",
+      config: cfg(),
+      member: "alice",
+      runner,
+    };
     const result = decideProducer(deps);
     expect(result.action).toBe("skipped");
     expect(result.changedCount).toBe(0);
@@ -68,7 +75,12 @@ describe("decideProducer", () => {
       }
       return { ok: true, stdout: "" };
     });
-    const deps: SyncDeps = { cwd: "/repo", config: cfg(), member: "alice", runner };
+    const deps: SyncDeps = {
+      cwd: "/repo",
+      config: cfg(),
+      member: "alice",
+      runner,
+    };
     const result = decideProducer(deps);
     expect(result.action).toBe("pushed");
     expect(result.changedCount).toBe(2);
@@ -89,7 +101,12 @@ describe("decideProducer", () => {
       }
       return { ok: true, stdout: "" };
     });
-    const deps: SyncDeps = { cwd: "/repo", config: cfg(), member: "alice", runner };
+    const deps: SyncDeps = {
+      cwd: "/repo",
+      config: cfg(),
+      member: "alice",
+      runner,
+    };
     const result = decideProducer(deps);
     expect(result.action).toBe("push-failed");
     expect(result.notices.join(" ")).toMatch(/rejected/);
@@ -107,7 +124,12 @@ describe("decideProducer", () => {
       }
       return { ok: true, stdout: "" };
     });
-    const deps: SyncDeps = { cwd: "/repo", config: cfg(), member: "alice", runner };
+    const deps: SyncDeps = {
+      cwd: "/repo",
+      config: cfg(),
+      member: "alice",
+      runner,
+    };
     expect(decideProducer(deps).action).toBe("commit-failed");
   });
 });
@@ -134,14 +156,24 @@ describe("decideConsumer", () => {
   it("fetches and notifies for an advanced teammate branch (notify-only)", () => {
     const { runner, calls } = baseRunner({
       [listKey]: { ok: true, stdout: "origin/cfls/bob bbb222" },
-      "rev-list --left-right --count HEAD...origin/cfls/bob": { ok: true, stdout: "0\t2" },
+      "rev-list --left-right --count HEAD...origin/cfls/bob": {
+        ok: true,
+        stdout: "0\t2",
+      },
     });
-    const deps: SyncDeps = { cwd: "/repo", config: cfg(), member: "alice", runner };
+    const deps: SyncDeps = {
+      cwd: "/repo",
+      config: cfg(),
+      member: "alice",
+      runner,
+    };
     const result = decideConsumer(deps, new Map());
     expect(calls[0]).toMatch(/^fetch/);
     expect(result.advanced).toHaveLength(1);
     expect(result.advanced[0]).toMatchObject({ member: "bob", ahead: 2 });
-    expect(result.notices.some((n) => /bob published 2 commits/.test(n))).toBe(true);
+    expect(result.notices.some((n) => /bob published 2 commits/.test(n))).toBe(
+      true,
+    );
     // No merge attempted when autoMerge is off.
     expect(calls.some((c) => c.startsWith("merge"))).toBe(false);
     expect(result.tips.get("cfls/bob")).toBe("bbb222");
@@ -150,9 +182,17 @@ describe("decideConsumer", () => {
   it("excludes the current user's own publish branch", () => {
     const { runner } = baseRunner({
       [listKey]: { ok: true, stdout: "origin/cfls/alice aaa111" },
-      "rev-list --left-right --count HEAD...origin/cfls/alice": { ok: true, stdout: "0\t5" },
+      "rev-list --left-right --count HEAD...origin/cfls/alice": {
+        ok: true,
+        stdout: "0\t5",
+      },
     });
-    const deps: SyncDeps = { cwd: "/repo", config: cfg(), member: "alice", runner };
+    const deps: SyncDeps = {
+      cwd: "/repo",
+      config: cfg(),
+      member: "alice",
+      runner,
+    };
     const result = decideConsumer(deps, new Map());
     expect(result.advanced).toHaveLength(0);
   });
@@ -160,9 +200,17 @@ describe("decideConsumer", () => {
   it("skips a branch whose tip has not changed since last cycle", () => {
     const { runner } = baseRunner({
       [listKey]: { ok: true, stdout: "origin/cfls/bob bbb222" },
-      "rev-list --left-right --count HEAD...origin/cfls/bob": { ok: true, stdout: "0\t2" },
+      "rev-list --left-right --count HEAD...origin/cfls/bob": {
+        ok: true,
+        stdout: "0\t2",
+      },
     });
-    const deps: SyncDeps = { cwd: "/repo", config: cfg(), member: "alice", runner };
+    const deps: SyncDeps = {
+      cwd: "/repo",
+      config: cfg(),
+      member: "alice",
+      runner,
+    };
     const previous = new Map([["cfls/bob", "bbb222"]]);
     expect(decideConsumer(deps, previous).advanced).toHaveLength(0);
   });
@@ -170,35 +218,62 @@ describe("decideConsumer", () => {
   it("autoMerge: applies a conflict-free merge and reports merged", () => {
     const { runner, calls } = baseRunner({
       [listKey]: { ok: true, stdout: "origin/cfls/bob bbb222" },
-      "rev-list --left-right --count HEAD...origin/cfls/bob": { ok: true, stdout: "0\t2" },
+      "rev-list --left-right --count HEAD...origin/cfls/bob": {
+        ok: true,
+        stdout: "0\t2",
+      },
       "merge --no-edit origin/cfls/bob": { ok: true, stdout: "Fast-forward" },
     });
-    const deps: SyncDeps = { cwd: "/repo", config: cfg({ autoMerge: true }), member: "alice", runner };
+    const deps: SyncDeps = {
+      cwd: "/repo",
+      config: cfg({ autoMerge: true }),
+      member: "alice",
+      runner,
+    };
     const result = decideConsumer(deps, new Map());
     expect(result.advanced[0]).toMatchObject({ merged: true });
-    expect(result.notices.some((n) => /merged bob's changes cleanly/.test(n))).toBe(true);
+    expect(
+      result.notices.some((n) => /merged bob's changes cleanly/.test(n)),
+    ).toBe(true);
     expect(calls).not.toContain("merge --abort");
   });
 
   it("autoMerge: aborts on conflict and reports manual merge needed", () => {
     const { runner, calls } = baseRunner({
       [listKey]: { ok: true, stdout: "origin/cfls/bob bbb222" },
-      "rev-list --left-right --count HEAD...origin/cfls/bob": { ok: true, stdout: "0\t2" },
+      "rev-list --left-right --count HEAD...origin/cfls/bob": {
+        ok: true,
+        stdout: "0\t2",
+      },
       "merge --no-edit origin/cfls/bob": { ok: false, stdout: "CONFLICT" },
     });
-    const deps: SyncDeps = { cwd: "/repo", config: cfg({ autoMerge: true }), member: "alice", runner };
+    const deps: SyncDeps = {
+      cwd: "/repo",
+      config: cfg({ autoMerge: true }),
+      member: "alice",
+      runner,
+    };
     const result = decideConsumer(deps, new Map());
     expect(result.advanced[0]).toMatchObject({ conflicted: true });
-    expect(result.notices.some((n) => /manual merge needed for bob/.test(n))).toBe(true);
+    expect(
+      result.notices.some((n) => /manual merge needed for bob/.test(n)),
+    ).toBe(true);
     // The tree must be restored via abort.
     expect(calls).toContain("merge --abort");
   });
 
   it("reports a fetch failure and retries next cycle (no crash)", () => {
     const { runner } = scriptedRunner((key) =>
-      key.startsWith("fetch") ? { ok: false, stdout: "" } : { ok: false, stdout: "" },
+      key.startsWith("fetch")
+        ? { ok: false, stdout: "" }
+        : { ok: false, stdout: "" },
     );
-    const deps: SyncDeps = { cwd: "/repo", config: cfg(), member: "alice", runner };
+    const deps: SyncDeps = {
+      cwd: "/repo",
+      config: cfg(),
+      member: "alice",
+      runner,
+    };
     const result = decideConsumer(deps, new Map());
     expect(result.fetchFailed).toBe(true);
     expect(result.advanced).toHaveLength(0);
@@ -207,8 +282,14 @@ describe("decideConsumer", () => {
   it("pre-warns when an incoming branch touches a file a teammate is editing", () => {
     const { runner } = baseRunner({
       [listKey]: { ok: true, stdout: "origin/cfls/bob bbb222" },
-      "rev-list --left-right --count HEAD...origin/cfls/bob": { ok: true, stdout: "0\t2" },
-      "diff --name-only -z HEAD...origin/cfls/bob": { ok: true, stdout: "src/shared.ts\0" },
+      "rev-list --left-right --count HEAD...origin/cfls/bob": {
+        ok: true,
+        stdout: "0\t2",
+      },
+      "diff --name-only -z HEAD...origin/cfls/bob": {
+        ok: true,
+        stdout: "src/shared.ts\0",
+      },
     });
     const deps: SyncDeps = {
       cwd: "/repo",
@@ -219,14 +300,24 @@ describe("decideConsumer", () => {
     };
     const result = decideConsumer(deps, new Map());
     expect(result.advanced[0]?.lockCollisions).toEqual(["src/shared.ts"]);
-    expect(result.notices.some((n) => /heads-up/.test(n) && /src\/shared\.ts/.test(n))).toBe(true);
+    expect(
+      result.notices.some(
+        (n) => /heads-up/.test(n) && /src\/shared\.ts/.test(n),
+      ),
+    ).toBe(true);
   });
 
   it("defers an autoMerge (never merges) when it would touch a file in active use", () => {
     const { runner, calls } = baseRunner({
       [listKey]: { ok: true, stdout: "origin/cfls/bob bbb222" },
-      "rev-list --left-right --count HEAD...origin/cfls/bob": { ok: true, stdout: "0\t2" },
-      "diff --name-only -z HEAD...origin/cfls/bob": { ok: true, stdout: "src/shared.ts\0" },
+      "rev-list --left-right --count HEAD...origin/cfls/bob": {
+        ok: true,
+        stdout: "0\t2",
+      },
+      "diff --name-only -z HEAD...origin/cfls/bob": {
+        ok: true,
+        stdout: "src/shared.ts\0",
+      },
     });
     const deps: SyncDeps = {
       cwd: "/repo",
@@ -237,7 +328,9 @@ describe("decideConsumer", () => {
     };
     const result = decideConsumer(deps, new Map());
     expect(result.advanced[0]?.merged).toBeUndefined();
-    expect(result.notices.some((n) => /deferred auto-merge/.test(n))).toBe(true);
+    expect(result.notices.some((n) => /deferred auto-merge/.test(n))).toBe(
+      true,
+    );
     // No merge was attempted at all.
     expect(calls.some((c) => c.startsWith("merge"))).toBe(false);
   });
@@ -245,8 +338,14 @@ describe("decideConsumer", () => {
   it("still auto-merges when the incoming files do not collide with active edits", () => {
     const { runner, calls } = baseRunner({
       [listKey]: { ok: true, stdout: "origin/cfls/bob bbb222" },
-      "rev-list --left-right --count HEAD...origin/cfls/bob": { ok: true, stdout: "0\t2" },
-      "diff --name-only -z HEAD...origin/cfls/bob": { ok: true, stdout: "src/other.ts\0" },
+      "rev-list --left-right --count HEAD...origin/cfls/bob": {
+        ok: true,
+        stdout: "0\t2",
+      },
+      "diff --name-only -z HEAD...origin/cfls/bob": {
+        ok: true,
+        stdout: "src/other.ts\0",
+      },
       "merge --no-edit origin/cfls/bob": { ok: true, stdout: "Fast-forward" },
     });
     const deps: SyncDeps = {
@@ -294,11 +393,14 @@ describe("startGitSyncLoop", () => {
   });
 
   it("schedules producer + consumer timers when enabled and cancels them on stop", () => {
-    const handles = [{ unref: vi.fn() }, { unref: vi.fn() }] as unknown as Array<
-      ReturnType<typeof setInterval>
-    >;
+    const handles = [
+      { unref: vi.fn() },
+      { unref: vi.fn() },
+    ] as unknown as Array<ReturnType<typeof setInterval>>;
     let i = 0;
-    const setIntervalFn = vi.fn(() => handles[i++] as ReturnType<typeof setInterval>);
+    const setIntervalFn = vi.fn(
+      () => handles[i++] as ReturnType<typeof setInterval>,
+    );
     const clearIntervalFn = vi.fn();
     const { runner } = scriptedRunner(() => ({ ok: true, stdout: "" }));
 

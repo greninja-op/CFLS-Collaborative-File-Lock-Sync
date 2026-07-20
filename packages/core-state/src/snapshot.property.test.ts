@@ -70,7 +70,11 @@ const pathArb = fc.constantFrom(
   "docs/y.md",
 );
 const branchArb = fc.constantFrom("main", "dev");
-const modeArb = fc.constantFrom<RiskLevel>("soft", "coordination-required", "hard");
+const modeArb = fc.constantFrom<RiskLevel>(
+  "soft",
+  "coordination-required",
+  "hard",
+);
 // Restrict Intent_Scope to file/folder to keep generated authoritative state
 // valid without depending on glob-pattern validity (covered elsewhere).
 const scopeKindArb = fc.constantFrom<ScopeKind>("file", "folder");
@@ -122,8 +126,10 @@ function fresh(): SessionRegistries {
 function maxPersisted(snapshot: SessionStateSnapshot): number {
   let max = snapshot.highestRevision;
   for (const lock of snapshot.locks) max = Math.max(max, lock.eventRevision);
-  for (const entry of snapshot.presence) max = Math.max(max, entry.eventRevision);
-  for (const intent of snapshot.intents) max = Math.max(max, intent.eventRevision);
+  for (const entry of snapshot.presence)
+    max = Math.max(max, entry.eventRevision);
+  for (const intent of snapshot.intents)
+    max = Math.max(max, intent.eventRevision);
   return max;
 }
 

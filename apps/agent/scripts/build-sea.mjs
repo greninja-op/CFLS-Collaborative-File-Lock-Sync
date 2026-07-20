@@ -48,7 +48,10 @@ function buildSea() {
   mkdirSync(distDir, { recursive: true });
   buildBundle();
   // 1. Generate the SEA blob from sea-config.json.
-  run(process.execPath, ["--experimental-sea-config", join(appDir, "sea-config.json")]);
+  run(process.execPath, [
+    "--experimental-sea-config",
+    join(appDir, "sea-config.json"),
+  ]);
   if (!existsSync(blobPath)) {
     throw new Error("SEA blob was not produced.");
   }
@@ -84,6 +87,8 @@ function buildPkgFallback() {
 try {
   buildSea();
 } catch (err) {
-  console.warn(`\nNode SEA packaging failed (${String(err)}); trying pkg fallback…`);
+  console.warn(
+    `\nNode SEA packaging failed (${String(err)}); trying pkg fallback…`,
+  );
   buildPkgFallback();
 }

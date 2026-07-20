@@ -53,7 +53,11 @@ export function invitationFor(
 /** Start a fresh dev host with a self-signed cert on an ephemeral port. */
 export async function startDevHost(): Promise<RunningHost> {
   return startHost(
-    { hostUrl: "wss://127.0.0.1:0", tls: { devSelfSigned: true }, dbPath: ":memory:" },
+    {
+      hostUrl: "wss://127.0.0.1:0",
+      tls: { devSelfSigned: true },
+      dbPath: ":memory:",
+    },
     { expirySweepIntervalMs: 0 },
   );
 }

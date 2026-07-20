@@ -34,7 +34,9 @@ const BOB: MemberRef = { memberId: "bob", deviceId: "bob-laptop" };
 const CAROL: MemberRef = { memberId: "carol", deviceId: "carol-laptop" };
 
 /** A rules config that maps a glob to a mode over an all-soft default. */
-function rulesFor(entries: { glob: string; mode: string }[]): RepositoryRulesConfig {
+function rulesFor(
+  entries: { glob: string; mode: string }[],
+): RepositoryRulesConfig {
   const result = parseRulesConfig({
     version: 1,
     defaults: { mode: "soft" },
@@ -50,7 +52,9 @@ const ALL_SOFT = rulesFor([]);
 
 function lock(overrides: Partial<Lock> & Pick<Lock, "scope" | "holder">): Lock {
   return {
-    lockId: overrides.lockId ?? `lock-${overrides.scope}-${overrides.holder.memberId}`,
+    lockId:
+      overrides.lockId ??
+      `lock-${overrides.scope}-${overrides.holder.memberId}`,
     scope: overrides.scope,
     scopeKind: overrides.scopeKind ?? "file",
     mode: overrides.mode ?? "soft",
@@ -109,14 +113,19 @@ describe("buildRiskMap — own-activity exclusion (Req 31.5)", () => {
       baseContext({
         locks: [
           lock({ scope: "src/shared.ts", holder: ALICE }),
-          lock({ scope: "src/shared.ts", holder: BOB, eventRevision: 5, concurrent: true }),
+          lock({
+            scope: "src/shared.ts",
+            holder: BOB,
+            eventRevision: 5,
+            concurrent: true,
+          }),
         ],
       }),
     );
     expect(map).toHaveLength(1);
     expect(map[0]?.path).toBe("src/shared.ts");
     expect(map[0]?.contributors).toEqual([
-      { member: BOB, kind: ContentionKind.Lock },
+      { member: BOB, kind: ContentionKind.SoftLock },
     ]);
   });
 });
@@ -132,7 +141,9 @@ describe("buildRiskMap — direct conflict classification (Req 21, 24)", () => {
     expect(map[0]?.riskLevel).toBe("hard");
     expect(map[0]?.explanation.type).toBe("direct");
     expect(map[0]?.acknowledgementRequired).toBe(false);
-    expect(map[0]?.contributors).toEqual([{ member: BOB, kind: ContentionKind.Lock }]);
+    expect(map[0]?.contributors).toEqual([
+      { member: BOB, kind: ContentionKind.HardLock },
+    ]);
   });
 
   it("classifies a coordination-required path contended as coordination-required and sets acknowledgementRequired (Req 24.3, 13.5)", () => {
@@ -156,7 +167,9 @@ describe("buildRiskMap — direct conflict classification (Req 21, 24)", () => {
     );
     expect(map[0]?.riskLevel).toBe("coordination-required");
     expect(map[0]?.acknowledgementRequired).toBe(true);
-    expect(map[0]?.contributors).toEqual([{ member: BOB, kind: ContentionKind.Intent }]);
+    expect(map[0]?.contributors).toEqual([
+      { member: BOB, kind: ContentionKind.Intent },
+    ]);
   });
 
   it("never escalates to hard/coordination-required without a matching rule (Req 24.4, 24.6)", () => {
@@ -174,32 +187,57 @@ describe("buildRiskMap — direct conflict classification (Req 21, 24)", () => {
       baseContext({
         rules: rulesFor([{ glob: "src/**", mode: "hard" }]),
         branch: "main",
-        locks: [lock({ scope: "src/core.ts", holder: BOB, mode: "hard", branch: "feature-x" })],
+        locks: [
+          lock({
+            scope: "src/core.ts",
+            holder: BOB,
+            mode: "hard",
+            branch: "feature-x",
+          }),
+        ],
       }),
     );
     // Different branch → not contended → cannot escalate to hard.
     expect(map[0]?.riskLevel).toBe("soft");
-    expect(map[0]?.contributors[0]?.kind).toBe(`${ContentionKind.Lock} (branch: feature-x)`);
+    expect(map[0]?.contributors[0]?.kind).toBe(
+      `${ContentionKind.HardLock} (branch: feature-x)`,
+    );
   });
 
   it("classifies presence-only activity as soft (Req 24.4)", () => {
     const map = buildRiskMap(
       baseContext({
         rules: rulesFor([{ glob: "src/**", mode: "hard" }]),
-        presence: [{ member: BOB, path: "src/core.ts", state: "editing", eventRevision: 1 }],
+        presence: [
+          {
+            member: BOB,
+            path: "src/core.ts",
+            state: "editing",
+            eventRevision: 1,
+          },
+        ],
       }),
     );
     // Presence contends (soft), but with no rule escalation beyond a hard rule
     // it stays hard only if a hard rule applies AND contended → here contended
     // via presence, so it escalates to hard.
     expect(map[0]?.riskLevel).toBe("hard");
-    expect(map[0]?.contributors).toEqual([{ member: BOB, kind: ContentionKind.Presence }]);
+    expect(map[0]?.contributors).toEqual([
+      { member: BOB, kind: ContentionKind.Presence },
+    ]);
   });
 
   it("ignores stopped presence entries", () => {
     const map = buildRiskMap(
       baseContext({
-        presence: [{ member: BOB, path: "src/core.ts", state: "stopped", eventRevision: 1 }],
+        presence: [
+          {
+            member: BOB,
+            path: "src/core.ts",
+            state: "stopped",
+            eventRevision: 1,
+          },
+        ],
       }),
     );
     expect(map).toEqual([]);
@@ -207,7 +245,9 @@ describe("buildRiskMap — direct conflict classification (Req 21, 24)", () => {
 });
 
 describe("buildRiskMap — indirect & reverse-dependency risk (Req 22)", () => {
-  const graph = (edges: DependencyGraph["modules"][number]["edges"]): DependencyGraph => ({
+  const graph = (
+    edges: DependencyGraph["modules"][number]["edges"],
+  ): DependencyGraph => ({
     snapshot: { sessionId: SESSION, graphVersion: 1, analyzerVersion: "test" },
     packages: [],
     modules: [{ sourceFile: "src/a.ts", edges }],
@@ -221,7 +261,12 @@ describe("buildRiskMap — indirect & reverse-dependency risk (Req 22)", () => {
         // Only src/b.ts is being changed (by BOB). src/a.ts depends on it.
         locks: [lock({ scope: "src/b.ts", holder: BOB })],
         graph: graph([
-          { from: "src/a.ts", to: "src/b.ts", kind: "runtime_import", confidence: "high" },
+          {
+            from: "src/a.ts",
+            to: "src/b.ts",
+            kind: "runtime_import",
+            confidence: "high",
+          },
         ]),
       }),
     );
@@ -229,7 +274,9 @@ describe("buildRiskMap — indirect & reverse-dependency risk (Req 22)", () => {
     // a depends on b (changed by BOB) → indirect-only forward dependency risk.
     expect(a?.explanation.type).toBe("indirect");
     expect(a?.explanation.edges?.[0]?.confidence).toBe("high");
-    expect(a?.contributors).toEqual([{ member: BOB, kind: ContentionKind.Dependency }]);
+    expect(a?.contributors).toEqual([
+      { member: BOB, kind: ContentionKind.Dependency },
+    ]);
     expect(a?.riskLevel).toBe("soft");
   });
 
@@ -240,7 +287,12 @@ describe("buildRiskMap — indirect & reverse-dependency risk (Req 22)", () => {
         // Only src/a.ts is being changed (by BOB); src/b.ts is depended on by it.
         locks: [lock({ scope: "src/a.ts", holder: BOB })],
         graph: graph([
-          { from: "src/a.ts", to: "src/b.ts", kind: "runtime_import", confidence: "medium" },
+          {
+            from: "src/a.ts",
+            to: "src/b.ts",
+            kind: "runtime_import",
+            confidence: "medium",
+          },
         ]),
       }),
     );
@@ -259,7 +311,12 @@ describe("buildRiskMap — indirect & reverse-dependency risk (Req 22)", () => {
         rules: rulesFor([{ glob: "src/**", mode: "hard" }]),
         locks: [lock({ scope: "src/b.ts", holder: BOB })],
         graph: graph([
-          { from: "src/a.ts", to: "src/b.ts", kind: "dynamic_unknown", confidence: "low" },
+          {
+            from: "src/a.ts",
+            to: "src/b.ts",
+            kind: "dynamic_unknown",
+            confidence: "low",
+          },
         ]),
       }),
     );
@@ -279,7 +336,12 @@ describe("buildRiskMap — indirect & reverse-dependency risk (Req 22)", () => {
           lock({ scope: "src/b.ts", holder: BOB }),
         ],
         graph: graph([
-          { from: "src/a.ts", to: "src/b.ts", kind: "runtime_import", confidence: "high" },
+          {
+            from: "src/a.ts",
+            to: "src/b.ts",
+            kind: "runtime_import",
+            confidence: "high",
+          },
         ]),
       }),
     );
@@ -288,7 +350,9 @@ describe("buildRiskMap — indirect & reverse-dependency risk (Req 22)", () => {
     const b = map.find((e) => e.path === "src/b.ts");
     // src/b.ts is BOB's directly-contended path; ALICE's own change is excluded
     // so it contributes no reverse-dependency link back to b.
-    expect(b?.contributors).toEqual([{ member: BOB, kind: ContentionKind.Lock }]);
+    expect(b?.contributors).toEqual([
+      { member: BOB, kind: ContentionKind.SoftLock },
+    ]);
   });
 
   it("does not create indirect risk when both endpoints are the same member", () => {
@@ -300,7 +364,12 @@ describe("buildRiskMap — indirect & reverse-dependency risk (Req 22)", () => {
           lock({ scope: "src/b.ts", holder: BOB }),
         ],
         graph: graph([
-          { from: "src/a.ts", to: "src/b.ts", kind: "runtime_import", confidence: "high" },
+          {
+            from: "src/a.ts",
+            to: "src/b.ts",
+            kind: "runtime_import",
+            confidence: "high",
+          },
         ]),
       }),
     );
@@ -321,7 +390,11 @@ describe("buildRiskMap — shared-contract risk (Req 22.3)", () => {
           lock({ scope: "src/b.ts", holder: ALICE }),
         ],
         graph: {
-          snapshot: { sessionId: SESSION, graphVersion: 1, analyzerVersion: "test" },
+          snapshot: {
+            sessionId: SESSION,
+            graphVersion: 1,
+            analyzerVersion: "test",
+          },
           packages: [],
           modules: [],
           contracts: [
@@ -379,7 +452,11 @@ describe("buildRiskMap — determinism", () => {
     ];
     const forward = buildRiskMap(baseContext({ locks }));
     const reversed = buildRiskMap(baseContext({ locks: [...locks].reverse() }));
-    expect(forward.map((e) => e.path)).toEqual(["src/a.ts", "src/m.ts", "src/z.ts"]);
+    expect(forward.map((e) => e.path)).toEqual([
+      "src/a.ts",
+      "src/m.ts",
+      "src/z.ts",
+    ]);
     expect(forward).toEqual(reversed);
   });
 });

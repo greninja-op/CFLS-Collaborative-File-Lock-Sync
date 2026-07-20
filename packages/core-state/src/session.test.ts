@@ -28,7 +28,9 @@ describe("sessionKey", () => {
 
   it("differs when any field differs (isolation, Req 10.2)", () => {
     const key = sessionKey(base);
-    expect(sessionKey({ ...base, repoId: "github.com/acme/other" })).not.toBe(key);
+    expect(sessionKey({ ...base, repoId: "github.com/acme/other" })).not.toBe(
+      key,
+    );
     expect(sessionKey({ ...base, teamId: "team-2" })).not.toBe(key);
     expect(sessionKey({ ...base, branch: "dev" })).not.toBe(key);
     expect(sessionKey({ ...base, baseRevision: "def456" })).not.toBe(key);

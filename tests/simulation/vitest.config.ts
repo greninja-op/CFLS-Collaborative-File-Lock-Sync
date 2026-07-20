@@ -5,7 +5,8 @@ import { defineConfig, mergeConfig } from "vitest/config";
 import { sharedTestConfig } from "../../vitest.shared";
 
 /** Resolve a workspace package's TypeScript source entry from this config dir. */
-const src = (rel: string): string => fileURLToPath(new URL(rel, import.meta.url));
+const src = (rel: string): string =>
+  fileURLToPath(new URL(rel, import.meta.url));
 
 /**
  * Vitest config for the multi-agent simulation suite. The scenarios drive real

@@ -178,10 +178,7 @@ export class CoordinationEventLog {
    *   greater than the last appended revision for the session.
    */
   append(session: SessionId, update: CoordinationUpdate): void {
-    if (
-      !Number.isInteger(update.eventRevision) ||
-      update.eventRevision <= 0
-    ) {
+    if (!Number.isInteger(update.eventRevision) || update.eventRevision <= 0) {
       throw new RangeError(
         `eventRevision must be a positive integer, got ${update.eventRevision}.`,
       );
@@ -237,7 +234,9 @@ export class CoordinationEventLog {
     if (!Number.isInteger(fromRevision) || fromRevision < 0) {
       return false;
     }
-    return fromRevision >= (this.compactedThrough.get(sessionKey(session)) ?? 0);
+    return (
+      fromRevision >= (this.compactedThrough.get(sessionKey(session)) ?? 0)
+    );
   }
 
   /**

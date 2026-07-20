@@ -48,10 +48,7 @@ const SPKI_DER_PREFIX = Buffer.from("302a300506032b6570032100", "hex");
  * Fixed ASN.1/DER prefix for an Ed25519 PKCS#8 private key. Prepended to the raw
  * 32-byte seed to reconstruct a DER blob Node can import.
  */
-const PKCS8_DER_PREFIX = Buffer.from(
-  "302e020100300506032b657004220420",
-  "hex",
-);
+const PKCS8_DER_PREFIX = Buffer.from("302e020100300506032b657004220420", "hex");
 
 /** Raw Ed25519 key length in bytes (both public key and private seed). */
 const RAW_KEY_LENGTH = 32;

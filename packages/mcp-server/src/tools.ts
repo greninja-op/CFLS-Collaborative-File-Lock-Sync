@@ -117,7 +117,8 @@ export function registerTools(server: McpServer, port: AgentPort): McpServer {
   server.registerTool(
     "get_dependents",
     {
-      description: "Return the paths that depend on a given path (metadata only).",
+      description:
+        "Return the paths that depend on a given path (metadata only).",
       inputSchema: { path: z.string() },
     },
     (args) => respond(port, port.getDependents({ path: args.path })),

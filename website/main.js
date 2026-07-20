@@ -1,7 +1,9 @@
 (() => {
   "use strict";
 
-  const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const prefersReducedMotion = window.matchMedia(
+    "(prefers-reduced-motion: reduce)",
+  ).matches;
 
   function initReveals() {
     const items = Array.from(document.querySelectorAll("[data-reveal]"));
@@ -32,7 +34,11 @@
   function initMobileMenu() {
     const toggle = document.querySelector(".menu-toggle");
     const menu = document.querySelector("#mobile-menu");
-    if (!(toggle instanceof HTMLButtonElement) || !(menu instanceof HTMLElement)) return;
+    if (
+      !(toggle instanceof HTMLButtonElement) ||
+      !(menu instanceof HTMLElement)
+    )
+      return;
 
     const setMenuOpen = (open) => {
       toggle.setAttribute("aria-expanded", String(open));
@@ -51,7 +57,9 @@
 
   function initInstallTabs() {
     const tabs = Array.from(document.querySelectorAll("[data-install-tab]"));
-    const panels = Array.from(document.querySelectorAll("[data-install-panel]"));
+    const panels = Array.from(
+      document.querySelectorAll("[data-install-panel]"),
+    );
     if (tabs.length === 0 || panels.length === 0) return;
 
     const select = (key, focus = false) => {
@@ -72,9 +80,20 @@
     };
 
     tabs.forEach((tab, index) => {
-      tab.addEventListener("click", () => select(tab.getAttribute("data-install-tab")));
+      tab.addEventListener("click", () =>
+        select(tab.getAttribute("data-install-tab")),
+      );
       tab.addEventListener("keydown", (event) => {
-        if (!["ArrowDown", "ArrowUp", "ArrowRight", "ArrowLeft", "Home", "End"].includes(event.key))
+        if (
+          ![
+            "ArrowDown",
+            "ArrowUp",
+            "ArrowRight",
+            "ArrowLeft",
+            "Home",
+            "End",
+          ].includes(event.key)
+        )
           return;
         event.preventDefault();
 
@@ -137,7 +156,8 @@
         } else {
           button.textContent = "Copy failed";
           if (status)
-            status.textContent = "Could not copy the command. Select it and copy manually.";
+            status.textContent =
+              "Could not copy the command. Select it and copy manually.";
         }
 
         window.setTimeout(() => {
@@ -186,11 +206,16 @@
 
       if (bobStatus instanceof HTMLElement) {
         bobStatus.textContent =
-          step >= 4 ? "Safe next move" : step >= 3 ? "1 file in play" : "No files in play";
+          step >= 4
+            ? "Safe next move"
+            : step >= 3
+              ? "1 file in play"
+              : "No files in play";
       }
 
       steps.forEach((button) => {
-        const isCurrent = Number(button.getAttribute("data-demo-step")) === step;
+        const isCurrent =
+          Number(button.getAttribute("data-demo-step")) === step;
         button.classList.toggle("is-active", isCurrent);
         button.setAttribute("aria-selected", String(isCurrent));
       });
@@ -203,7 +228,8 @@
       });
 
       button.addEventListener("keydown", (event) => {
-        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+        if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key))
+          return;
         event.preventDefault();
         const current = Number(button.getAttribute("data-demo-step"));
         const next =

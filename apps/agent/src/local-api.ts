@@ -17,7 +17,11 @@
  */
 
 import { randomBytes, timingSafeEqual } from "node:crypto";
-import { createServer as createNetServer, type Server as NetServer, type Socket } from "node:net";
+import {
+  createServer as createNetServer,
+  type Server as NetServer,
+  type Socket,
+} from "node:net";
 
 import { WebSocketServer, type WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
@@ -125,7 +129,8 @@ export class LocalApiServer {
    */
   async start(): Promise<LocalApiAddress> {
     const enableWs = this.options.enableWebSocket ?? true;
-    const enablePipe = this.options.enableNamedPipe ?? process.platform === "win32";
+    const enablePipe =
+      this.options.enableNamedPipe ?? process.platform === "win32";
 
     if (enableWs) {
       this.address.wsUrl = await this.startWebSocket();
@@ -161,7 +166,9 @@ export class LocalApiServer {
   private startNamedPipe(): Promise<string> {
     const name = this.options.pipeName ?? `cfls-agent-${process.pid}`;
     const pipePath =
-      process.platform === "win32" ? `\\\\.\\pipe\\${name}` : `/tmp/${name}.sock`;
+      process.platform === "win32"
+        ? `\\\\.\\pipe\\${name}`
+        : `/tmp/${name}.sock`;
     return new Promise<string>((resolve, reject) => {
       const server = createNetServer((socket) => this.handlePipe(socket));
       server.on("error", (err) => reject(err));
@@ -177,11 +184,16 @@ export class LocalApiServer {
   private handleWebSocket(socket: WebSocket): void {
     const state: ClientState = { authenticated: false };
     socket.on("message", (data) => {
-      void this.onFrame(String(data), state, (obj) => {
-        if (socket.readyState === socket.OPEN) {
-          socket.send(JSON.stringify(obj));
-        }
-      }, () => socket.close());
+      void this.onFrame(
+        String(data),
+        state,
+        (obj) => {
+          if (socket.readyState === socket.OPEN) {
+            socket.send(JSON.stringify(obj));
+          }
+        },
+        () => socket.close(),
+      );
     });
   }
 
@@ -216,7 +228,13 @@ export class LocalApiServer {
     send: (obj: unknown) => void,
     close: () => void,
   ): Promise<void> {
-    let frame: { type?: string; id?: unknown; token?: unknown; method?: unknown; params?: unknown };
+    let frame: {
+      type?: string;
+      id?: unknown;
+      token?: unknown;
+      method?: unknown;
+      params?: unknown;
+    };
     try {
       frame = JSON.parse(raw);
     } catch {
@@ -226,7 +244,10 @@ export class LocalApiServer {
 
     // Authentication must precede every other frame (Req 2.5).
     if (frame.type === "auth") {
-      if (typeof frame.token === "string" && tokensMatch(frame.token, this.options.token)) {
+      if (
+        typeof frame.token === "string" &&
+        tokensMatch(frame.token, this.options.token)
+      ) {
         state.authenticated = true;
         send({ type: "auth_ok" });
       } else {
@@ -244,20 +265,30 @@ export class LocalApiServer {
     }
 
     if (frame.type === "request" && typeof frame.method === "string") {
-      const body = await this.options.handlers.request(frame.method, frame.params);
+      const body = await this.options.handlers.request(
+        frame.method,
+        frame.params,
+      );
       send({ type: "response", id: frame.id ?? null, body });
       return;
     }
 
     if (frame.type === "subscribe") {
-      const body = await this.options.handlers.subscribe(frame.params, (update) => {
-        send({ type: "update", payload: update });
-      });
+      const body = await this.options.handlers.subscribe(
+        frame.params,
+        (update) => {
+          send({ type: "update", payload: update });
+        },
+      );
       send({ type: "response", id: frame.id ?? null, body });
       return;
     }
 
-    send({ type: "error", id: frame.id ?? null, message: "Unknown frame type." });
+    send({
+      type: "error",
+      id: frame.id ?? null,
+      message: "Unknown frame type.",
+    });
   }
 
   /** Stop both transports and release their handles. */

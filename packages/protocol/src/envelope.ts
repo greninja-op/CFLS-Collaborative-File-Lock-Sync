@@ -36,8 +36,9 @@ export interface ReplayGuard {
  * A typed envelope whose `payload` is narrowed by its `type` via
  * {@link MessagePayloadMap}. Structurally assignable to {@link EventEnvelope}.
  */
-export interface TypedEventEnvelope<T extends MessageTypeName = MessageTypeName>
-  extends EventEnvelope {
+export interface TypedEventEnvelope<
+  T extends MessageTypeName = MessageTypeName,
+> extends EventEnvelope {
   type: T;
   payload: MessagePayloadMap[T];
 }
@@ -119,16 +120,8 @@ function sortValue(value: unknown): unknown {
  * passing this string's UTF-8 bytes to Ed25519.
  */
 export function canonicalEnvelopeString(envelope: EventEnvelope): string {
-  const {
-    type,
-    version,
-    eventId,
-    session,
-    deviceId,
-    replay,
-    sentAt,
-    payload,
-  } = envelope;
+  const { type, version, eventId, session, deviceId, replay, sentAt, payload } =
+    envelope;
   return canonicalize({
     type,
     version,

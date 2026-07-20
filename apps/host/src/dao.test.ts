@@ -152,7 +152,9 @@ describe("SqliteStore.eventsSince (Req 9.3)", () => {
   it("returns only events after the requested revision, ascending", () => {
     store = new SqliteStore(":memory:");
     for (let rev = 1; rev <= 5; rev++) {
-      store.appendEvent(makeEvent({ eventRevision: rev, eventId: `evt-${rev}` }));
+      store.appendEvent(
+        makeEvent({ eventRevision: rev, eventId: `evt-${rev}` }),
+      );
     }
     const since = store.eventsSince(sessionA, 2);
     expect(since.map((e) => e.eventRevision)).toEqual([3, 4, 5]);

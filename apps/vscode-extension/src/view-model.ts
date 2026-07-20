@@ -78,14 +78,21 @@ export interface CoordinationSnapshot {
   staleness: StalenessSnapshot;
 }
 
-/** Collect the member ids for contributors of a given kind, de-duplicated. */
+/**
+ * Collect the member ids for contributors of any of the given kinds,
+ * de-duplicated. The producer (`buildRiskMap`) emits an exact kind per
+ * contribution — `soft_lock` / `coordination_required_lock` / `hard_lock` for
+ * locks, `dependency` / `reverse-dependency` / `shared-contract` for indirect
+ * risk — so a bucket may accept more than one kind.
+ */
 function membersOfKind(
   contributors: { memberId: string; kind: string }[],
-  kind: string,
+  ...kinds: string[]
 ): string[] {
+  const accept = new Set(kinds);
   const seen = new Set<string>();
   for (const c of contributors) {
-    if (c.kind === kind) {
+    if (accept.has(c.kind)) {
       seen.add(c.memberId);
     }
   }
@@ -135,7 +142,12 @@ export function buildCoordinationViewModel(
       hardLockMembers: membersOfKind(entry.contributors, "hard_lock"),
       presenceMembers: membersOfKind(entry.contributors, "presence"),
       intentMembers: membersOfKind(entry.contributors, "intent"),
-      dependencyRiskMembers: membersOfKind(entry.contributors, "dependency"),
+      dependencyRiskMembers: membersOfKind(
+        entry.contributors,
+        "dependency",
+        "reverse-dependency",
+        "shared-contract",
+      ),
       indirectRisk: indirect,
       acknowledgementRequired: entry.acknowledgementRequired,
     };

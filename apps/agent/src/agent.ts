@@ -36,6 +36,7 @@ import { EncryptedCache } from "./cache";
 import { HostConnection, type HostConnectionOptions } from "./connection";
 import { dispatchLocalRequest } from "./dispatch";
 import { RealHostGateway } from "./gateway";
+import { buildFolderGraph } from "./graph";
 import { loadOrCreateDeviceKey } from "./keystore";
 import {
   LocalApiServer,
@@ -87,7 +88,10 @@ export interface CoordinationAgentConfig {
   enableNamedPipe?: boolean;
   /** Connection tuning forwarded to {@link HostConnection}. */
   connection?: Partial<
-    Pick<HostConnectionOptions, "heartbeatIntervalMs" | "backoff" | "autoReconnect">
+    Pick<
+      HostConnectionOptions,
+      "heartbeatIntervalMs" | "backoff" | "autoReconnect"
+    >
   >;
 }
 
@@ -124,6 +128,11 @@ export class CoordinationAgent extends EventEmitter {
 
   /** Scopes this agent currently holds, re-asserted on reconnect (Req 9.6). */
   private readonly heldScopes = new Set<string>();
+
+  /** The metadata-only Dependency_Graph built locally from the Authorized_Folder. */
+  private localGraph: DependencyGraph | undefined;
+  /** True when {@link localGraph} was built here (and should be uploaded), not injected. */
+  private localGraphBuilt = false;
 
   /** Repository-relative paths currently open/being edited in this agent's editors. */
   private readonly openScopes = new Set<string>();
@@ -168,7 +177,8 @@ export class CoordinationAgent extends EventEmitter {
   async start(): Promise<RunningAgent> {
     // 1. Device_Key from the credential store — fail closed (Req 5.1, 5.9).
     const store =
-      this.config.secretStore ?? createSecretStore({ appSecret: this.config.session.repoId });
+      this.config.secretStore ??
+      createSecretStore({ appSecret: this.config.session.repoId });
     this.deviceKey =
       this.config.deviceKey ?? (await loadOrCreateDeviceKey(store));
 
@@ -188,7 +198,9 @@ export class CoordinationAgent extends EventEmitter {
       session: this.config.session,
       deviceKey: this.deviceKey,
       invitation: this.config.invitation,
-      ...(this.config.insecureTls !== undefined ? { insecureTls: this.config.insecureTls } : {}),
+      ...(this.config.insecureTls !== undefined
+        ? { insecureTls: this.config.insecureTls }
+        : {}),
       ...(this.config.connection?.heartbeatIntervalMs !== undefined
         ? { heartbeatIntervalMs: this.config.connection.heartbeatIntervalMs }
         : {}),
@@ -201,6 +213,25 @@ export class CoordinationAgent extends EventEmitter {
     });
     this.gateway = new RealHostGateway(this.connection);
 
+    // Resolve the metadata-only Dependency_Graph for risk analysis: an
+    // explicitly provided graph wins; otherwise build one from the
+    // Authorized_Folder and remember to upload it once connected (Req 19.1–19.3).
+    this.localGraph = this.config.graph;
+    if (
+      this.localGraph === undefined &&
+      this.config.authorizedFolder !== undefined
+    ) {
+      try {
+        this.localGraph = buildFolderGraph(
+          this.config.session,
+          this.config.authorizedFolder,
+        );
+        this.localGraphBuilt = true;
+      } catch {
+        // Best-effort: risk still works from a host-shared graph if this fails.
+      }
+    }
+
     // 4. Shared port + embedded MCP server (Req 2.6, 31.1).
     this.port = new AgentCoordinationPort({
       session: this.config.session,
@@ -208,14 +239,23 @@ export class CoordinationAgent extends EventEmitter {
       gateway: this.gateway,
       rules: this.config.rules,
       view: this.view,
-      ...(this.config.graph !== undefined ? { graph: this.config.graph } : {}),
-      ...(this.config.authorized !== undefined ? { authorized: this.config.authorized } : {}),
-      ...(this.config.manualConfig !== undefined ? { manualConfig: this.config.manualConfig } : {}),
+      ...(this.localGraph !== undefined ? { graph: this.localGraph } : {}),
+      ...(this.config.authorized !== undefined
+        ? { authorized: this.config.authorized }
+        : {}),
+      ...(this.config.manualConfig !== undefined
+        ? { manualConfig: this.config.manualConfig }
+        : {}),
     });
     this.mcpServer = createMcpServer(this.port);
 
     // Track held locks for reconnect re-assert (Req 9.6).
     this.connection.on("update", (u: CoordinationUpdate) => this.trackHeld(u));
+    // Adopt the session's shared Dependency_Graph whenever the host shares one
+    // so every agent computes indirect risk against the same graph (Req 19, 20).
+    this.connection.on("graph", (graph: DependencyGraph) => {
+      this.port?.setGraph(graph);
+    });
     this.connection.on("state", (state: string) => {
       if (state === "offline") {
         this.view.markStale();
@@ -230,7 +270,9 @@ export class CoordinationAgent extends EventEmitter {
     // 5. Local_API (loopback only) (Req 2.4, 2.5, 2.9).
     this.localApi = new LocalApiServer({
       token: this.localAuthToken,
-      ...(this.config.localApiPort !== undefined ? { wsPort: this.config.localApiPort } : {}),
+      ...(this.config.localApiPort !== undefined
+        ? { wsPort: this.config.localApiPort }
+        : {}),
       ...(this.config.enableNamedPipe !== undefined
         ? { enableNamedPipe: this.config.enableNamedPipe }
         : {}),
@@ -243,7 +285,15 @@ export class CoordinationAgent extends EventEmitter {
             this.handleEditorEvent(params);
             return Promise.resolve({ ok: true });
           }
-          return dispatchLocalRequest(this.port!, method, params).then((env) => env);
+          // The editor's periodic liveness ping (Req 26.6): record it and ack.
+          // It keeps the editor→agent link warm; the agent runs its own host
+          // heartbeat separately.
+          if (method === "heartbeat") {
+            return Promise.resolve({ ok: true });
+          }
+          return dispatchLocalRequest(this.port!, method, params).then(
+            (env) => env,
+          );
         },
         subscribe: (params, push) =>
           Promise.resolve(
@@ -258,8 +308,12 @@ export class CoordinationAgent extends EventEmitter {
 
     // 6. Authorized_Folder watcher (Req 2.7, 2.8).
     if (this.config.authorizedFolder !== undefined) {
-      this.watcher = new FolderWatcher({ folder: this.config.authorizedFolder });
-      this.watcher.on("change", (event: FileChangeEvent) => this.onFileChange(event));
+      this.watcher = new FolderWatcher({
+        folder: this.config.authorizedFolder,
+      });
+      this.watcher.on("change", (event: FileChangeEvent) =>
+        this.onFileChange(event),
+      );
       this.watcher.start();
     }
 
@@ -267,6 +321,11 @@ export class CoordinationAgent extends EventEmitter {
     //    Offline_State serving the cached view (Req 6.4, 33.1).
     try {
       await this.connection.connect();
+      // Publish the locally-built graph so the host holds it and shares it with
+      // the rest of the session (Req 19.3). An injected graph is not re-uploaded.
+      if (this.localGraphBuilt && this.localGraph !== undefined) {
+        this.connection.send("dep.snapshot", { graph: this.localGraph });
+      }
     } catch {
       this.view.markStale();
     }
@@ -296,6 +355,11 @@ export class CoordinationAgent extends EventEmitter {
           scopeKind: "file",
           mode: "soft",
         });
+      }
+      // Re-publish the locally-built graph so the host reflects any changes made
+      // to the checkout while this agent was offline (Req 19.3, 19.4).
+      if (this.localGraphBuilt && this.localGraph !== undefined) {
+        this.connection.send("dep.snapshot", { graph: this.localGraph });
       }
       this.persistCache();
       this.emit("synced", response.kind);
@@ -331,7 +395,11 @@ export class CoordinationAgent extends EventEmitter {
     if (connection === undefined || !connection.isOnline()) {
       return;
     }
-    const e = (event ?? {}) as { kind?: string; path?: string; oldPath?: string };
+    const e = (event ?? {}) as {
+      kind?: string;
+      path?: string;
+      oldPath?: string;
+    };
     const path = typeof e.path === "string" ? e.path : undefined;
 
     switch (e.kind) {
@@ -347,7 +415,11 @@ export class CoordinationAgent extends EventEmitter {
         if (!this.openScopes.has(path)) {
           this.openScopes.add(path);
           connection.send("presence.report", { path, state: "editing" });
-          connection.send("lock.acquire", { scope: path, scopeKind: "file", mode: "soft" });
+          connection.send("lock.acquire", {
+            scope: path,
+            scopeKind: "file",
+            mode: "soft",
+          });
         }
         return;
       }
@@ -363,7 +435,10 @@ export class CoordinationAgent extends EventEmitter {
       }
       case "file_renamed": {
         if (typeof e.oldPath === "string" && path !== undefined) {
-          connection.send("path.renamed", { fromPath: e.oldPath, toPath: path });
+          connection.send("path.renamed", {
+            fromPath: e.oldPath,
+            toPath: path,
+          });
         }
         return;
       }
@@ -399,15 +474,15 @@ export class CoordinationAgent extends EventEmitter {
         continue;
       }
       // Path renames/deletes/creations are transmitted promptly (metadata only).
-      connection.send(
-        message.type,
-        message.payload as never,
-      );
+      connection.send(message.type, message.payload as never);
     }
   }
 
   private startFlushTimer(): void {
-    this.flushTimer = setInterval(() => this.flushOutbound(), this.coalescer.windowMs);
+    this.flushTimer = setInterval(
+      () => this.flushOutbound(),
+      this.coalescer.windowMs,
+    );
     this.flushTimer.unref?.();
   }
 
@@ -418,7 +493,10 @@ export class CoordinationAgent extends EventEmitter {
       return;
     }
     for (const event of this.coalescer.flush()) {
-      connection.send("presence.report", { path: event.payload.path, state: "editing" });
+      connection.send("presence.report", {
+        path: event.payload.path,
+        state: "editing",
+      });
     }
   }
 

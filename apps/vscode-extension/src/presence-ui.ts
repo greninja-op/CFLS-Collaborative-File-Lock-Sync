@@ -27,7 +27,12 @@ export interface PresenceFileBadge {
 }
 
 type SignalKind =
-  "hard-lock" | "coordination-required-lock" | "soft-lock" | "presence" | "intent" | "dependency";
+  | "hard-lock"
+  | "coordination-required-lock"
+  | "soft-lock"
+  | "presence"
+  | "intent"
+  | "dependency";
 
 interface CoordinationSignal {
   memberId: string;
@@ -38,20 +43,45 @@ const SECRET_LIKE_MEMBER =
   /(?:^|[\s:._=-])(api[-_ ]?key|authorization|password|private[-_ ]?key|secret|token)(?:$|[\s:._=-])/i;
 const TOKEN_VALUE =
   /^(?:sk|pk|rk|ghp)[_-][A-Za-z0-9_-]{12,}$|^github_pat_[A-Za-z0-9_]{12,}$|^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/;
+const MARKDOWN_PUNCTUATION = new Set([
+  "`",
+  "*",
+  "_",
+  "{",
+  "}",
+  "[",
+  "]",
+  "<",
+  ">",
+  "(",
+  ")",
+  "#",
+  "+",
+  "-",
+  ".",
+  "!",
+  "|",
+]);
 
 /**
  * Return the PathView for a repository-relative path. Normalizing here keeps
  * the UI resilient to equivalent `./src/file.ts` and `src\\file.ts` spellings.
  */
-function findPathView(vm: CoordinationViewModel, path: string): PathView | undefined {
+function findPathView(
+  vm: CoordinationViewModel,
+  path: string,
+): PathView | undefined {
   const normalized = normalizePath(path);
   return vm.paths.find((view) => normalizePath(view.path) === normalized);
 }
 
 /** Collapse unsafe control characters and cap a UI label to a readable length. */
 function plainText(value: string, fallback: string): string {
-  const compact = value
-    .replace(/[\u0000-\u001F\u007F]/g, " ")
+  const withoutControlCharacters = Array.from(value, (character) => {
+    const codePoint = character.codePointAt(0) ?? 0;
+    return codePoint <= 0x1f || codePoint === 0x7f ? " " : character;
+  }).join("");
+  const compact = withoutControlCharacters
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, 80);
@@ -64,19 +94,25 @@ function plainText(value: string, fallback: string): string {
  */
 function displayMember(memberId: string): string {
   const member = plainText(memberId, "a teammate");
-  return SECRET_LIKE_MEMBER.test(member) || TOKEN_VALUE.test(member) ? "a teammate" : member;
+  return SECRET_LIKE_MEMBER.test(member) || TOKEN_VALUE.test(member)
+    ? "a teammate"
+    : member;
 }
 
 /** Escape ordinary text before interpolation into a VS Code MarkdownString. */
 function markdownText(value: string): string {
-  return plainText(value, "a teammate")
-    .replace(/\\/g, "\\\\")
-    .replace(/([`*_{}\[\]<>()#+\-.!|])/g, "\\$1");
+  return Array.from(plainText(value, "a teammate"), (character) =>
+    character === "\\" || MARKDOWN_PUNCTUATION.has(character)
+      ? `\\${character}`
+      : character,
+  ).join("");
 }
 
 /** Render a path as safe, short inline Markdown code. */
 function markdownPath(path: string): string {
-  const safePath = plainText(path, "unknown path").replace(/`/g, "'").slice(0, 180);
+  const safePath = plainText(path, "unknown path")
+    .replace(/`/g, "'")
+    .slice(0, 180);
   return `\`${safePath}\``;
 }
 
@@ -86,7 +122,10 @@ function markdownPath(path: string): string {
  * coordination metadata: it means a teammate's active work affects this path
  * indirectly, even though it is not a direct file lock.
  */
-function signalsFor(view: PathView, selfMemberId: string): CoordinationSignal[] {
+function signalsFor(
+  view: PathView,
+  selfMemberId: string,
+): CoordinationSignal[] {
   const byKind: readonly [readonly string[], SignalKind][] = [
     [view.hardLockMembers, "hard-lock"],
     [view.coordinationRequiredMembers, "coordination-required-lock"],
@@ -223,7 +262,10 @@ export function decorateForPath(
  * Build a safe Markdown status-bar tooltip that names only other members and
  * the repository-relative paths they are coordinating around.
  */
-export function buildStatusTooltip(vm: CoordinationViewModel, selfMemberId: string): string {
+export function buildStatusTooltip(
+  vm: CoordinationViewModel,
+  selfMemberId: string,
+): string {
   const state = vm.offline
     ? "CFLS is offline — coordination data may be stale."
     : vm.stale

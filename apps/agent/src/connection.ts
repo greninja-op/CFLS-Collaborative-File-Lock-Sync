@@ -35,10 +35,7 @@ import {
 import type { ConnectionSnapshot } from "@cfls/mcp-server";
 import { WebSocket } from "ws";
 
-import {
-  ExponentialBackoff,
-  type BackoffOptions,
-} from "./backoff";
+import { ExponentialBackoff, type BackoffOptions } from "./backoff";
 
 /** The reconnect-safe sync response shape (mirrors core-state `SyncResponse`). */
 export type SyncResponse =
@@ -87,6 +84,7 @@ export type SendResult =
 /**
  * A single outbound WSS connection to the CoordinationHost. Emits:
  *   - `"update"` `(CoordinationUpdate)` — a broadcast coordination change.
+ *   - `"graph"`  `(DependencyGraph)`    — the session's shared Dependency_Graph.
  *   - `"state"`  `(ConnectionState)`    — connectivity transitions.
  *   - `"online"` `()`                   — a handshake just completed (drive sync).
  *   - `"error"`  `({code,message})`     — a host-side error message.
@@ -170,7 +168,10 @@ export class HostConnection extends EventEmitter {
     if (this.lastSyncAt === null) {
       return null;
     }
-    return Math.max(0, Math.floor((this.now() - Date.parse(this.lastSyncAt)) / 1000));
+    return Math.max(
+      0,
+      Math.floor((this.now() - Date.parse(this.lastSyncAt)) / 1000),
+    );
   }
 
   /**
@@ -301,6 +302,15 @@ export class HostConnection extends EventEmitter {
       this.emit("update", update);
       return;
     }
+    if (message?.type === "dep.snapshot") {
+      // The host shares the session's metadata-only Dependency_Graph (Req 19,
+      // 20); hand it to the agent so its risk queries use the shared graph.
+      const graph = message.payload?.graph;
+      if (graph !== undefined) {
+        this.emit("graph", graph);
+      }
+      return;
+    }
     if (message?.type === "error") {
       this.emit("error", message.payload);
       return;
@@ -355,7 +365,9 @@ export class HostConnection extends EventEmitter {
       if (this.state !== "online") {
         return;
       }
-      this.send("heartbeat.ping", { sentAt: new Date(this.now()).toISOString() });
+      this.send("heartbeat.ping", {
+        sentAt: new Date(this.now()).toISOString(),
+      });
     }, interval);
     this.heartbeatTimer.unref?.();
   }
@@ -404,7 +416,10 @@ export class HostConnection extends EventEmitter {
       eventId,
       session: this.options.session,
       deviceId: deriveDeviceId(this.options.deviceKey.publicKey),
-      replay: { counter: this.replayCounter, nonce: randomBytes(12).toString("base64") },
+      replay: {
+        counter: this.replayCounter,
+        nonce: randomBytes(12).toString("base64"),
+      },
       payload,
     });
     const signed = signEnvelope(envelope, this.options.deviceKey.privateKey);
@@ -417,7 +432,10 @@ export class HostConnection extends EventEmitter {
    * host's incremental events or a snapshot fallback (Req 9.3, 9.5); rejects
    * when offline or on timeout.
    */
-  async requestSync(fromRevision: number, timeoutMs = 8000): Promise<SyncResponse> {
+  async requestSync(
+    fromRevision: number,
+    timeoutMs = 8000,
+  ): Promise<SyncResponse> {
     if (this.state !== "online") {
       throw new Error("Cannot sync while offline.");
     }

@@ -128,22 +128,18 @@ describe("property: encrypted-file store round-trips arbitrary secrets", () => {
   // scrypt key derivation runs on every set/get, so this is intentionally given a
   // generous timeout; a single store/dir is reused (overwriting one secret) to
   // avoid per-iteration filesystem churn while still exercising 100+ inputs.
-  it(
-    "get after set returns the original value for any secret",
-    async () => {
-      const propDir = await mkdtemp(join(tmpdir(), "cfls-efs-prop-"));
-      try {
-        const store = createEncryptedFileStore({ fileStoreDir: propDir });
-        await assertProperty(
-          fc.asyncProperty(fc.string(), async (secret) => {
-            await store.set(DEVICE_PRIVATE_KEY_SECRET, secret);
-            return (await store.get(DEVICE_PRIVATE_KEY_SECRET)) === secret;
-          }),
-        );
-      } finally {
-        await rm(propDir, { recursive: true, force: true });
-      }
-    },
-    60_000,
-  );
+  it("get after set returns the original value for any secret", async () => {
+    const propDir = await mkdtemp(join(tmpdir(), "cfls-efs-prop-"));
+    try {
+      const store = createEncryptedFileStore({ fileStoreDir: propDir });
+      await assertProperty(
+        fc.asyncProperty(fc.string(), async (secret) => {
+          await store.set(DEVICE_PRIVATE_KEY_SECRET, secret);
+          return (await store.get(DEVICE_PRIVATE_KEY_SECRET)) === secret;
+        }),
+      );
+    } finally {
+      await rm(propDir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

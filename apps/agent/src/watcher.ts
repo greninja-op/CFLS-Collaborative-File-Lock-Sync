@@ -19,7 +19,13 @@
  */
 
 import { EventEmitter } from "node:events";
-import { existsSync, readdirSync, statSync, watch, type FSWatcher } from "node:fs";
+import {
+  existsSync,
+  readdirSync,
+  statSync,
+  watch,
+  type FSWatcher,
+} from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import { normalizePath } from "@cfls/core-state";
@@ -262,11 +268,7 @@ export class FolderWatcher extends EventEmitter {
 
 /** A host message to transmit, produced by reconciling a file change. */
 export interface ReconciledMessage {
-  type:
-    | "file.created"
-    | "path.renamed"
-    | "path.deleted"
-    | "presence.report";
+  type: "file.created" | "path.renamed" | "path.deleted" | "presence.report";
   payload: Record<string, unknown>;
 }
 
@@ -278,7 +280,9 @@ export interface ReconciledMessage {
  * report. The watcher only ever *confirms* persisted changes — live open/typing
  * comes from editor events (design §7.6).
  */
-export function reconcileFileChange(event: FileChangeEvent): ReconciledMessage[] {
+export function reconcileFileChange(
+  event: FileChangeEvent,
+): ReconciledMessage[] {
   switch (event.kind) {
     case "created":
       return [{ type: "file.created", payload: { path: event.path } }];
@@ -286,14 +290,20 @@ export function reconcileFileChange(event: FileChangeEvent): ReconciledMessage[]
       return [
         {
           type: "path.renamed",
-          payload: { fromPath: event.fromPath ?? event.path, toPath: event.path },
+          payload: {
+            fromPath: event.fromPath ?? event.path,
+            toPath: event.path,
+          },
         },
       ];
     case "deleted":
       return [{ type: "path.deleted", payload: { path: event.path } }];
     case "saved":
       return [
-        { type: "presence.report", payload: { path: event.path, state: "editing" } },
+        {
+          type: "presence.report",
+          payload: { path: event.path, state: "editing" },
+        },
       ];
   }
 }

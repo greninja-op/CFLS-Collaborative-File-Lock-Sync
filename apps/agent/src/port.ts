@@ -100,7 +100,8 @@ export class AgentCoordinationPort implements AgentPort {
   private readonly self: MemberRef;
   private readonly gateway: HostGateway;
   private readonly rules: RepositoryRulesConfig;
-  private readonly graph: DependencyGraph | undefined;
+  /** The shared metadata-only Dependency_Graph; updated as the host shares one. */
+  private graph: DependencyGraph | undefined;
   private authorized: boolean;
   private readonly manualConfig: boolean;
   private connectedMembers: string[];
@@ -204,7 +205,10 @@ export class AgentCoordinationPort implements AgentPort {
       ok: true,
       data: {
         paths,
-        plannedFileCreations: this.view.plannedCreations(this.session, this.self),
+        plannedFileCreations: this.view.plannedCreations(
+          this.session,
+          this.self,
+        ),
         highestRevision: this.view.highestApplied(this.session),
       },
     };
@@ -249,7 +253,10 @@ export class AgentCoordinationPort implements AgentPort {
     const path = normalizePath(req.path);
     return {
       ok: true,
-      data: { dependsOn: this.dependsOn(path), presentInGraph: this.presentInGraph(path) },
+      data: {
+        dependsOn: this.dependsOn(path),
+        presentInGraph: this.presentInGraph(path),
+      },
     };
   }
 
@@ -291,13 +298,16 @@ export class AgentCoordinationPort implements AgentPort {
           manualConfig: this.manualConfig,
         },
         authorized: this.authorized,
+        memberId: this.self.memberId,
       },
     };
   }
 
   // ---- Mutations ------------------------------------------------------------
 
-  async acquireLock(req: AcquireLockRequest): Promise<AgentResult<AcquireLockData>> {
+  async acquireLock(
+    req: AcquireLockRequest,
+  ): Promise<AgentResult<AcquireLockData>> {
     if (!this.sameSession(req.session)) {
       return this.sessionNotFound();
     }
@@ -307,7 +317,10 @@ export class AgentCoordinationPort implements AgentPort {
     if (req.scopeKind === "glob" && isMalformedGlob(req.scope)) {
       return {
         ok: false,
-        error: { code: "FORMAT_ERROR", message: `Malformed glob: '${req.scope}'.` },
+        error: {
+          code: "FORMAT_ERROR",
+          message: `Malformed glob: '${req.scope}'.`,
+        },
       };
     }
     const result = await this.gateway.transmit({
@@ -341,11 +354,17 @@ export class AgentCoordinationPort implements AgentPort {
     }
     return {
       ok: true,
-      data: { lockId: result.eventId, eventRevision: result.eventRevision, granted: true },
+      data: {
+        lockId: result.eventId,
+        eventRevision: result.eventRevision,
+        granted: true,
+      },
     };
   }
 
-  async releaseLock(req: ReleaseLockRequest): Promise<AgentResult<ReleaseLockData>> {
+  async releaseLock(
+    req: ReleaseLockRequest,
+  ): Promise<AgentResult<ReleaseLockData>> {
     const result = await this.gateway.transmit({
       type: "lock.release",
       payload: {
@@ -356,7 +375,10 @@ export class AgentCoordinationPort implements AgentPort {
     if (!result.ok) {
       return { ok: false, error: result.error };
     }
-    return { ok: true, data: { released: true, eventRevision: result.eventRevision } };
+    return {
+      ok: true,
+      data: { released: true, eventRevision: result.eventRevision },
+    };
   }
 
   async declareIntent(
@@ -381,7 +403,11 @@ export class AgentCoordinationPort implements AgentPort {
     }
     return {
       ok: true,
-      data: { intentId: result.eventId, eventRevision: result.eventRevision, reclassified: [] },
+      data: {
+        intentId: result.eventId,
+        eventRevision: result.eventRevision,
+        reclassified: [],
+      },
     };
   }
 
@@ -429,7 +455,10 @@ export class AgentCoordinationPort implements AgentPort {
     if (onUpdate !== undefined) {
       this.gateway.on("update", onUpdate);
     }
-    return { ok: true, data: { subscriptionId: `sub-${(this.subscriptionSeq += 1)}` } };
+    return {
+      ok: true,
+      data: { subscriptionId: `sub-${(this.subscriptionSeq += 1)}` },
+    };
   }
 
   // ---- Authorization / participant controls ---------------------------------
@@ -441,6 +470,20 @@ export class AgentCoordinationPort implements AgentPort {
   setParticipants(connected: string[], offline: string[]): void {
     this.connectedMembers = connected;
     this.offlineMembers = offline;
+  }
+
+  /**
+   * Replace the shared metadata-only Dependency_Graph used for dependency/risk
+   * queries (Req 19, 20). Called when the agent builds a local graph from the
+   * Authorized_Folder and when the host shares an updated graph for the session.
+   */
+  setGraph(graph: DependencyGraph): void {
+    this.graph = graph;
+  }
+
+  /** The current shared Dependency_Graph, or `undefined` when none is known. */
+  currentGraph(): DependencyGraph | undefined {
+    return this.graph;
   }
 
   // ---- Dependency-graph helpers --------------------------------------------
@@ -479,7 +522,8 @@ export class AgentCoordinationPort implements AgentPort {
     const toKey = normalizePathKey(to);
     return this.allEdges().filter(
       (edge) =>
-        normalizePathKey(edge.from) === fromKey && normalizePathKey(edge.to) === toKey,
+        normalizePathKey(edge.from) === fromKey &&
+        normalizePathKey(edge.to) === toKey,
     );
   }
 
@@ -493,7 +537,10 @@ export class AgentCoordinationPort implements AgentPort {
         return true;
       }
       for (const edge of module.edges) {
-        if (normalizePathKey(edge.from) === key || normalizePathKey(edge.to) === key) {
+        if (
+          normalizePathKey(edge.from) === key ||
+          normalizePathKey(edge.to) === key
+        ) {
           return true;
         }
       }

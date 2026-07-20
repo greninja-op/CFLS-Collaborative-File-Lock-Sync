@@ -46,7 +46,9 @@ describe("snapshot identity", () => {
 
   it("treats a null baseRevision distinctly and stably", () => {
     const noBase: SessionId = { ...SESSION, baseRevision: null };
-    expect(snapshotIdentityKey(noBase)).toBe(snapshotIdentityKey({ ...noBase }));
+    expect(snapshotIdentityKey(noBase)).toBe(
+      snapshotIdentityKey({ ...noBase }),
+    );
     expect(sameSnapshotIdentity(noBase, SESSION)).toBe(false);
   });
 });
@@ -54,7 +56,10 @@ describe("snapshot identity", () => {
 describe("computeDelta", () => {
   it("reports added and removed edges", () => {
     const before = graphFrom(
-      [file("src/a.ts", "export const a = 1;"), file("src/b.ts", "export const b = 2;")],
+      [
+        file("src/a.ts", "export const a = 1;"),
+        file("src/b.ts", "export const b = 2;"),
+      ],
       1,
     );
     const after = graphFrom(
@@ -67,27 +72,45 @@ describe("computeDelta", () => {
 
     const delta = computeDelta(before, after);
     expect(delta.changedEdges).toEqual([
-      { from: "src/a.ts", to: "src/b.ts", kind: "runtime_import", confidence: "high", op: "add" },
+      {
+        from: "src/a.ts",
+        to: "src/b.ts",
+        kind: "runtime_import",
+        confidence: "high",
+        op: "add",
+      },
     ]);
 
     // The reverse direction reports the same edge as a removal.
     const reverse = computeDelta(after, before);
     expect(reverse.changedEdges).toEqual([
-      { from: "src/a.ts", to: "src/b.ts", kind: "runtime_import", confidence: "high", op: "remove" },
+      {
+        from: "src/a.ts",
+        to: "src/b.ts",
+        kind: "runtime_import",
+        confidence: "high",
+        op: "remove",
+      },
     ]);
   });
 
   it("reports changed manifests and lockfile hash", () => {
     const before = graphFrom(
       [
-        file("package.json", JSON.stringify({ dependencies: { react: "^18" } })),
+        file(
+          "package.json",
+          JSON.stringify({ dependencies: { react: "^18" } }),
+        ),
         file("package-lock.json", "{}"),
       ],
       1,
     );
     const after = graphFrom(
       [
-        file("package.json", JSON.stringify({ dependencies: { react: "^19" } })),
+        file(
+          "package.json",
+          JSON.stringify({ dependencies: { react: "^19" } }),
+        ),
         file("package-lock.json", '{"changed":true}'),
       ],
       2,
@@ -101,7 +124,10 @@ describe("computeDelta", () => {
 
   it("reports added, changed, and removed contracts", () => {
     const before = graphFrom(
-      [file("src/a.ts", "export const a = 1;"), file("src/b.ts", "export const b = 2;")],
+      [
+        file("src/a.ts", "export const a = 1;"),
+        file("src/b.ts", "export const b = 2;"),
+      ],
       1,
     );
     const after = graphFrom(
@@ -113,7 +139,9 @@ describe("computeDelta", () => {
     );
 
     const delta = computeDelta(before, after);
-    const byId = Object.fromEntries(delta.changedContracts.map((c) => [c.id, c]));
+    const byId = Object.fromEntries(
+      delta.changedContracts.map((c) => [c.id, c]),
+    );
 
     expect(byId["src/c.ts"]?.fingerprint).not.toBe(""); // added
     expect(byId["src/a.ts"]?.fingerprint).not.toBe(""); // changed
@@ -121,7 +149,10 @@ describe("computeDelta", () => {
   });
 
   it("yields an empty delta for identical graphs", () => {
-    const files = [file("src/a.ts", "import './b';"), file("src/b.ts", "export const b = 1;")];
+    const files = [
+      file("src/a.ts", "import './b';"),
+      file("src/b.ts", "export const b = 1;"),
+    ];
     const g1 = graphFrom(files, 1);
     const g2 = graphFrom(files, 2);
     expect(isEmptyDelta(computeDelta(g1, g2))).toBe(true);
@@ -170,7 +201,10 @@ describe("decideUpload", () => {
   it("sends a delta when the host is behind and a previous graph exists", () => {
     const previous = graphFrom([file("src/a.ts", "export const a = 1;")], 1);
     const next = graphFrom(
-      [file("src/a.ts", "import './b';\nexport const a = 1;"), file("src/b.ts", "export const b = 2;")],
+      [
+        file("src/a.ts", "import './b';\nexport const a = 1;"),
+        file("src/b.ts", "export const b = 2;"),
+      ],
       2,
     );
     const decision = decideUpload({

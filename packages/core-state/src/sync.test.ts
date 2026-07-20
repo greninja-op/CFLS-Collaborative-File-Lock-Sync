@@ -99,7 +99,10 @@ describe("CoordinationEventLog.append + syncFrom (Req 9.3)", () => {
   it("serves the incremental suffix strictly greater than fromRevision", () => {
     const log = new CoordinationEventLog();
     for (let rev = 1; rev <= 5; rev += 1) {
-      log.append(session, update({ eventRevision: rev, path: `src/${rev}.ts` }));
+      log.append(
+        session,
+        update({ eventRevision: rev, path: `src/${rev}.ts` }),
+      );
     }
 
     const response = log.syncFrom(session, 3, emptySnapshot());
@@ -136,9 +139,7 @@ describe("CoordinationEventLog.append + syncFrom (Req 9.3)", () => {
     log.append(session, update({ eventRevision: 5 }));
     expect(() => log.append(session, update({ eventRevision: 5 }))).toThrow();
     expect(() => log.append(session, update({ eventRevision: 4 }))).toThrow();
-    expect(() =>
-      log.append(session, update({ eventRevision: 0 })),
-    ).toThrow();
+    expect(() => log.append(session, update({ eventRevision: 0 }))).toThrow();
   });
 
   it("does not alias appended updates (deep copy)", () => {
@@ -162,7 +163,10 @@ describe("CoordinationEventLog snapshot fallback (Req 9.5)", () => {
     log.compact(session, 3); // discard revisions 1..3
 
     expect(log.canServeIncrementally(session, 2)).toBe(false);
-    const snapshot: SessionStateSnapshot = { ...emptySnapshot(), highestRevision: 5 };
+    const snapshot: SessionStateSnapshot = {
+      ...emptySnapshot(),
+      highestRevision: 5,
+    };
     const response = log.syncFrom(session, 2, snapshot);
     expect(response.kind).toBe("snapshot");
     if (response.kind !== "snapshot") return;

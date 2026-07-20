@@ -39,7 +39,11 @@ export {
 } from "./local-api";
 
 // ---- Local_API request dispatch (task 9.2, 9.3) ----
-export { dispatchLocalRequest, LOCAL_API_METHODS, type LocalApiMethod } from "./dispatch";
+export {
+  dispatchLocalRequest,
+  LOCAL_API_METHODS,
+  type LocalApiMethod,
+} from "./dispatch";
 
 // ---- Shared cached view + real AgentPort + host gateway (task 9.3) ----
 export { AgentView, type PlannedCreation } from "./view";

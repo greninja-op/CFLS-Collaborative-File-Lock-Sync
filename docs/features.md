@@ -17,12 +17,12 @@ and what is indirectly at risk. The actual file contents still travel through
 There are four moving parts. You don't interact with all of them directly, but
 it helps to know what each does:
 
-| Part | What it is | Who runs it |
-|------|------------|-------------|
-| **Coordination Host** | The central server that everyone connects to. Keeps the single source of truth about who's editing what. | One person (or a small VPS) per team |
-| **Agent** | A small program on each teammate's laptop. Talks to the host, watches your folder, exposes a local API. | Every teammate |
-| **VS Code / Kiro extension** | Shows the coordination status inside your editor (status bar + commands). | Every teammate |
-| **MCP server** | Lets an AI coding agent read the same coordination data over the Model Context Protocol. | Automatic, inside the agent |
+| Part                         | What it is                                                                                               | Who runs it                          |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------ |
+| **Coordination Host**        | The central server that everyone connects to. Keeps the single source of truth about who's editing what. | One person (or a small VPS) per team |
+| **Agent**                    | A small program on each teammate's laptop. Talks to the host, watches your folder, exposes a local API.  | Every teammate                       |
+| **VS Code / Kiro extension** | Shows the coordination status inside your editor (status bar + commands).                                | Every teammate                       |
+| **MCP server**               | Lets an AI coding agent read the same coordination data over the Model Context Protocol.                 | Automatic, inside the agent          |
 
 Everything is secured: each device has its own key, teammates join by signed
 invitation, and all host traffic is over TLS (`wss://`).
@@ -35,6 +35,7 @@ These are the features that prevent collisions in the first place. They work as
 soon as your agent is running and your editor is open.
 
 ### 2.1 Live presence
+
 **What it is:** When you open or start editing a file, your teammates see it
 immediately — before you've even saved. The editor status bar shows how many
 files are "in play" and the "Show Coordination Status" command lists who is
@@ -47,7 +48,8 @@ file you can see someone else is already in.
 the agent running; presence is automatic.
 
 ### 2.2 Soft locks (the default)
-**What it is:** When you edit a file, CFLS places a *soft lock* on it. A soft
+
+**What it is:** When you edit a file, CFLS places a _soft lock_ on it. A soft
 lock is a **warning**, not a barrier — teammates are told "someone is here" but
 are not blocked.
 
@@ -57,6 +59,7 @@ are not blocked.
 released when you close the file.
 
 ### 2.3 Hard-stop locks (opt-in)
+
 **What it is:** For files you mark as hard-stop, a second person is **physically
 blocked** from starting to edit while someone else holds the lock.
 
@@ -68,7 +71,9 @@ conflicts on a specific file.
 (`.coordination/rules.json`). Everyday files stay soft by default.
 
 ### 2.4 Three risk levels
+
 **What it is:** Every file you're about to touch is classified as one of:
+
 - **soft** — someone may be nearby; proceed with awareness.
 - **coordination-required** — your change indirectly affects a file a teammate
   holds (via dependencies); talk first.
@@ -80,6 +85,7 @@ signal.
 **How to use it:** Automatic — surfaced in the extension and to AI agents via MCP.
 
 ### 2.5 Dependency awareness
+
 **What it is:** CFLS understands (from a metadata-only dependency graph) that
 editing file A can affect file B. If a teammate holds B and you touch A, you get
 a **coordination-required** warning even though you're not in the same file.
@@ -89,8 +95,9 @@ a **coordination-required** warning even though you're not in the same file.
 **How to use it:** Automatic when a dependency graph is available for the repo.
 
 ### 2.6 Planned file creations / intents
+
 **What it is:** An agent (or you) can declare "I'm about to create `src/foo.ts`"
-before the file exists. Teammates see the *plan*, so two people don't create the
+before the file exists. Teammates see the _plan_, so two people don't create the
 same new file.
 
 **What it's for:** Coordinating brand-new files, not just existing ones.
@@ -99,6 +106,7 @@ same new file.
 everyone in the coordination view.
 
 ### 2.7 Offline mode
+
 **What it is:** If your connection to the host drops, the agent keeps serving the
 last-known coordination state from an encrypted local cache, clearly marked as
 "stale," and re-syncs automatically when you reconnect. It never claims a
@@ -109,6 +117,7 @@ hard-lock is safe while offline.
 **How to use it:** Automatic.
 
 ### 2.8 Host dashboard
+
 **What it is:** Visit `https://<host>/dashboard` for a read-only live view of
 sessions, connected devices, locks, active editing, and planned file creations.
 It exposes coordination metadata only and can be disabled in the host
@@ -122,19 +131,21 @@ The `cfls` CLI sets up a team across multiple laptops. It only moves coordinatio
 metadata and public keys; **your repo files always come from git.**
 
 ### Admin (one person, once)
-| Command | What it does |
-|---------|--------------|
-| `cfls admin-init` | Creates and securely stores the team admin key. |
-| `cfls host` | Starts the Coordination Host for the repo. Add `--cert/--key` for production TLS. |
-| `cfls invite <name> <publicKey>` | Issues a signed invitation for a teammate's device. |
+
+| Command                          | What it does                                                                      |
+| -------------------------------- | --------------------------------------------------------------------------------- |
+| `cfls admin-init`                | Creates and securely stores the team admin key.                                   |
+| `cfls host`                      | Starts the Coordination Host for the repo. Add `--cert/--key` for production TLS. |
+| `cfls invite <name> <publicKey>` | Issues a signed invitation for a teammate's device.                               |
 
 ### Each teammate
-| Command | What it does |
-|---------|--------------|
-| `cfls id` | Shows this device's public key to send to the admin. |
-| `cfls join --host <wss-url> --name <you>` | Saves the host address + your name. |
-| `cfls connect <invitation>` | Stores the invitation the admin sent back. |
-| `cfls agent --insecure-tls` | Runs your local agent. The editor extension auto-discovers it. |
+
+| Command                                   | What it does                                                   |
+| ----------------------------------------- | -------------------------------------------------------------- |
+| `cfls id`                                 | Shows this device's public key to send to the admin.           |
+| `cfls join --host <wss-url> --name <you>` | Saves the host address + your name.                            |
+| `cfls connect <invitation>`               | Stores the invitation the admin sent back.                     |
+| `cfls agent --insecure-tls`               | Runs your local agent. The editor extension auto-discovers it. |
 
 Full step-by-step onboarding (including different-laptop setup) is in
 [`onboarding.md`](./onboarding.md).
@@ -143,11 +154,12 @@ Full step-by-step onboarding (including different-laptop setup) is in
 
 ## 4. Automatic git sync (optional, Model A)
 
-This is the layer that makes file *contents* move automatically, on top of the
+This is the layer that makes file _contents_ move automatically, on top of the
 coordination signal. It is **opt-in and OFF by default** — nothing changes unless
 your team turns it on.
 
 ### 4.1 How it works
+
 - **Producer:** while your agent runs, every ~20 seconds it commits your changes
   and pushes them to your own branch `cfls/<you>` (e.g. `cfls/alice`). It never
   switches your checked-out branch and never force-pushes.
@@ -157,6 +169,7 @@ your team turns it on.
 - **Non-agent users** just use plain git — nothing breaks for them.
 
 ### 4.2 Turning it on
+
 Edit the team-shared, committed file `.coordination/config.json`:
 
 ```json
@@ -173,18 +186,19 @@ Edit the team-shared, committed file `.coordination/config.json`:
 ```
 
 - `enabled` — master switch (leave `false` to keep everything off).
-- `autoMerge: false` — safest: you're *notified* and merge when ready.
+- `autoMerge: false` — safest: you're _notified_ and merge when ready.
 - `autoMerge: true` — conflict-free changes merge automatically; anything that
   would conflict is left for you.
 
 ### 4.3 The sync commands
-| Command | What it does |
-|---------|--------------|
-| `cfls clone <repo-url> [--host <wss>] [--name <you>]` | Clones the repo (with *your* GitHub access) and scaffolds the coordination config in one step. |
-| `cfls sync status` | Shows your branch, your publish branch, working-tree state, and each teammate's ahead/behind. |
-| `cfls sync push` | Commits your coordinated changes and publishes them to `cfls/<you>` right now. |
-| `cfls sync merge <member>` | Safely merges a teammate's branch. Aborts cleanly on conflict (your tree is untouched) and lists the conflicting files. |
-| `cfls sync merge <member> --resolve` | Merges and, on conflict, **opens the conflicted files in your editor's merge UI** so you can resolve them by hand. |
+
+| Command                                               | What it does                                                                                                            |
+| ----------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `cfls clone <repo-url> [--host <wss>] [--name <you>]` | Clones the repo (with _your_ GitHub access) and scaffolds the coordination config in one step.                          |
+| `cfls sync status`                                    | Shows your branch, your publish branch, working-tree state, and each teammate's ahead/behind.                           |
+| `cfls sync push`                                      | Commits your coordinated changes and publishes them to `cfls/<you>` right now.                                          |
+| `cfls sync merge <member>`                            | Safely merges a teammate's branch. Aborts cleanly on conflict (your tree is untouched) and lists the conflicting files. |
+| `cfls sync merge <member> --resolve`                  | Merges and, on conflict, **opens the conflicted files in your editor's merge UI** so you can resolve them by hand.      |
 
 > **Honest limitation:** git is what moves the bytes. CFLS automates the push and
 > pull; it does not replace your GitHub access, and genuine conflicts still need a
@@ -194,10 +208,11 @@ Edit the team-shared, committed file `.coordination/config.json`:
 
 ## 5. Conflict avoidance & resolution
 
-Conflicts are best *prevented* (sections 2.1–2.5). When they can still happen,
+Conflicts are best _prevented_ (sections 2.1–2.5). When they can still happen,
 these three features make them safe and easy to handle.
 
 ### 5.1 Live-edit pre-warning (coordination-aware merges)
+
 **What it is:** Before the auto-sync consumer merges a teammate's branch, it
 checks the files that merge would touch against the files people are editing
 **right now** (from the live coordination view). If they overlap, it warns:
@@ -215,8 +230,9 @@ someone is actively typing into.
 running. No configuration.
 
 ### 5.2 Reuse recorded resolution (git rerere)
+
 **What it is:** When auto-sync is enabled, CFLS turns on git's `rerere` feature.
-The first time you resolve a particular conflict by hand, git *remembers* how you
+The first time you resolve a particular conflict by hand, git _remembers_ how you
 resolved it and replays the same resolution automatically the next time the same
 conflict appears.
 
@@ -227,6 +243,7 @@ busywork.
 yourself anywhere with `git config rerere.enabled true`.)
 
 ### 5.3 In-editor conflict resolution (`--resolve`)
+
 **What it is:** `cfls sync merge <member> --resolve` performs the merge, and if
 there are conflicts it **leaves the conflict markers in place** and opens the
 conflicted files in VS Code / Kiro. Your editor then shows its 3-way "Accept
@@ -236,6 +253,7 @@ Incoming / Current / Both" merge editor.
 git internals — click through it in the editor, then commit.
 
 **How to use it:**
+
 1. Run `cfls sync merge alice --resolve`.
 2. The conflicted files open in your editor. Use the merge editor to pick the
    right content for each conflict.
@@ -243,6 +261,7 @@ git internals — click through it in the editor, then commit.
 4. Changed your mind? `git merge --abort` throws the whole merge away.
 
 ### 5.4 Good habits (recommended)
+
 - Put **hard-stop locks** on your few hottest shared files (2.3).
 - **Sync small and often** — the 20-second interval keeps diffs tiny, and tiny
   diffs rarely conflict.
@@ -254,6 +273,7 @@ git internals — click through it in the editor, then commit.
 ## 6. Trying it out
 
 ### On one laptop (no teammates needed)
+
 - `pnpm demo` — a narrated, headless run: one host + three simulated agents
   (alice/bob/carol) showing coordination as it happens.
 - `pnpm playground` — an interactive run: starts a host and three agents on fixed
@@ -263,6 +283,7 @@ git internals — click through it in the editor, then commit.
 See [`onboarding.md`](./onboarding.md) for the exact click-by-click steps.
 
 ### Across multiple laptops
+
 Follow the onboarding flow in section 3 (admin runs `cfls admin-init` + `cfls
 host` + `cfls invite`; each teammate runs `cfls clone`/`cfls id`/`cfls
 connect`/`cfls agent`). For a shared host reachable by everyone, deploy it on a
@@ -278,7 +299,7 @@ small VPS as described in [`deployment.md`](./deployment.md).
   for local testing only; production uses a real cert.
 - **Metadata only** — the host never sees your source code, only coordination
   facts (paths, who, when). File contents move through git.
-- **No credential handling** — `cfls clone`/push/pull use *your own* GitHub
+- **No credential handling** — `cfls clone`/push/pull use _your own_ GitHub
   access (SSH key / credential helper). CFLS stores no GitHub tokens.
 - **Loopback-only local API** — the agent's local API is bound to `127.0.0.1`
   and protected by a per-session token; the editor auto-discovers it.

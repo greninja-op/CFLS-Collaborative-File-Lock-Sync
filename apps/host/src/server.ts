@@ -21,6 +21,7 @@ import { createServer, type Server as HttpsServer } from "node:https";
 import {
   AuthMessageType,
   BroadcastMessageType,
+  DependencyMessageType,
   ErrorMessageType,
   HeartbeatMessageType,
   SyncMessageType,
@@ -33,7 +34,11 @@ import {
 import { sessionKey } from "@cfls/core-state";
 import { WebSocketServer, type WebSocket } from "ws";
 
-import { CoordinationAuthority, type AuthPrincipal, type AuthorityOptions } from "./authority";
+import {
+  CoordinationAuthority,
+  type AuthPrincipal,
+  type AuthorityOptions,
+} from "./authority";
 import type { HostConfig } from "./config";
 import { buildDashboardState, renderDashboardHtml } from "./dashboard";
 import { resolveTls } from "./tls";
@@ -143,7 +148,10 @@ export class CoordinationServer {
         this.startedAt = Date.now();
         this.startSweep();
         const address = https.address();
-        const port = typeof address === "object" && address !== null ? address.port : this.config.port;
+        const port =
+          typeof address === "object" && address !== null
+            ? address.port
+            : this.config.port;
         resolve({ port });
       });
     });
@@ -314,14 +322,21 @@ export class CoordinationServer {
       }
       conn.pendingHello = hello;
       conn.pendingNonce = challenge.nonce;
-      this.send(conn, { type: AuthMessageType.CHALLENGE, payload: { nonce: challenge.nonce } });
+      this.send(conn, {
+        type: AuthMessageType.CHALLENGE,
+        payload: { nonce: challenge.nonce },
+      });
       return;
     }
 
     if (message.type === AuthMessageType.RESPONSE) {
       const response = message.payload as AuthResponsePayload;
       if (conn.pendingHello === undefined || conn.pendingNonce === undefined) {
-        this.sendAuthError(conn, "AUTH_INVALID_DEVICE", "No challenge in progress.");
+        this.sendAuthError(
+          conn,
+          "AUTH_INVALID_DEVICE",
+          "No challenge in progress.",
+        );
         return;
       }
       const result = this.authority.finalizeHandshake(
@@ -341,10 +356,18 @@ export class CoordinationServer {
         type: AuthMessageType.OK,
         payload: { highestRevision: result.highestRevision },
       });
+      // Hand the freshly-connected agent the current metadata-only
+      // Dependency_Graph so it can compute indirect risk immediately, sharing
+      // one graph across the whole session (Req 19, 20).
+      this.sendDependencyGraph(conn, result.principal.session);
       return;
     }
 
-    this.sendAuthError(conn, "FORMAT_ERROR", `Unexpected auth message "${message.type}".`);
+    this.sendAuthError(
+      conn,
+      "FORMAT_ERROR",
+      `Unexpected auth message "${message.type}".`,
+    );
   }
 
   private handleAuthenticatedMessage(
@@ -357,7 +380,11 @@ export class CoordinationServer {
       this.sendError(conn, "FORMAT_ERROR", "Expected a Signed_Event.");
       return;
     }
-    const envelope = message.envelope as { type?: unknown; session?: SessionId; payload?: unknown };
+    const envelope = message.envelope as {
+      type?: unknown;
+      session?: SessionId;
+      payload?: unknown;
+    };
     const type = envelope.type;
 
     // Heartbeat and sync are serviced on the authenticated connection (Req 9, 26).
@@ -372,11 +399,20 @@ export class CoordinationServer {
 
     if (type === SyncMessageType.REQUEST) {
       const payload = envelope.payload as SyncRequestPayload;
-      const response = this.authority.syncFrom(principal.session, payload.fromRevision);
+      const response = this.authority.syncFrom(
+        principal.session,
+        payload.fromRevision,
+      );
       if (response.kind === "events") {
-        this.send(conn, { type: SyncMessageType.EVENTS, payload: { events: response.events } });
+        this.send(conn, {
+          type: SyncMessageType.EVENTS,
+          payload: { events: response.events },
+        });
       } else {
-        this.send(conn, { type: SyncMessageType.SNAPSHOT, payload: { state: response.snapshot } });
+        this.send(conn, {
+          type: SyncMessageType.SNAPSHOT,
+          payload: { state: response.snapshot },
+        });
       }
       return;
     }
@@ -393,6 +429,48 @@ export class CoordinationServer {
     }
     for (const update of outcome.broadcasts) {
       this.broadcast(principal.session, update);
+    }
+    // A dependency-graph upload updates the shared graph: fan the merged graph
+    // out to every OTHER connection in the session (Req 19.4, 20.1).
+    if (
+      type === DependencyMessageType.SNAPSHOT ||
+      type === DependencyMessageType.DELTA
+    ) {
+      this.broadcastDependencyGraph(principal.session, conn);
+    }
+  }
+
+  /** Send the session's current metadata-only Dependency_Graph to one connection. */
+  private sendDependencyGraph(conn: Connection, session: SessionId): void {
+    const graph = this.authority.dependencyGraph(session);
+    if (graph !== null) {
+      this.send(conn, {
+        type: DependencyMessageType.SNAPSHOT,
+        payload: { graph },
+      });
+    }
+  }
+
+  /** Fan the session's current Dependency_Graph out to all connections but `except`. */
+  private broadcastDependencyGraph(
+    session: SessionId,
+    except: Connection,
+  ): void {
+    const graph = this.authority.dependencyGraph(session);
+    if (graph === null) {
+      return;
+    }
+    const set = this.bySession.get(sessionKey(session));
+    if (set === undefined) {
+      return;
+    }
+    for (const conn of set) {
+      if (conn !== except) {
+        this.send(conn, {
+          type: DependencyMessageType.SNAPSHOT,
+          payload: { graph },
+        });
+      }
     }
   }
 
@@ -424,7 +502,8 @@ export class CoordinationServer {
   // -------------------------------------------------------------------------
 
   private startSweep(): void {
-    const interval = this.options.expirySweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
+    const interval =
+      this.options.expirySweepIntervalMs ?? DEFAULT_SWEEP_INTERVAL_MS;
     if (interval <= 0) return;
     this.sweepTimer = setInterval(() => {
       for (const session of this.authority.sessions()) {
@@ -453,7 +532,9 @@ export class CoordinationServer {
   }
 
   private uptimeSeconds(): number {
-    return this.startedAt === 0 ? 0 : Math.floor((Date.now() - this.startedAt) / 1000);
+    return this.startedAt === 0
+      ? 0
+      : Math.floor((Date.now() - this.startedAt) / 1000);
   }
 
   private send(conn: Connection, message: unknown): void {
@@ -463,11 +544,17 @@ export class CoordinationServer {
   }
 
   private sendError(conn: Connection, code: string, message: string): void {
-    this.send(conn, { type: ErrorMessageType.ERROR, payload: { code, message } });
+    this.send(conn, {
+      type: ErrorMessageType.ERROR,
+      payload: { code, message },
+    });
   }
 
   private sendAuthError(conn: Connection, code: string, message: string): void {
-    this.send(conn, { type: AuthMessageType.ERROR, payload: { code, message } });
+    this.send(conn, {
+      type: AuthMessageType.ERROR,
+      payload: { code, message },
+    });
     conn.socket.close();
   }
 }

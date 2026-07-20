@@ -29,7 +29,10 @@ import type { SessionId } from "@cfls/protocol";
 import { sessionKey } from "./session";
 
 /** A `(session, maxPersistedRevision)` pair used to seed the counter on restore. */
-export type PersistedRevision = readonly [session: SessionId, maxPersistedRevision: number];
+export type PersistedRevision = readonly [
+  session: SessionId,
+  maxPersistedRevision: number,
+];
 
 /**
  * Per-session monotonic Event_Revision generator (Req 8.1, 1.6; §4.5).
@@ -87,10 +90,7 @@ export class RevisionCounter {
    * @throws if `maxPersistedRevision` is not a non-negative integer.
    */
   resume(session: SessionId, maxPersistedRevision: number): void {
-    if (
-      !Number.isInteger(maxPersistedRevision) ||
-      maxPersistedRevision < 0
-    ) {
+    if (!Number.isInteger(maxPersistedRevision) || maxPersistedRevision < 0) {
       throw new RangeError(
         `maxPersistedRevision must be a non-negative integer, got ${maxPersistedRevision}.`,
       );

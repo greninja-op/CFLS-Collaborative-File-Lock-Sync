@@ -37,13 +37,23 @@ const graph: DependencyGraph = {
     {
       sourceFile: "src/routes.ts",
       edges: [
-        { from: "src/routes.ts", to: "src/api.ts", kind: "runtime_import", confidence: "high" },
+        {
+          from: "src/routes.ts",
+          to: "src/api.ts",
+          kind: "runtime_import",
+          confidence: "high",
+        },
       ],
     },
     {
       sourceFile: "src/api.ts",
       edges: [
-        { from: "src/api.ts", to: "src/db.ts", kind: "runtime_import", confidence: "high" },
+        {
+          from: "src/api.ts",
+          to: "src/db.ts",
+          kind: "runtime_import",
+          confidence: "high",
+        },
       ],
     },
   ],
@@ -53,14 +63,18 @@ const graph: DependencyGraph = {
 interface Harness {
   client: Client;
   agent: CoreStateAgentPort;
-  call: <T>(name: string, args: Record<string, unknown>) => Promise<McpEnvelope<T>>;
+  call: <T>(
+    name: string,
+    args: Record<string, unknown>,
+  ) => Promise<McpEnvelope<T>>;
   close: () => Promise<void>;
 }
 
 async function connectHarness(online = true): Promise<Harness> {
   const agent = new CoreStateAgentPort({ session, self, online, graph });
   const server = createMcpServer(agent);
-  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  const [clientTransport, serverTransport] =
+    InMemoryTransport.createLinkedPair();
   await server.connect(serverTransport);
   const client = new Client({ name: "test-client", version: "0.0.0" });
   await client.connect(clientTransport);
@@ -128,10 +142,10 @@ describe("MCP tool round-trips over the SDK in-memory transport", () => {
   it("get_dependencies / get_dependents return metadata-only edges (Req 4.5)", async () => {
     harness = await connectHarness();
 
-    const deps = await harness.call<{ dependsOn: string[]; presentInGraph: boolean }>(
-      "get_dependencies",
-      { path: "src/api.ts" },
-    );
+    const deps = await harness.call<{
+      dependsOn: string[];
+      presentInGraph: boolean;
+    }>("get_dependencies", { path: "src/api.ts" });
     expect(deps.ok).toBe(true);
     expect(deps.data?.presentInGraph).toBe(true);
     expect(deps.data?.dependsOn).toEqual(["src/db.ts"]);
@@ -146,7 +160,11 @@ describe("MCP tool round-trips over the SDK in-memory transport", () => {
   it("get_dependency_impact returns an empty result for a path absent from the graph (Req 23.5)", async () => {
     harness = await connectHarness();
     const env = await harness.call<{
-      impacts: { path: string; presentInGraph: boolean; directDependencies: string[] }[];
+      impacts: {
+        path: string;
+        presentInGraph: boolean;
+        directDependencies: string[];
+      }[];
     }>("get_dependency_impact", { paths: ["src/unknown.ts"] });
     expect(env.ok).toBe(true);
     const impact = env.data?.impacts[0];
@@ -214,9 +232,12 @@ describe("MCP tool round-trips over the SDK in-memory transport", () => {
 
   it("queries still succeed while offline, serving stale data (Req 33.1)", async () => {
     harness = await connectHarness(false);
-    const env = await harness.call<{ dependsOn: string[] }>("get_dependencies", {
-      path: "src/api.ts",
-    });
+    const env = await harness.call<{ dependsOn: string[] }>(
+      "get_dependencies",
+      {
+        path: "src/api.ts",
+      },
+    );
     expect(env.ok).toBe(true);
     expect(env.data?.dependsOn).toEqual(["src/db.ts"]);
     expect(env.connection.status).toBe("offline");

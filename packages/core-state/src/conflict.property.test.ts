@@ -130,7 +130,9 @@ describe(
           expect(permResult.winner?.claimId).toBe(winner.claimId);
 
           const concurrentIds = (
-            result: ReturnType<typeof resolveByEarliestRevision<TimestampedClaim>>,
+            result: ReturnType<
+              typeof resolveByEarliestRevision<TimestampedClaim>
+            >,
           ) =>
             new Set(
               result.resolved

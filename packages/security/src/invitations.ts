@@ -83,8 +83,7 @@ export interface IssueInvitationParams {
 
 /** Outcome of validating a {@link SignedInvitation}. */
 export type InvitationValidation =
-  | { valid: true }
-  | { valid: false; code: ErrorCode; reason: string };
+  { valid: true } | { valid: false; code: ErrorCode; reason: string };
 
 /** Outcome of an admission or rotation attempt over a Membership_Registry view. */
 export type AdmissionResult =
@@ -140,7 +139,9 @@ export function issueInvitation(
  * own claims. Returns `false` for any tampered, malformed, or wrongly-keyed
  * invitation rather than throwing, so it can be used as a pure predicate.
  */
-export function verifyInvitationSignature(invitation: SignedInvitation): boolean {
+export function verifyInvitationSignature(
+  invitation: SignedInvitation,
+): boolean {
   try {
     const message = Buffer.from(
       canonicalInvitationString(invitation.claims),

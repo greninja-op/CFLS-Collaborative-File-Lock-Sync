@@ -102,8 +102,11 @@ export interface ExpirySweepResult {
  *   Lock_Expiry_Interval is below three times the Heartbeat interval, or the
  *   Soft_Lock max age is not a positive number.
  */
-export function resolveExpiryConfig(input: ExpiryConfigInput = {}): ExpiryConfig {
-  const heartbeatIntervalMs = input.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
+export function resolveExpiryConfig(
+  input: ExpiryConfigInput = {},
+): ExpiryConfig {
+  const heartbeatIntervalMs =
+    input.heartbeatIntervalMs ?? DEFAULT_HEARTBEAT_INTERVAL_MS;
   if (
     !Number.isFinite(heartbeatIntervalMs) ||
     heartbeatIntervalMs < MIN_HEARTBEAT_INTERVAL_MS ||
@@ -118,14 +121,18 @@ export function resolveExpiryConfig(input: ExpiryConfigInput = {}): ExpiryConfig
   const lockExpiryIntervalMs =
     input.lockExpiryIntervalMs ?? DEFAULT_LOCK_EXPIRY_INTERVAL_MS;
   const minExpiry = heartbeatIntervalMs * MIN_LOCK_EXPIRY_INTERVAL_MULTIPLE;
-  if (!Number.isFinite(lockExpiryIntervalMs) || lockExpiryIntervalMs < minExpiry) {
+  if (
+    !Number.isFinite(lockExpiryIntervalMs) ||
+    lockExpiryIntervalMs < minExpiry
+  ) {
     throw new RangeError(
       `lockExpiryIntervalMs must be at least ${MIN_LOCK_EXPIRY_INTERVAL_MULTIPLE}× the ` +
         `Heartbeat interval (${minExpiry} ms), got ${lockExpiryIntervalMs}.`,
     );
   }
 
-  const softLockMaxAgeMs = input.softLockMaxAgeMs ?? DEFAULT_SOFT_LOCK_MAX_AGE_MS;
+  const softLockMaxAgeMs =
+    input.softLockMaxAgeMs ?? DEFAULT_SOFT_LOCK_MAX_AGE_MS;
   if (!Number.isFinite(softLockMaxAgeMs) || softLockMaxAgeMs <= 0) {
     throw new RangeError(
       `softLockMaxAgeMs must be a positive number, got ${softLockMaxAgeMs}.`,
@@ -184,7 +191,9 @@ export class ExpiryEngine {
    */
   recordHeartbeat(session: SessionId, deviceId: string, atMs: number): void {
     if (!Number.isFinite(atMs)) {
-      throw new RangeError(`Heartbeat time must be a finite number, got ${atMs}.`);
+      throw new RangeError(
+        `Heartbeat time must be a finite number, got ${atMs}.`,
+      );
     }
     const table = this.tableFor(session);
     const existing = table.get(deviceId);
@@ -276,7 +285,10 @@ export class ExpiryEngine {
   expireStaleSoftLocks(session: SessionId, nowMs: number): ExpirySweepResult {
     const cutoffMs = nowMs - this.config.softLockMaxAgeMs;
     const removals: CoordinationUpdate[] = [];
-    for (const lock of this.locks.expireSoftLocksAcquiredBefore(session, cutoffMs)) {
+    for (const lock of this.locks.expireSoftLocksAcquiredBefore(
+      session,
+      cutoffMs,
+    )) {
       removals.push({
         entryType: "soft_lock",
         op: "removed",

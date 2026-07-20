@@ -216,7 +216,10 @@ describe("validateEnvelope — rejected envelopes", () => {
   });
 
   it("rejects an envelope missing a required top-level field", () => {
-    const env = validLockAcquireEnvelope() as unknown as Record<string, unknown>;
+    const env = validLockAcquireEnvelope() as unknown as Record<
+      string,
+      unknown
+    >;
     delete env.deviceId;
     const result = validateEnvelope(env);
     expect(result.ok).toBe(false);
@@ -241,7 +244,10 @@ describe("validateEnvelope — rejected envelopes", () => {
 
 describe("validateEnvelope — version validation", () => {
   it("rejects an unsupported message-format version with FORMAT_ERROR", () => {
-    const env = { ...validLockAcquireEnvelope(), version: MESSAGE_FORMAT_VERSION + 1 };
+    const env = {
+      ...validLockAcquireEnvelope(),
+      version: MESSAGE_FORMAT_VERSION + 1,
+    };
     const result = validateEnvelope(env);
     expect(result.ok).toBe(false);
     if (!result.ok) {
@@ -260,7 +266,10 @@ describe("validateEnvelope — version validation", () => {
   });
 
   it("accepts the supported version", () => {
-    const env = { ...validLockAcquireEnvelope(), version: MESSAGE_FORMAT_VERSION };
+    const env = {
+      ...validLockAcquireEnvelope(),
+      version: MESSAGE_FORMAT_VERSION,
+    };
     expect(validateEnvelope(env).ok).toBe(true);
   });
 });
@@ -312,7 +321,9 @@ describe("validateSignedEvent", () => {
   });
 
   it("rejects a missing signature with FORMAT_ERROR", () => {
-    const result = validateSignedEvent({ envelope: validLockAcquireEnvelope() });
+    const result = validateSignedEvent({
+      envelope: validLockAcquireEnvelope(),
+    });
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.error.code).toBe("FORMAT_ERROR");
@@ -389,7 +400,9 @@ describe("canonicalize — stability regardless of key order", () => {
       version: env.version,
       type: env.type,
     };
-    expect(canonicalEnvelopeString(env)).toBe(canonicalEnvelopeString(reordered));
+    expect(canonicalEnvelopeString(env)).toBe(
+      canonicalEnvelopeString(reordered),
+    );
     // A stray signature field must not affect the canonical string.
     const withSig = { ...env, signature: "should-be-ignored" };
     expect(canonicalEnvelopeString(withSig)).toBe(canonicalEnvelopeString(env));

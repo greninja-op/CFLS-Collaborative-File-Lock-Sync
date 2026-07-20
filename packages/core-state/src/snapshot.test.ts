@@ -142,9 +142,10 @@ describe("restoreSessionState round-trip (Req 1.5, 9.5)", () => {
     restoreSessionState(snapshot, target);
 
     expect(target.locks.allLocks(session)).toHaveLength(1);
-    expect(target.locks.winningLock(session, "src/api.ts", "file", "main")?.holder.memberId).toBe(
-      "u-alice",
-    );
+    expect(
+      target.locks.winningLock(session, "src/api.ts", "file", "main")?.holder
+        .memberId,
+    ).toBe("u-alice");
     expect(target.intents.allIntents(session)).toHaveLength(1);
     expect(target.presence.all(session)[0]?.state).toBe("editing");
   });
@@ -217,7 +218,13 @@ describe("restore recomputes winners independent of order (Req 8.2)", () => {
     const regs = fresh();
     // Provide the later-revision claim first to prove order-independence.
     restoreSessionState(
-      { session, locks: [loser, winner], presence: [], intents: [], highestRevision: 9 },
+      {
+        session,
+        locks: [loser, winner],
+        presence: [],
+        intents: [],
+        highestRevision: 9,
+      },
       regs,
     );
 
@@ -300,7 +307,13 @@ describe("revision-counter restore (Req 1.6)", () => {
     const regs = fresh();
     // highestRevision deliberately trails the presence revision.
     restoreSessionState(
-      { session, locks: [lock], presence: [presence], intents: [], highestRevision: 10 },
+      {
+        session,
+        locks: [lock],
+        presence: [presence],
+        intents: [],
+        highestRevision: 10,
+      },
       regs,
     );
 

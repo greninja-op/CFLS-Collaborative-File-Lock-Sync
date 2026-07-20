@@ -135,7 +135,13 @@ const OPAQUE_VALUES = [
 /** Scalar metadata leaves that are always clean. */
 const cleanScalarArb = fc.oneof(
   fc.constantFrom(...CLEAN_PATHS),
-  fc.constantFrom("lock.acquire", "presence.editing", "soft", "hard", "coordination-required"),
+  fc.constantFrom(
+    "lock.acquire",
+    "presence.editing",
+    "soft",
+    "hard",
+    "coordination-required",
+  ),
   fc.integer({ min: 0, max: 100_000 }),
   fc.boolean(),
 );
@@ -156,7 +162,9 @@ const nodeArb = fc.letrec((tie) => ({
     { weight: 4, arbitrary: mixedLeafArb },
     {
       weight: 2,
-      arbitrary: fc.array(tie("node") as fc.Arbitrary<unknown>, { maxLength: 4 }),
+      arbitrary: fc.array(tie("node") as fc.Arbitrary<unknown>, {
+        maxLength: 4,
+      }),
     },
     {
       weight: 3,
@@ -217,14 +225,20 @@ const messageArb: fc.Arbitrary<Record<string, unknown>> = fc.record(
 );
 
 /** Case-folded opaque field names, matching the filter's own comparison. */
-const OPAQUE_FIELD_KEYS = new Set(OPAQUE_FIELD_NAMES.map((n) => n.toLowerCase()));
+const OPAQUE_FIELD_KEYS = new Set(
+  OPAQUE_FIELD_NAMES.map((n) => n.toLowerCase()),
+);
 
 /**
  * Collect every string leaf reachable in a value, honoring the opaque-field
  * exemption (values nested under an opaque field name are cryptographic
  * material, not paths/secrets, and are intentionally preserved verbatim).
  */
-function collectNonOpaqueStrings(value: unknown, opaque: boolean, out: string[]): void {
+function collectNonOpaqueStrings(
+  value: unknown,
+  opaque: boolean,
+  out: string[],
+): void {
   if (typeof value === "string") {
     if (!opaque) out.push(value);
     return;

@@ -11,7 +11,9 @@ import {
 } from "./presence-ui";
 import type { CoordinationViewModel } from "./view-model";
 
-function viewModel(overrides: Partial<CoordinationViewModel> = {}): CoordinationViewModel {
+function viewModel(
+  overrides: Partial<CoordinationViewModel> = {},
+): CoordinationViewModel {
   return {
     paths: [
       {
@@ -115,7 +117,11 @@ describe("decorateForPath", () => {
   });
 
   it("preserves each risk level for the adapter's colour mapping", () => {
-    for (const riskLevel of ["soft", "coordination-required", "hard"] as const) {
+    for (const riskLevel of [
+      "soft",
+      "coordination-required",
+      "hard",
+    ] as const) {
       const vm = viewModel({
         paths: [
           {
@@ -127,7 +133,9 @@ describe("decorateForPath", () => {
         ],
       });
 
-      expect(decorateForPath(vm, "src/shared.ts", "self")?.riskLevel).toBe(riskLevel);
+      expect(decorateForPath(vm, "src/shared.ts", "self")?.riskLevel).toBe(
+        riskLevel,
+      );
     }
   });
 });

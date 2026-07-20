@@ -16,7 +16,11 @@
  * `revokeDevice`/`canAuthenticate`).
  */
 
-import { buildEnvelope, type EventEnvelope, type SignedEvent } from "@cfls/protocol";
+import {
+  buildEnvelope,
+  type EventEnvelope,
+  type SignedEvent,
+} from "@cfls/protocol";
 import { assertProperty, fc, propertyTag } from "@cfls/test-utils";
 import { describe, expect, it } from "vitest";
 
@@ -61,7 +65,11 @@ function ingest(
   return { state, mutated: false };
 }
 
-function envelopeFor(signer: DeviceKey, eventId: string, path: string): EventEnvelope {
+function envelopeFor(
+  signer: DeviceKey,
+  eventId: string,
+  path: string,
+): EventEnvelope {
   return buildEnvelope({
     type: "presence.report",
     eventId,
@@ -73,100 +81,106 @@ function envelopeFor(signer: DeviceKey, eventId: string, path: string): EventEnv
   });
 }
 
-describe(propertyTag(5, "Only authentically signed, admitted events mutate state"), () => {
-  it("mutates state iff the event is authentically signed by an admitted, non-revoked device", () => {
-    assertProperty(
-      fc.property(
-        fc.constantFrom<Corruption>(
-          "authentic",
-          "tampered",
-          "wrong-key",
-          "garbage-signature",
-        ),
-        fc.boolean(), // device admitted into the registry?
-        fc.boolean(), // device subsequently revoked?
-        fc.uuid(),
-        fc.string({ minLength: 1, maxLength: 64 }),
-        (corruption, admit, revoke, eventId, path) => {
-          const admin = generateDeviceKey();
-          const signer = generateDeviceKey();
-          const other = generateDeviceKey();
+describe(
+  propertyTag(5, "Only authentically signed, admitted events mutate state"),
+  () => {
+    it("mutates state iff the event is authentically signed by an admitted, non-revoked device", () => {
+      assertProperty(
+        fc.property(
+          fc.constantFrom<Corruption>(
+            "authentic",
+            "tampered",
+            "wrong-key",
+            "garbage-signature",
+          ),
+          fc.boolean(), // device admitted into the registry?
+          fc.boolean(), // device subsequently revoked?
+          fc.uuid(),
+          fc.string({ minLength: 1, maxLength: 64 }),
+          (corruption, admit, revoke, eventId, path) => {
+            const admin = generateDeviceKey();
+            const signer = generateDeviceKey();
+            const other = generateDeviceKey();
 
-          // Build the membership registry view the host would hold.
-          let registry: MembershipRegistry = [];
-          if (admit) {
-            const invitation = issueInvitation(
-              {
-                session: SESSION,
-                devicePublicKey: signer.publicKey,
-                memberId: "member-1",
-                issuerPublicKey: admin.publicKey,
-              },
-              admin.privateKey,
-            );
-            const result = admitDevice(registry, invitation, [admin.publicKey]);
-            if (!result.admitted) throw new Error("expected admission to succeed");
-            registry = result.registry;
-          }
-          if (revoke) {
-            registry = revokeDevice(registry, signer.publicKey);
-          }
-
-          // Produce the signed event with the requested authenticity condition.
-          const envelope = envelopeFor(signer, eventId, path);
-          let signed: SignedEvent;
-          switch (corruption) {
-            case "authentic":
-              signed = signEnvelope(envelope, signer.privateKey);
-              break;
-            case "tampered": {
-              const good = signEnvelope(envelope, signer.privateKey);
-              signed = {
-                ...good,
-                envelope: {
-                  ...good.envelope,
-                  payload: { path: `${path}.tampered`, state: "editing" },
+            // Build the membership registry view the host would hold.
+            let registry: MembershipRegistry = [];
+            if (admit) {
+              const invitation = issueInvitation(
+                {
+                  session: SESSION,
+                  devicePublicKey: signer.publicKey,
+                  memberId: "member-1",
+                  issuerPublicKey: admin.publicKey,
                 },
-              };
-              break;
+                admin.privateKey,
+              );
+              const result = admitDevice(registry, invitation, [
+                admin.publicKey,
+              ]);
+              if (!result.admitted)
+                throw new Error("expected admission to succeed");
+              registry = result.registry;
             }
-            case "wrong-key":
-              // Signed by a different device than the claimed/registered key.
-              signed = signEnvelope(envelope, other.privateKey);
-              break;
-            case "garbage-signature": {
-              const good = signEnvelope(envelope, signer.privateKey);
-              signed = { ...good, signature: "!!!not-a-valid-signature!!!" };
-              break;
+            if (revoke) {
+              registry = revokeDevice(registry, signer.publicKey);
             }
-          }
 
-          const authentic = corruption === "authentic";
-          const admittedActive = admit && !revoke;
-          const expectedMutation = authentic && admittedActive;
+            // Produce the signed event with the requested authenticity condition.
+            const envelope = envelopeFor(signer, eventId, path);
+            let signed: SignedEvent;
+            switch (corruption) {
+              case "authentic":
+                signed = signEnvelope(envelope, signer.privateKey);
+                break;
+              case "tampered": {
+                const good = signEnvelope(envelope, signer.privateKey);
+                signed = {
+                  ...good,
+                  envelope: {
+                    ...good.envelope,
+                    payload: { path: `${path}.tampered`, state: "editing" },
+                  },
+                };
+                break;
+              }
+              case "wrong-key":
+                // Signed by a different device than the claimed/registered key.
+                signed = signEnvelope(envelope, other.privateKey);
+                break;
+              case "garbage-signature": {
+                const good = signEnvelope(envelope, signer.privateKey);
+                signed = { ...good, signature: "!!!not-a-valid-signature!!!" };
+                break;
+              }
+            }
 
-          const before = 42;
-          const { state, mutated } = ingest(
-            before,
-            registry,
-            signed,
-            signer.publicKey,
-          );
+            const authentic = corruption === "authentic";
+            const admittedActive = admit && !revoke;
+            const expectedMutation = authentic && admittedActive;
 
-          // The core biconditional: acceptance holds exactly when authentic + admitted.
-          expect(mutated).toBe(expectedMutation);
+            const before = 42;
+            const { state, mutated } = ingest(
+              before,
+              registry,
+              signed,
+              signer.publicKey,
+            );
 
-          // A mutation implies both authenticity and admission (Req 7.2/7.3, 5.4/5.6).
-          if (mutated) {
-            expect(verifySignedEvent(signed, signer.publicKey)).toBe(true);
-            expect(canAuthenticate(registry, signer.publicKey)).toBe(true);
-            expect(state).toBe(before + 1);
-          } else {
-            // Rejected events leave state unchanged.
-            expect(state).toBe(before);
-          }
-        },
-      ),
-    );
-  });
-});
+            // The core biconditional: acceptance holds exactly when authentic + admitted.
+            expect(mutated).toBe(expectedMutation);
+
+            // A mutation implies both authenticity and admission (Req 7.2/7.3, 5.4/5.6).
+            if (mutated) {
+              expect(verifySignedEvent(signed, signer.publicKey)).toBe(true);
+              expect(canAuthenticate(registry, signer.publicKey)).toBe(true);
+              expect(state).toBe(before + 1);
+            } else {
+              // Rejected events leave state unchanged.
+              expect(state).toBe(before);
+            }
+          },
+        ),
+      );
+    });
+  },
+);

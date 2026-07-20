@@ -23,10 +23,7 @@
 import { assertProperty, fc, propertyTag } from "@cfls/test-utils";
 import { describe, expect, it } from "vitest";
 
-import {
-  normalizePathKey,
-  type PlatformCaseSensitivity,
-} from "./path";
+import { normalizePathKey, type PlatformCaseSensitivity } from "./path";
 
 /**
  * Clean path segment: alphanumeric only, so it is never `.`, `..`, empty, or a
@@ -120,33 +117,39 @@ function recaseLetters(raw: string, flags: boolean[]): string {
     .join("");
 }
 
-describe(propertyTag(11, "Path normalization maps equivalents to one key"), () => {
-  it("collapses separator, ./, redundant, .. and case variants to one canonical key", () => {
-    assertProperty(
-      fc.property(
-        equivalentSpelling,
-        ({ segments, noise, detours, seps, sensitivity, recase }) => {
-          // The canonical key: segments joined by `/` are already normalized,
-          // so this is the single key every equivalent spelling must match.
-          const canonicalKey = normalizePathKey(segments.join("/"), sensitivity);
-
-          const tokens = buildTokens(segments, noise, detours);
-          const raw = joinWithSeparators(tokens, seps);
-
-          // (a) Separator/`.`/redundant/`..` variants map to the canonical key
-          //     on any platform.
-          expect(normalizePathKey(raw, sensitivity)).toBe(canonicalKey);
-
-          // (b) On case-insensitive platforms, a letter-case variant of the very
-          //     same spelling also maps to the canonical key (Req 10.4).
-          if (sensitivity === "case-insensitive") {
-            const recased = recaseLetters(raw, recase);
-            expect(normalizePathKey(recased, "case-insensitive")).toBe(
-              canonicalKey,
+describe(
+  propertyTag(11, "Path normalization maps equivalents to one key"),
+  () => {
+    it("collapses separator, ./, redundant, .. and case variants to one canonical key", () => {
+      assertProperty(
+        fc.property(
+          equivalentSpelling,
+          ({ segments, noise, detours, seps, sensitivity, recase }) => {
+            // The canonical key: segments joined by `/` are already normalized,
+            // so this is the single key every equivalent spelling must match.
+            const canonicalKey = normalizePathKey(
+              segments.join("/"),
+              sensitivity,
             );
-          }
-        },
-      ),
-    );
-  });
-});
+
+            const tokens = buildTokens(segments, noise, detours);
+            const raw = joinWithSeparators(tokens, seps);
+
+            // (a) Separator/`.`/redundant/`..` variants map to the canonical key
+            //     on any platform.
+            expect(normalizePathKey(raw, sensitivity)).toBe(canonicalKey);
+
+            // (b) On case-insensitive platforms, a letter-case variant of the very
+            //     same spelling also maps to the canonical key (Req 10.4).
+            if (sensitivity === "case-insensitive") {
+              const recased = recaseLetters(raw, recase);
+              expect(normalizePathKey(recased, "case-insensitive")).toBe(
+                canonicalKey,
+              );
+            }
+          },
+        ),
+      );
+    });
+  },
+);
