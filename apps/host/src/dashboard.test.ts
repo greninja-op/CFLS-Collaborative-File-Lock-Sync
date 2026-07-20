@@ -212,6 +212,7 @@ describe("renderDashboardHtml", () => {
     expect(html).toContain("function escapeHtml");
     expect(html).toContain("The live coordination");
     expect(html).toContain('class="live-demo-card"');
+    expect(html).toContain('<circle cx="10.5" cy="18" r="4.4" fill="currentColor"/>');
     expect(html).not.toContain("See the work already in motion");
   });
 });

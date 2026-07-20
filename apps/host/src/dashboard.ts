@@ -1236,10 +1236,10 @@ export function renderDashboardHtml(): string {
         width: 90px;
         height: 90px;
         place-items: center;
-        color: #071213;
+        color: var(--ink);
         border-radius: 22px;
-        background: #3b7d7b;
-        box-shadow: 0 0 0 9px rgba(98, 230, 224, .026), 0 20px 50px rgba(0, 0, 0, .26);
+        background: var(--signal);
+        box-shadow: 0 0 0 9px rgba(214, 245, 74, .045), 0 20px 50px rgba(0, 0, 0, .26);
       }
       .host-core svg { width: 33px; height: 33px; margin-top: 8px; }
       .host-core span {
@@ -1425,7 +1425,7 @@ export function renderDashboardHtml(): string {
         align-items: stretch;
         padding: clamp(24px, 4vw, 48px) clamp(18px, 5vw, 60px);
         background:
-          radial-gradient(circle at 50% 49%, rgba(98, 230, 224, .075), transparent 14rem),
+          radial-gradient(circle at 50% 49%, rgba(214, 245, 74, .075), transparent 14rem),
           linear-gradient(rgba(214, 245, 74, .02) 1px, transparent 1px),
           linear-gradient(90deg, rgba(214, 245, 74, .02) 1px, transparent 1px),
           #091215;
@@ -1504,7 +1504,7 @@ export function renderDashboardHtml(): string {
         min-height: 100%;
         grid-area: host;
         place-items: center;
-        color: var(--cyan);
+        color: var(--signal);
       }
       .live-host::before, .live-host::after {
         position: absolute;
@@ -1512,12 +1512,12 @@ export function renderDashboardHtml(): string {
         width: clamp(26px, 4vw, 58px);
         height: 1px;
         content: "";
-        background: repeating-linear-gradient(90deg, rgba(98, 230, 224, .42) 0 5px, transparent 5px 10px);
+        background: repeating-linear-gradient(90deg, rgba(214, 245, 74, .42) 0 5px, transparent 5px 10px);
       }
       .live-host::before { right: calc(100% - 5px); }
       .live-host::after { left: calc(100% - 5px); }
-      .live-host .host-rings { position: absolute; width: 126px; height: 126px; border: 1px solid rgba(98, 230, 224, .18); border-radius: 50%; }
-      .live-host .host-rings::after { position: absolute; inset: 17px; content: ""; border: 1px solid rgba(98, 230, 224, .26); border-radius: 50%; }
+      .live-host .host-rings { position: absolute; width: 126px; height: 126px; border: 1px solid rgba(214, 245, 74, .18); border-radius: 50%; }
+      .live-host .host-rings::after { position: absolute; inset: 17px; content: ""; border: 1px solid rgba(214, 245, 74, .26); border-radius: 50%; }
       .live-host .host-core { width: 76px; height: 76px; border-radius: 19px; }
       .live-host .host-core svg { width: 28px; height: 28px; }
       .live-host .host-core span { font-size: .46rem; }
@@ -1661,10 +1661,10 @@ export function renderDashboardHtml(): string {
         height: 30px;
         flex: 0 0 auto;
         place-items: center;
-        color: var(--cyan);
-        border: 1px solid rgba(98, 230, 224, .24);
+        color: var(--signal);
+        border: 1px solid rgba(214, 245, 74, .24);
         border-radius: 8px;
-        background: rgba(98, 230, 224, .07);
+        background: rgba(214, 245, 74, .07);
       }
       .host-status-icon svg { width: 17px; height: 17px; }
       .dashboard-host-status > span:last-child { display: grid; min-width: 0; gap: 2px; }
@@ -2484,9 +2484,11 @@ export function renderDashboardHtml(): string {
         <div id="session-switcher" class="session-switcher" aria-label="Choose a workspace"></div>
         <aside class="dashboard-host-status" aria-label="Host update state">
           <span class="host-status-icon" aria-hidden="true">
-            <svg viewBox="0 0 24 24" fill="none">
-              <path d="M12 2.7 19 6.5v7.7L12 18l-7-3.8V6.5L12 2.7Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
-              <path d="m5.3 6.7 6.7 3.7 6.7-3.7M12 10.4V18" stroke="currentColor" stroke-width="1.6"/>
+            <svg viewBox="0 0 36 36" fill="none">
+              <path d="m11 18 13-8M11 18l13 8" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/>
+              <circle cx="10.5" cy="18" r="4.4" fill="currentColor"/>
+              <circle cx="25.2" cy="9.2" r="4.4" fill="currentColor"/>
+              <circle cx="25.2" cy="26.8" r="4.4" fill="currentColor"/>
             </svg>
           </span>
           <span><strong>Host live</strong><span id="last-updated">Waiting for host data...</span></span>
@@ -2664,8 +2666,9 @@ export function renderDashboardHtml(): string {
         function liveHostMarkup(revision) {
           return '<div class="live-host" aria-label="CFLS coordination host">' +
             '<span class="host-rings" aria-hidden="true"></span><div class="host-core" aria-hidden="true">' +
-            '<svg viewBox="0 0 24 24" fill="none"><path d="M12 2.7 19 6.5v7.7L12 18l-7-3.8V6.5L12 2.7Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>' +
-            '<path d="m5.3 6.7 6.7 3.7 6.7-3.7M12 10.4V18" stroke="currentColor" stroke-width="1.6"/></svg><span>CFLS HOST</span></div>' +
+            '<svg viewBox="0 0 36 36" fill="none"><path d="m11 18 13-8M11 18l13 8" stroke="currentColor" stroke-width="3.4" stroke-linecap="round"/>' +
+            '<circle cx="10.5" cy="18" r="4.4" fill="currentColor"/><circle cx="25.2" cy="9.2" r="4.4" fill="currentColor"/>' +
+            '<circle cx="25.2" cy="26.8" r="4.4" fill="currentColor"/></svg><span>CFLS HOST</span></div>' +
             '<p class="live-host-label">shared state / revision r' + revision + '</p></div>';
         }
 

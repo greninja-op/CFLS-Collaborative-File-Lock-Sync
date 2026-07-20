@@ -725,18 +725,18 @@ code {
   display: grid;
   place-items: center;
   align-self: center;
-  color: var(--cyan);
+  color: var(--signal);
 }
 
 .host-rings {
   position: absolute;
   width: 88px;
   height: 88px;
-  border: 1px solid rgba(98, 230, 224, 0.13);
+  border: 1px solid rgba(214, 245, 74, 0.13);
   border-radius: 50%;
   box-shadow:
-    0 0 0 15px rgba(98, 230, 224, 0.025),
-    0 0 0 31px rgba(98, 230, 224, 0.017);
+    0 0 0 15px rgba(214, 245, 74, 0.025),
+    0 0 0 31px rgba(214, 245, 74, 0.017);
 }
 
 .host-core {
@@ -745,10 +745,10 @@ code {
   width: 58px;
   height: 58px;
   place-items: center;
-  color: #081213;
-  background: var(--cyan);
+  color: var(--ink);
+  background: var(--signal);
   border-radius: 16px;
-  box-shadow: 0 0 35px rgba(98, 230, 224, 0.34);
+  box-shadow: 0 0 35px rgba(214, 245, 74, 0.34);
 }
 
 .host-core svg {
@@ -1644,12 +1644,12 @@ code {
   display: grid;
   place-items: center;
   min-height: 160px;
-  color: var(--cyan);
+  color: var(--signal);
 }
 
 .demo-host-ring {
   position: absolute;
-  border: 1px solid rgba(98, 230, 224, 0.18);
+  border: 1px solid rgba(214, 245, 74, 0.18);
   border-radius: 50%;
   transition:
     transform 400ms ease,
@@ -1664,7 +1664,7 @@ code {
 .demo-host-ring--inner {
   width: 98px;
   height: 98px;
-  border-color: rgba(98, 230, 224, 0.28);
+  border-color: rgba(214, 245, 74, 0.28);
 }
 
 .demo-host-core {
@@ -1673,10 +1673,10 @@ code {
   width: 77px;
   height: 77px;
   place-items: center;
-  color: #071213;
+  color: var(--ink);
   border-radius: 19px;
-  background: #326d6c;
-  box-shadow: 0 0 0 8px rgba(98, 230, 224, 0.025);
+  background: var(--signal);
+  box-shadow: 0 0 0 8px rgba(214, 245, 74, 0.025);
   transition:
     background-color 320ms ease,
     box-shadow 320ms ease,
@@ -1716,7 +1716,7 @@ code {
   overflow: hidden;
   background: repeating-linear-gradient(
     90deg,
-    rgba(98, 230, 224, 0.24) 0 5px,
+    rgba(214, 245, 74, 0.24) 0 5px,
     transparent 5px 10px
   );
 }
@@ -1751,15 +1751,15 @@ code {
 }
 
 .demo-canvas.is-host-signaled .demo-host-core {
-  background: var(--cyan);
+  background: var(--signal);
   box-shadow:
-    0 0 30px rgba(98, 230, 224, 0.32),
-    0 0 0 13px rgba(98, 230, 224, 0.07);
+    0 0 30px rgba(214, 245, 74, 0.32),
+    0 0 0 13px rgba(214, 245, 74, 0.07);
   transform: scale(1.04);
 }
 
 .demo-canvas.is-host-signaled .demo-host-ring--outer {
-  border-color: rgba(98, 230, 224, 0.54);
+  border-color: rgba(214, 245, 74, 0.54);
   transform: scale(1.1);
 }
 
