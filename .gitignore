@@ -48,6 +48,11 @@ apps/vscode-extension/vsix-pkg/*.vsix
 # Standalone cfls.exe build intermediates (regenerate: pnpm -C apps/cli package:win)
 apps/cli/dist-exe/
 
+# Per-server CFLS Host session configuration. The example is versioned; this
+# concrete file contains deployment-specific session identity.
+deploy/host/.env
+!deploy/host/.env.example
+
 # The 89 MB standalone exe is NOT committed to git (it would bloat history
 # permanently). It is regenerated from source or shipped via a GitHub Release.
 release/*.exe

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   DEFAULT_LOCAL_API_PORT,
+  parseDashboardEnv,
   parseLocalApiPort,
   serviceAgentArgs,
   startAndPublishLocalApi,
@@ -9,6 +10,15 @@ import {
 } from "./index";
 
 describe("Local_API CLI startup", () => {
+  it("honors the optional dashboard environment switch for hosted deployments", () => {
+    expect(parseDashboardEnv(undefined)).toBeUndefined();
+    expect(parseDashboardEnv("1")).toBe(true);
+    expect(parseDashboardEnv("true")).toBe(true);
+    expect(parseDashboardEnv("TRUE")).toBe(true);
+    expect(parseDashboardEnv("0")).toBe(false);
+    expect(parseDashboardEnv("false")).toBe(false);
+  });
+
   it("accepts only real TCP ports and rejects invalid values before startup", () => {
     expect(parseLocalApiPort(undefined)).toBe(DEFAULT_LOCAL_API_PORT);
     expect(parseLocalApiPort("1")).toBe(1);

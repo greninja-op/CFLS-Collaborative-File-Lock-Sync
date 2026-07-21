@@ -125,6 +125,16 @@ export function parseLocalApiPort(value: string | boolean | undefined): number {
   return port;
 }
 
+/** Parse the optional host dashboard environment switch consistently with host config. */
+export function parseDashboardEnv(
+  value: string | undefined,
+): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  return value === "1" || value.toLowerCase() === "true";
+}
+
 /**
  * Start the loopback API before publishing its discovery token. If either API
  * startup or private-record publication fails, stop the partially started
@@ -229,8 +239,14 @@ async function cmdHost(args: ParsedArgs, cwd: string): Promise<void> {
 
   const dbPath =
     stringOption(args, "db") ?? process.env["CFLS_DB_PATH"] ?? "host.db";
+  const dashboard = parseDashboardEnv(process.env["CFLS_DASHBOARD"]);
   const running = await startHost(
-    { hostUrl, tls, dbPath },
+    {
+      hostUrl,
+      tls,
+      dbPath,
+      ...(dashboard === undefined ? {} : { dashboard }),
+    },
     { expirySweepIntervalMs: 15_000 },
   );
   running.authority.registerSession(

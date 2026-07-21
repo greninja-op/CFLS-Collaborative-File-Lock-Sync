@@ -1,0 +1,16 @@
+# Keep deployment build contexts small and ensure no local runtime credentials
+# are baked into the CFLS Host image.
+.git
+node_modules
+.pnpm-store
+**/node_modules
+**/dist
+**/*.tsbuildinfo
+coverage
+playground
+.cfls
+.coordination/agent.json
+.coordination/local-api.json
+.coordination/.cache
+release/*.exe
+apps/cli/dist-exe
