@@ -5,7 +5,7 @@ working**; see how to (re)build each below.
 
 | Artifact                 | Size   | In git?          | What it is                                                                                                   |
 | ------------------------ | ------ | ---------------- | ------------------------------------------------------------------------------------------------------------ |
-| `cfls-coordination.vsix` | ~33 KB | ✅ committed     | The VS Code / Kiro editor extension, self-contained (no `node_modules` needed).                              |
+| `cfls-coordination.vsix` | ~80 KB | ✅ committed     | The VS Code / Kiro editor extension, including the live metadata-only CFLS team panel.                       |
 | `cfls.exe`               | ~89 MB | ❌ not committed | The standalone `cfls` CLI as a single Windows executable (Node runtime baked in). Runs with no Node install. |
 
 > **Why `cfls.exe` is not committed:** it's an 89 MB binary. Committing it would
@@ -35,10 +35,16 @@ pnpm -C apps/vscode-extension package:vsix
 # → apps/vscode-extension/vsix-pkg/cfls-coordination.vsix
 ```
 
-Then copy it here: `Copy-Item apps/vscode-extension/vsix-pkg/cfls-coordination.vsix release/`.
+Then copy it here:
 
-**Verified:** packages cleanly (5 files, self-contained bundle) and installs into
-both VS Code and Kiro (`cfls.cfls-coordination` shows in `--list-extensions`).
+```bash
+cp apps/vscode-extension/vsix-pkg/cfls-coordination.vsix release/
+# PowerShell: Copy-Item apps/vscode-extension/vsix-pkg/cfls-coordination.vsix release/
+```
+
+**Verified:** the committed archive packages cleanly as a seven-file,
+self-contained bundle and includes the current team-panel implementation. Install
+it with the commands above in the editor you use.
 
 ---
 
@@ -46,7 +52,8 @@ both VS Code and Kiro (`cfls.cfls-coordination` shows in `--list-extensions`).
 
 A single Windows executable exposing every `cfls` command
 (`admin-init` / `host` / `id` / `invite` / `join` / `connect` / `agent` /
-`sync` / `clone`). No Node install required on the target machine.
+`mcp` / `service` / `sync` / `clone`). No Node install required on the target
+machine.
 
 **Build it:**
 

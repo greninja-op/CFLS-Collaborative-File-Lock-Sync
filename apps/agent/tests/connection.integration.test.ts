@@ -228,6 +228,7 @@ describe("Offline_State (Req 6.4, 33.1)", () => {
     await waitUntil(() => agent.hostConnection().isOnline());
     const internal = agent as unknown as {
       handleEditorEvent(event: unknown): void;
+      flushOutbound(): void;
     };
 
     internal.handleEditorEvent({ kind: "file_opened", path: "../outside.ts" });
@@ -255,11 +256,240 @@ describe("Offline_State (Req 6.4, 33.1)", () => {
       kind: "file_opened",
       path: "./src/inside.ts",
     });
+    internal.flushOutbound();
     await waitUntil(() =>
       host.authority
         .snapshot(session)
-        .locks.some((lock) => lock.scope === "src/inside.ts"),
+        .presence.some(
+          (entry) =>
+            entry.path === "src/inside.ts" && entry.state === "editing",
+        ),
     );
+    // Passive opening remains a bounded presence signal; only an active editor
+    // claims the long-lived coordination lock.
+    expect(
+      host.authority
+        .snapshot(session)
+        .locks.some((lock) => lock.scope === "src/inside.ts"),
+    ).toBe(false);
+  });
+
+  it("treats background editing notifications as bounded activity", async () => {
+    const agent = await startAgent(admin, {
+      autoReconnect: false,
+      watcherActivityTtlMs: 500,
+    });
+    await waitUntil(() => agent.hostConnection().isOnline());
+    const internal = agent as unknown as {
+      handleEditorEvent(event: unknown): void;
+      flushOutbound(): void;
+    };
+
+    // VS Code can report a change for a background/programmatically edited
+    // document. It is useful activity metadata but must not claim ownership.
+    internal.handleEditorEvent({
+      kind: "editing_started",
+      path: "src/background.ts",
+    });
+    internal.flushOutbound();
+    await waitUntil(() =>
+      host.authority
+        .snapshot(session)
+        .presence.some(
+          (entry) =>
+            entry.path === "src/background.ts" && entry.state === "editing",
+        ),
+    );
+    expect(
+      host.authority
+        .snapshot(session)
+        .locks.some((lock) => lock.scope === "src/background.ts"),
+    ).toBe(false);
+    await waitUntil(
+      () =>
+        host.authority
+          .snapshot(session)
+          .presence.some(
+            (entry) =>
+              entry.path === "src/background.ts" && entry.state === "stopped",
+          ),
+      1_000,
+    );
+  });
+
+  it("reconciles active-editor snapshots after missed local transitions", async () => {
+    const agent = await startAgent(admin, { autoReconnect: false });
+    await waitUntil(() => agent.hostConnection().isOnline());
+    const internal = agent as unknown as {
+      handleEditorEvent(event: unknown): void;
+    };
+
+    internal.handleEditorEvent({
+      kind: "active_editor_changed",
+      path: "src/before-reconnect.ts",
+    });
+    await waitUntil(() =>
+      host.authority
+        .snapshot(session)
+        .locks.some((lock) => lock.scope === "src/before-reconnect.ts"),
+    );
+
+    // The extension does not replay each offline tab change. Its one current
+    // snapshot replaces the old durable scope with the currently focused file.
+    internal.handleEditorEvent({
+      kind: "active_editor_changed",
+      activeEditorSnapshot: true,
+      path: "src/after-reconnect.ts",
+    });
+    await waitUntil(() => {
+      const snapshot = host.authority.snapshot(session);
+      return (
+        !snapshot.locks.some(
+          (lock) => lock.scope === "src/before-reconnect.ts",
+        ) &&
+        snapshot.locks.some((lock) => lock.scope === "src/after-reconnect.ts")
+      );
+    });
+
+    // An oldPath-only snapshot represents a closed/deleted/moved-away editor.
+    internal.handleEditorEvent({
+      kind: "active_editor_changed",
+      activeEditorSnapshot: true,
+      oldPath: "src/after-reconnect.ts",
+    });
+    await waitUntil(
+      () =>
+        !host.authority
+          .snapshot(session)
+          .locks.some((lock) => lock.scope === "src/after-reconnect.ts"),
+    );
+  });
+
+  it("retires a switched-away editor while retaining bounded saved-file activity", async () => {
+    const agent = await startAgent(admin, {
+      autoReconnect: false,
+      watcherActivityTtlMs: 500,
+    });
+    await waitUntil(() => agent.hostConnection().isOnline());
+    const internal = agent as unknown as {
+      handleEditorEvent(event: unknown): void;
+      onFileChange(event: { kind: "saved"; path: string }): void;
+      flushOutbound(): void;
+    };
+
+    internal.handleEditorEvent({
+      kind: "active_editor_changed",
+      path: "src/first.ts",
+    });
+    await waitUntil(() =>
+      host.authority
+        .snapshot(session)
+        .locks.some((lock) => lock.scope === "src/first.ts"),
+    );
+
+    internal.handleEditorEvent({
+      kind: "active_editor_changed",
+      oldPath: "src/first.ts",
+      path: "src/second.ts",
+    });
+    await waitUntil(() => {
+      const snapshot = host.authority.snapshot(session);
+      return (
+        !snapshot.locks.some((lock) => lock.scope === "src/first.ts") &&
+        snapshot.locks.some((lock) => lock.scope === "src/second.ts") &&
+        snapshot.presence.some(
+          (entry) => entry.path === "src/first.ts" && entry.state === "stopped",
+        ) &&
+        snapshot.presence.some(
+          (entry) =>
+            entry.path === "src/second.ts" && entry.state === "editing",
+        )
+      );
+    });
+
+    // A persisted save after the switch still emits a short-lived watcher
+    // signal, but the timer retires it rather than recreating a lock.
+    internal.onFileChange({ kind: "saved", path: "src/first.ts" });
+    internal.flushOutbound();
+    await waitUntil(
+      () =>
+        host.authority
+          .snapshot(session)
+          .presence.some(
+            (entry) =>
+              entry.path === "src/first.ts" && entry.state === "editing",
+          ),
+      1000,
+    );
+    await waitUntil(
+      () =>
+        host.authority
+          .snapshot(session)
+          .presence.some(
+            (entry) =>
+              entry.path === "src/first.ts" && entry.state === "stopped",
+          ),
+      1000,
+    );
+    expect(
+      host.authority
+        .snapshot(session)
+        .locks.some((lock) => lock.scope === "src/first.ts"),
+    ).toBe(false);
+  });
+
+  it("moves active editor ownership on rename and retires it on deletion", async () => {
+    const agent = await startAgent(admin, { autoReconnect: false });
+    await waitUntil(() => agent.hostConnection().isOnline());
+    const internal = agent as unknown as {
+      handleEditorEvent(event: unknown): void;
+    };
+
+    internal.handleEditorEvent({
+      kind: "active_editor_changed",
+      path: "src/old-name.ts",
+    });
+    await waitUntil(() =>
+      host.authority
+        .snapshot(session)
+        .locks.some((lock) => lock.scope === "src/old-name.ts"),
+    );
+
+    internal.handleEditorEvent({
+      kind: "file_renamed",
+      oldPath: "src/old-name.ts",
+      path: "src/new-name.ts",
+    });
+    await waitUntil(() => {
+      const snapshot = host.authority.snapshot(session);
+      return (
+        !snapshot.locks.some((lock) => lock.scope === "src/old-name.ts") &&
+        snapshot.locks.some((lock) => lock.scope === "src/new-name.ts") &&
+        snapshot.presence.some(
+          (entry) =>
+            entry.path === "src/old-name.ts" && entry.state === "stopped",
+        ) &&
+        snapshot.presence.some(
+          (entry) =>
+            entry.path === "src/new-name.ts" && entry.state === "editing",
+        )
+      );
+    });
+
+    internal.handleEditorEvent({
+      kind: "file_deleted",
+      path: "src/new-name.ts",
+    });
+    await waitUntil(() => {
+      const snapshot = host.authority.snapshot(session);
+      return (
+        !snapshot.locks.some((lock) => lock.scope === "src/new-name.ts") &&
+        snapshot.presence.some(
+          (entry) =>
+            entry.path === "src/new-name.ts" && entry.state === "stopped",
+        )
+      );
+    });
   });
 
   it("ends watcher-confirmed editing after its bounded activity TTL", async () => {

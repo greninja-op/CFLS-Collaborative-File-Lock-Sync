@@ -18,7 +18,7 @@
   ],
   "scripts": {
     "build": "tsup",
-    "typecheck": "tsc -b",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
     "test:watch": "vitest"
   },

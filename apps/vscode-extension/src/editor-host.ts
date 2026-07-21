@@ -28,10 +28,96 @@ export interface EditorEvent {
   kind: EditorEventKind;
   /** Repository-relative path; absent only for `workspace_opened`. */
   path?: string;
-  /** Previous repository-relative path, for `file_renamed`. */
+  /** Previous repository-relative path, for a rename or active-editor switch. */
   oldPath?: string;
+  /**
+   * An authoritative current-editor reassertion after the Local_API connects.
+   * It is not a replay of offline activity: the agent reconciles its durable
+   * active-editor ownership to this one current state.
+   */
+  activeEditorSnapshot?: boolean;
   /** Detection time (epoch ms), used to reason about the 2s emission bound. */
   at: number;
+}
+
+/**
+ * Tracks the one repository file that VS Code currently presents as active.
+ *
+ * The adapter owns URI-to-repository-path conversion; this small pure state
+ * machine owns only the transition semantics. Keeping it here lets tests prove
+ * that activation and a tab switch emit the exact safe path pair the agent
+ * needs to retire its previous editor-owned presence/lock.
+ */
+export class ActiveEditorPathTracker {
+  private activePath: string | undefined;
+  /** Most recent repository path explicitly cleared while no path is active. */
+  private lastClearedPath: string | undefined;
+
+  /**
+   * Record a newly active repository path. Returns an event payload only when
+   * it differs from the previous active path; `undefined` means there is no
+   * repository document active (for example, a settings or untitled editor).
+   */
+  setActive(
+    path: string | undefined,
+  ): Pick<EditorEvent, "path" | "oldPath"> | undefined {
+    if (this.activePath === path) {
+      return undefined;
+    }
+    const oldPath = this.activePath;
+    this.activePath = path;
+    this.lastClearedPath = path === undefined ? oldPath : undefined;
+    return {
+      ...(path !== undefined ? { path } : {}),
+      ...(oldPath !== undefined ? { oldPath } : {}),
+    };
+  }
+
+  /**
+   * Forget a path once VS Code closes or deletes that document. Returns the
+   * old-path-only active-editor transition when it actually cleared the active
+   * document, so the agent can retire it immediately.
+   */
+  clearIfActive(
+    path: string | undefined,
+  ): Pick<EditorEvent, "path" | "oldPath"> | undefined {
+    if (path !== undefined && this.activePath === path) {
+      return this.setActive(undefined);
+    }
+    return undefined;
+  }
+
+  /**
+   * Keep tracking an active document across a repository-local rename. Moving
+   * it outside the repository becomes an old-path-only transition.
+   */
+  rename(
+    fromPath: string | undefined,
+    toPath: string | undefined,
+  ): Pick<EditorEvent, "path" | "oldPath"> | undefined {
+    if (fromPath !== undefined && this.activePath === fromPath) {
+      if (toPath === undefined) {
+        return this.setActive(undefined);
+      }
+      this.activePath = toPath;
+      this.lastClearedPath = undefined;
+    }
+    return undefined;
+  }
+
+  /**
+   * Return the latest safe active-editor state for a Local_API reconnect. When
+   * no repository document is active, retain the latest explicit clear as an
+   * old-path-only state so a previously announced active file is retired.
+   */
+  currentState(): Pick<EditorEvent, "path" | "oldPath"> {
+    if (this.activePath !== undefined) {
+      return { path: this.activePath };
+    }
+    return this.lastClearedPath === undefined
+      ? {}
+      : { oldPath: this.lastClearedPath };
+  }
 }
 
 /**

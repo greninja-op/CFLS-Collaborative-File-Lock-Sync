@@ -208,10 +208,11 @@ export interface LocalApiFileSecurity {
   /** The platform whose filesystem access rules should be enforced. */
   readonly platform: NodeJS.Platform;
   /**
-   * Replace a Windows file's DACL with a protected, current-user-only ACL.
-   * Implementations must throw when they cannot establish that ACL.
+   * Atomically create a Windows discovery temporary with a protected,
+   * current-user-only DACL, then write its contents. Implementations must throw
+   * without writing contents when that DACL cannot be established and verified.
    */
-  secureWindowsFile(path: string): void;
+  createWindowsPrivateFile(path: string, contents: string): void;
   /** True only when a Windows file still has the required private ACL. */
   verifyWindowsFile(path: string): boolean;
 }
@@ -223,10 +224,12 @@ const WINDOWS_DISCOVERY_PATH_ENV = "CFLS_LOCAL_API_DISCOVERY_PATH";
  * The path is passed via a child-only environment variable, never interpolated
  * into a command string, so a repository path cannot inject PowerShell syntax.
  */
-const WINDOWS_SET_PRIVATE_ACL_SCRIPT = [
+const WINDOWS_CREATE_PRIVATE_FILE_SCRIPT = [
   "$ErrorActionPreference = 'Stop'",
   "$path = $env:CFLS_LOCAL_API_DISCOVERY_PATH",
   "if ([string]::IsNullOrWhiteSpace($path)) { throw 'Missing Local_API discovery path.' }",
+  "[Console]::InputEncoding = [System.Text.Encoding]::UTF8",
+  "$contents = [Console]::In.ReadToEnd()",
   "$current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User",
   "if ($null -eq $current) { throw 'Unable to determine the current Windows user.' }",
   "$acl = New-Object -TypeName System.Security.AccessControl.FileSecurity",
@@ -236,7 +239,49 @@ const WINDOWS_SET_PRIVATE_ACL_SCRIPT = [
   "$allow = [System.Security.AccessControl.AccessControlType]::Allow",
   "$rule = New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList @($current, $rights, $allow)",
   "$acl.SetAccessRule($rule)",
-  "[System.IO.File]::SetAccessControl($path, $acl)",
+  "$stream = $null",
+  "try {",
+  "  $stream = New-Object -TypeName System.IO.FileStream -ArgumentList @(",
+  "    $path,",
+  "    [System.IO.FileMode]::CreateNew,",
+  "    [System.Security.AccessControl.FileSystemRights]::FullControl,",
+  "    [System.IO.FileShare]::Read,",
+  "    4096,",
+  "    [System.IO.FileOptions]::WriteThrough,",
+  "    $acl",
+  "  )",
+  "  $item = Get-Item -LiteralPath $path -Force",
+  "  if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Local_API discovery path must not be a reparse point.' }",
+  "  $actual = [System.IO.File]::GetAccessControl($path)",
+  "  $owner = $actual.GetOwner([System.Security.Principal.SecurityIdentifier])",
+  "  if ($null -eq $owner) { throw 'Could not determine Local_API discovery owner.' }",
+  "  $rules = @($actual.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))",
+  "  $onlyCurrentAllow = @(",
+  "    $rules | Where-Object {",
+  "      $_.IdentityReference.Value -eq $current.Value -and",
+  "      -not $_.IsInherited -and",
+  "      $_.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow",
+  "    }",
+  "  )",
+  "  $hasFullControl = @(",
+  "    $onlyCurrentAllow | Where-Object {",
+  "      ($_.FileSystemRights -band $rights) -eq $rights",
+  "    }",
+  "  ).Count -gt 0",
+  "  $isPrivate = (",
+  "    $actual.AreAccessRulesProtected -and",
+  "    $owner.Value -eq $current.Value -and",
+  "    $rules.Count -gt 0 -and",
+  "    $onlyCurrentAllow.Count -eq $rules.Count -and",
+  "    $hasFullControl",
+  "  )",
+  "  if (-not $isPrivate) { throw 'Could not verify a current-user-only Windows ACL for Local_API discovery.' }",
+  "  $bytes = [System.Text.Encoding]::UTF8.GetBytes($contents)",
+  "  $stream.Write($bytes, 0, $bytes.Length)",
+  "  $stream.Flush($true)",
+  "} finally {",
+  "  if ($null -ne $stream) { $stream.Dispose() }",
+  "}",
 ].join("\n");
 
 /**
@@ -248,10 +293,12 @@ const WINDOWS_SET_PRIVATE_ACL_SCRIPT = [
  * - has only explicit Allow rules for that SID; and
  * - gives that SID FullControl.
  */
-const WINDOWS_VERIFY_PRIVATE_ACL_SCRIPT = [
+const WINDOWS_VERIFY_PRIVATE_FILE_ACL_SCRIPT = [
   "$ErrorActionPreference = 'Stop'",
   "$path = $env:CFLS_LOCAL_API_DISCOVERY_PATH",
   "if ([string]::IsNullOrWhiteSpace($path)) { exit 1 }",
+  "$item = Get-Item -LiteralPath $path -Force",
+  "if (($item.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) { exit 1 }",
   "$current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User",
   "if ($null -eq $current) { exit 1 }",
   "$acl = [System.IO.File]::GetAccessControl($path)",
@@ -302,10 +349,16 @@ function windowsPowerShellPath(): string {
 
 /**
  * Run a static PowerShell program with the discovery path as child-only data.
- * execFileSync deliberately bypasses cmd.exe and a shell. Use the system
- * PowerShell path rather than resolving an executable from PATH.
+ * When present, contents flow through standard input rather than a command line
+ * or environment variable. `execFileSync` deliberately bypasses cmd.exe and a
+ * shell; use the system PowerShell path rather than resolving an executable
+ * from PATH.
  */
-function runWindowsAclProgram(script: string, path: string): void {
+function runWindowsAclProgram(
+  script: string,
+  path: string,
+  contents?: string,
+): void {
   execFileSync(
     windowsPowerShellPath(),
     [
@@ -319,23 +372,26 @@ function runWindowsAclProgram(script: string, path: string): void {
         ...process.env,
         [WINDOWS_DISCOVERY_PATH_ENV]: path,
       },
-      stdio: "ignore",
+      ...(contents !== undefined ? { input: contents } : {}),
+      stdio: ["pipe", "ignore", "ignore"],
       windowsHide: true,
     },
   );
 }
 
 /**
- * Give only the current Windows account control of a discovery record. The
- * caller runs this against the private temporary file before the atomic rename,
- * so a failed ACL setup never publishes a token-bearing target.
+ * Create the temporary discovery record with its private DACL in the same
+ * Windows operation that creates the file, before any token bytes are written.
  */
-function secureWindowsLocalApiFile(path: string): void {
+function createWindowsPrivateLocalApiFile(
+  path: string,
+  contents: string,
+): void {
   try {
-    runWindowsAclProgram(WINDOWS_SET_PRIVATE_ACL_SCRIPT, path);
+    runWindowsAclProgram(WINDOWS_CREATE_PRIVATE_FILE_SCRIPT, path, contents);
   } catch {
     throw new Error(
-      "Could not establish a current-user-only Windows ACL for Local_API discovery.",
+      "Could not atomically create a current-user-only Windows Local_API discovery record.",
     );
   }
 }
@@ -343,7 +399,7 @@ function secureWindowsLocalApiFile(path: string): void {
 /** Return false rather than trusting a discovery record when ACL inspection fails. */
 function verifyWindowsLocalApiFile(path: string): boolean {
   try {
-    runWindowsAclProgram(WINDOWS_VERIFY_PRIVATE_ACL_SCRIPT, path);
+    runWindowsAclProgram(WINDOWS_VERIFY_PRIVATE_FILE_ACL_SCRIPT, path);
     return true;
   } catch {
     return false;
@@ -352,7 +408,7 @@ function verifyWindowsLocalApiFile(path: string): boolean {
 
 const defaultLocalApiFileSecurity: LocalApiFileSecurity = {
   platform: process.platform,
-  secureWindowsFile: secureWindowsLocalApiFile,
+  createWindowsPrivateFile: createWindowsPrivateLocalApiFile,
   verifyWindowsFile: verifyWindowsLocalApiFile,
 };
 
@@ -442,9 +498,10 @@ function readPrivateJsonObject(
 }
 
 /**
- * Atomically replace a private JSON record. The temporary file is created in
- * the target directory with mode 0600, flushed, then renamed into place so a
- * reader observes either the complete old record or the complete new record.
+ * Atomically replace a private JSON record. POSIX writes a mode-0600 temporary
+ * file beside the target. Windows delegates creation plus payload writing to a
+ * static PowerShell/.NET `FileStream(CreateNew, FileSecurity)` program, so the
+ * token-bearing temporary is private from the instant it exists.
  */
 function writePrivateJson(
   path: string,
@@ -453,35 +510,34 @@ function writePrivateJson(
 ): void {
   const parent = dirname(path);
   mkdirSync(parent, { recursive: true, mode: 0o700 });
-
-  const temporary = join(
-    parent,
-    `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
-  );
+  const posixModes = hasPosixFileModes(security);
+  let temporary = "";
   let fd: number | undefined;
   let renamed = false;
-  let windowsTargetVerified = hasPosixFileModes(security);
+  let windowsTargetVerified = posixModes;
   try {
-    fd = openSync(temporary, "wx", 0o600);
-    writeFileSync(fd, `${JSON.stringify(value, null, 2)}\n`, "utf8");
-    fsyncSync(fd);
-    closeSync(fd);
-    fd = undefined;
-
-    // Establish and verify the private Windows DACL before publication. This
-    // preserves the atomic write guarantee: an ACL failure only leaves a
-    // private temporary file that the finally block removes.
-    if (!hasPosixFileModes(security)) {
-      security.secureWindowsFile(temporary);
+    temporary = join(
+      parent,
+      `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
+    );
+    const contents = `${JSON.stringify(value, null, 2)}\n`;
+    if (posixModes) {
+      fd = openSync(temporary, "wx", 0o600);
+      writeFileSync(fd, contents, "utf8");
+      fsyncSync(fd);
+      closeSync(fd);
+      fd = undefined;
+    } else {
+      security.createWindowsPrivateFile(temporary, contents);
       assertPrivateWindowsFile(temporary, security);
     }
 
-    // Same-directory rename is atomic on the supported filesystems. Opening
-    // the temporary file with 0600 means there is no permissive post-rename
-    // window even when the process has a relaxed umask.
+    // Same-directory rename is atomic on supported filesystems. A Windows move
+    // retains the source record's protected DACL; readers independently verify
+    // the final record before trusting it.
     renameSync(temporary, path);
     renamed = true;
-    if (hasPosixFileModes(security)) {
+    if (posixModes) {
       chmodSync(path, 0o600);
     } else {
       assertPrivateWindowsFile(path, security);
@@ -491,7 +547,7 @@ function writePrivateJson(
     if (fd !== undefined) {
       closeSync(fd);
     }
-    if (!renamed) {
+    if (!renamed && temporary.length > 0) {
       try {
         unlinkSync(temporary);
       } catch {

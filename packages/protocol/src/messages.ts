@@ -120,10 +120,12 @@ export const SyncMessageType = {
   SNAPSHOT: "sync.snapshot",
 } as const;
 
-/** Broadcast message type (Req 25). */
+/** Session broadcast message types (Req 25). */
 export const BroadcastMessageType = {
   /** H→C: a coordination-data change for the session. */
   UPDATE: "coordination.update",
+  /** H→C: current connected and known-offline members for the session. */
+  PARTICIPANTS: "participants.update",
 } as const;
 
 /** Per-event mutation acknowledgement message types. */
@@ -452,6 +454,16 @@ export interface SyncSnapshotPayload {
 /** `coordination.update` (H→C) — a single coordination-data change. */
 export type CoordinationUpdatePayload = CoordinationUpdate;
 
+/**
+ * `participants.update` (H→C) — live member connectivity metadata. `offline`
+ * contains admitted, non-revoked members that do not currently have a live
+ * Host connection. It contains no source content or filesystem information.
+ */
+export interface ParticipantsUpdatePayload {
+  connected: string[];
+  offline: string[];
+}
+
 // ---------------------------------------------------------------------------
 // Mutation acknowledgement payloads
 // ---------------------------------------------------------------------------
@@ -541,6 +553,7 @@ export interface MessagePayloadMap {
   [SyncMessageType.SNAPSHOT]: SyncSnapshotPayload;
 
   [BroadcastMessageType.UPDATE]: CoordinationUpdatePayload;
+  [BroadcastMessageType.PARTICIPANTS]: ParticipantsUpdatePayload;
 
   [EventMessageType.EVENT_APPLIED]: EventAppliedPayload;
 

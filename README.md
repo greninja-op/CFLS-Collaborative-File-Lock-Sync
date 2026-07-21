@@ -150,11 +150,11 @@ Each coordination session is scoped to the canonical Git remote, team, branch, a
 
 CFLS defaults to awareness, not interruption. Teams can make a path more restrictive when its risk justifies it.
 
-| Level                   | Meaning                                                              | Expected behavior                                                                                   |
-| ----------------------- | -------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `soft`                  | Someone may already be working nearby.                               | Show awareness and let the teammate decide. This is the default.                                    |
-| `coordination-required` | A direct or dependency-related collision needs an explicit decision. | Require acknowledgement/override with a reason before proceeding.                                   |
-| `hard`                  | A protected path is actively held.                                   | A CFLS-aware editor integration can stop a cooperating edit until the lock is released or resolved. |
+| Level                   | Meaning                                                              | Expected behavior                                                                                                                    |
+| ----------------------- | -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `soft`                  | Someone may already be working nearby.                               | Show awareness and let the teammate decide. This is the default.                                                                     |
+| `coordination-required` | A direct or dependency-related collision needs an explicit decision. | Require acknowledgement/override with a reason before proceeding.                                                                    |
+| `hard`                  | A protected path is actively held.                                   | A CFLS-aware client receives a clear stop decision; VS Code/Kiro surfaces a pre-save warning until the lock is released or resolved. |
 
 Hard mode is coordination policy, not a filesystem permission system. A non-CFLS editor, script, or operating-system process can still modify a file. The system is designed to make the safe action obvious and enforce it where the integration can cooperate.
 
@@ -162,15 +162,15 @@ Hard mode is coordination policy, not a filesystem permission system. A non-CFLS
 
 CFLS is a host-based MVP, not a peer-to-peer or serverless system. The table below distinguishes the working demo path from areas that remain product work.
 
-| Available in the MVP                                                                             | In architecture / active product work                                              |
-| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
-| Host and local Agent over WSS/TLS                                                                | Dependency-aware impact as a polished end-user workflow                            |
-| Per-device identity, signed invitations, revocation, and rotation                                | Broader protected-path and hard-stop workflows                                     |
-| Editor activity, live presence, soft coordination signals, and a read-only Host dashboard        | Production deployment guidance beyond a properly configured Host, TLS, and backups |
-| Clickable VS Code / Kiro CFLS status item with active team tasks and file metadata               | Additional editor integrations and presentation refinements                        |
-| MCP stdio bridge (`cfls mcp`) with the 13-tool coordination surface, including `get_team_status` | Further coding-agent client integrations                                           |
-| Per-user Agent service install on Linux (`systemd --user`) and Windows (Task Scheduler)          | Distribution and fleet-management refinements                                      |
-| Offline cached state with clear staleness                                                        |                                                                                    |
+| Available in the MVP                                                                               | In architecture / active product work                                              |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Host and local Agent over WSS/TLS                                                                  | Dependency-aware impact as a polished end-user workflow                            |
+| Per-device identity, signed invitations, revocation, and rotation                                  | Broader protected-path and hard-stop workflows                                     |
+| Editor activity, live presence, soft coordination signals, and a read-only Host dashboard          | Production deployment guidance beyond a properly configured Host, TLS, and backups |
+| Clickable VS Code / Kiro CFLS status item with live team roster plus active task and file metadata | Additional editor integrations and presentation refinements                        |
+| MCP stdio bridge (`cfls mcp`) with the 13-tool coordination surface, including `get_team_status`   | Further coding-agent client integrations                                           |
+| Per-user Agent service install on Linux (`systemd --user`) and Windows (Task Scheduler)            | Distribution and fleet-management refinements                                      |
+| Offline cached state with clear staleness                                                          |                                                                                    |
 
 Optional Git synchronization exists as a separate, opt-in layer; it is disabled by default and does not change the fact that Git owns source content and real conflict resolution.
 

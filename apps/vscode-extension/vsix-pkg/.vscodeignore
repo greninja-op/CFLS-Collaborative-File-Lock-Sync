@@ -1,4 +1,4 @@
-# Only the manifest + bundled dist/index.js + readme belong in the VSIX.
+# Package only the manifest, bundled extension, icon, README, and MIT license.
 *.vsix
 .vscodeignore
 node_modules/**

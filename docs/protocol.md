@@ -61,18 +61,19 @@ Host-emitted broadcasts and acks carry the assigned `eventRevision`.
 
 ## Message Catalog
 
-| Category    | Client → Host                                                           | Host → Client                                      |
-| ----------- | ----------------------------------------------------------------------- | -------------------------------------------------- |
-| Auth        | `auth.hello`, `auth.response`                                           | `auth.challenge`, `auth.ok`, `auth.error`          |
-| Presence    | `presence.report` (start/stop)                                          | `presence.update`                                  |
-| Locks       | `lock.acquire`, `lock.release`, `lock.override`                         | `lock.update`, `lock.conflict`                     |
-| Intents     | `intent.declare`, `intent.update`, `intent.withdraw`, `intent.progress` | `intent.update`, `intent.conflict`                 |
-| Dependency  | `dep.snapshot`, `dep.delta`                                             | `dep.applied`                                      |
-| Path change | `path.renamed`, `path.deleted`, `file.created`                          | `path.update`                                      |
-| Heartbeat   | `heartbeat.ping`                                                        | `heartbeat.ack`                                    |
-| Sync        | `sync.request {fromRevision}`                                           | `sync.events {events[]}` / `sync.snapshot {state}` |
-| Broadcast   | —                                                                       | `coordination.update`                              |
-| Error       | —                                                                       | `error {code, message, refEventId?}`               |
+| Category     | Client → Host                                                           | Host → Client                                      |
+| ------------ | ----------------------------------------------------------------------- | -------------------------------------------------- |
+| Auth         | `auth.hello`, `auth.response`                                           | `auth.challenge`, `auth.ok`, `auth.error`          |
+| Presence     | `presence.report` (start/stop)                                          | `presence.update`                                  |
+| Locks        | `lock.acquire`, `lock.release`, `lock.override`                         | `lock.update`, `lock.conflict`                     |
+| Intents      | `intent.declare`, `intent.update`, `intent.withdraw`, `intent.progress` | `intent.update`, `intent.conflict`                 |
+| Dependency   | `dep.snapshot`, `dep.delta`                                             | `dep.applied`                                      |
+| Path change  | `path.renamed`, `path.deleted`, `file.created`                          | `path.update`                                      |
+| Heartbeat    | `heartbeat.ping`                                                        | `heartbeat.ack`                                    |
+| Sync         | `sync.request {fromRevision}`                                           | `sync.events {events[]}` / `sync.snapshot {state}` |
+| Broadcast    | —                                                                       | `coordination.update`                              |
+| Participants | —                                                                       | `participants.update`                              |
+| Error        | —                                                                       | `error {code, message, refEventId?}`               |
 
 ## Idempotency & Replay Protection
 
@@ -130,6 +131,11 @@ and told the winning member + revision. Raw client timestamps are never the sole
   "member": { "memberId": "…", "deviceId": "…" }, "eventRevision": 421,
   "intent": { "intentId": "int-9", "description": "refactor auth" } // present for intent-derived entries
 }
+
+// participants.update (host->client)
+// Connected includes authenticated live clients; offline includes admitted,
+// non-revoked members without a live host connection.
+{ "connected": ["alice", "bob"], "offline": ["carol"] }
 ```
 
 ## MCP Tool Surface
@@ -138,21 +144,21 @@ The Local_MCP_Server exposes exactly **13 tools** over stdio/local transport. Ev
 wraps its data in the `McpEnvelope`, carrying `connection` and `staleness` on every response
 (see [architecture.md](./architecture.md)).
 
-| #   | Tool                                | Purpose                                                                                                                          |
-| --- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | `get_risk_map`                      | Per-path Risk_Map with contributors, explanation paths, planned file creations, highest revision. Own activity excluded.         |
-| 2   | `get_team_status`                   | Active members with device IDs, declared task descriptions, repository-relative files, and activity roles; never source content. |
-| 3   | `get_dependency_impact`             | Direct + reverse dependencies, shared contracts, risk level, explanation paths for given paths.                                  |
-| 4   | `get_dependencies`                  | `{ path } → { dependsOn[], presentInGraph }`.                                                                                    |
-| 5   | `get_dependents`                    | `{ path } → { dependedOnBy[], presentInGraph }`.                                                                                 |
-| 6   | `declare_intent`                    | Declare modify/create paths + description; returns intentId, eventRevision, reclassifications.                                   |
-| 7   | `update_intent`                     | Owner-only update of an intent's paths/description.                                                                              |
-| 8   | `withdraw_intent`                   | Owner-only withdrawal of an intent.                                                                                              |
-| 9   | `acquire_lock`                      | Acquire a soft/coordination-required/hard lock on a file/folder/glob scope.                                                      |
-| 10  | `release_lock`                      | Release by lockId or scope; holder-only.                                                                                         |
-| 11  | `subscribe_to_coordination_updates` | Stream `CoordinationUpdate`s for a session.                                                                                      |
-| 12  | `get_connection_status`             | Online/offline + connected/offline participants + manual-coordination flag.                                                      |
-| 13  | `get_project_session_status`        | Current session identity + authorization status.                                                                                 |
+| #   | Tool                                | Purpose                                                                                                                               |
+| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `get_risk_map`                      | Per-path Risk_Map with contributors, explanation paths, planned file creations, highest revision. Own activity excluded.              |
+| 2   | `get_team_status`                   | Active-work members with device IDs, declared task descriptions, repository-relative files, and activity roles; never source content. |
+| 3   | `get_dependency_impact`             | Direct + reverse dependencies, shared contracts, risk level, explanation paths for given paths.                                       |
+| 4   | `get_dependencies`                  | `{ path } → { dependsOn[], presentInGraph }`.                                                                                         |
+| 5   | `get_dependents`                    | `{ path } → { dependedOnBy[], presentInGraph }`.                                                                                      |
+| 6   | `declare_intent`                    | Declare modify/create paths + description; returns intentId, eventRevision, reclassifications.                                        |
+| 7   | `update_intent`                     | Owner-only update of an intent's paths/description.                                                                                   |
+| 8   | `withdraw_intent`                   | Owner-only withdrawal of an intent.                                                                                                   |
+| 9   | `acquire_lock`                      | Acquire a soft/coordination-required/hard lock on a file/folder/glob scope.                                                           |
+| 10  | `release_lock`                      | Release by lockId or scope; holder-only.                                                                                              |
+| 11  | `subscribe_to_coordination_updates` | Stream `CoordinationUpdate`s for a session.                                                                                           |
+| 12  | `get_connection_status`             | Online/offline + connected/offline participants (including idle teammates) + manual-coordination flag.                                |
+| 13  | `get_project_session_status`        | Current session identity + authorization status.                                                                                      |
 
 ### Example tool schemas
 

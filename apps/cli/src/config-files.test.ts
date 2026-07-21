@@ -103,14 +103,18 @@ describe("config files round-trip", () => {
     },
   );
 
-  it("local-api.json: establishes and verifies a private ACL on mocked Windows", () => {
+  it("local-api.json: creates the token record through the atomic Windows writer", () => {
     const path = join(dir, "local-api.json");
-    const secured: string[] = [];
+    const created: Array<{ path: string; contents: string }> = [];
     const verified: string[] = [];
     const security: LocalApiFileSecurity = {
       platform: "win32",
-      secureWindowsFile: (file) => {
-        secured.push(file);
+      createWindowsPrivateFile: (file, contents) => {
+        // The regression boundary: Node must not create an inherited-ACL empty
+        // file before it delegates secure creation and token writing to Windows.
+        expect(existsSync(file)).toBe(false);
+        created.push({ path: file, contents });
+        writeFileSync(file, contents, "utf8");
       },
       verifyWindowsFile: (file) => {
         verified.push(file);
@@ -124,11 +128,15 @@ describe("config files round-trip", () => {
       security,
     );
 
-    // The private DACL is applied before the temporary record is published,
-    // then checked again on the final target.
-    expect(secured).toHaveLength(1);
-    expect(secured[0]).toMatch(/^.*local-api\.json\..+\.tmp$/u);
-    expect(verified).toContain(path);
+    expect(created).toHaveLength(1);
+    expect(created[0]?.path).toMatch(/^.*local-api\.json\..+\.tmp$/u);
+    expect(JSON.parse(created[0]?.contents ?? "")).toEqual({
+      url: "ws://127.0.0.1:8750",
+      token: "tok-123",
+    });
+    // Verify the atomically created source before moving it, then verify the
+    // final target after its same-directory atomic rename.
+    expect(verified.slice(0, 2)).toEqual([created[0]?.path, path]);
     expect(readLocalApiConfig(path, security)).toEqual({
       url: "ws://127.0.0.1:8750",
       token: "tok-123",
@@ -138,12 +146,14 @@ describe("config files round-trip", () => {
     ).toBeGreaterThanOrEqual(3);
   });
 
-  it("local-api.json: fails closed when mocked Windows ACL setup fails", () => {
+  it("local-api.json: fails closed when atomic Windows creation fails", () => {
     const path = join(dir, "local-api.json");
     const security: LocalApiFileSecurity = {
       platform: "win32",
-      secureWindowsFile: () => {
-        throw new Error("ACL setup unavailable");
+      createWindowsPrivateFile: (file) => {
+        // No inherited-ACL file may be created before the secure creator runs.
+        expect(existsSync(file)).toBe(false);
+        throw new Error("atomic ACL setup unavailable");
       },
       verifyWindowsFile: () => true,
     };
@@ -154,7 +164,7 @@ describe("config files round-trip", () => {
         { url: "ws://127.0.0.1:8750", token: "tok-123" },
         security,
       ),
-    ).toThrow("ACL setup unavailable");
+    ).toThrow("atomic ACL setup unavailable");
     expect(existsSync(path)).toBe(false);
     expect(
       readdirSync(dir).filter((entry) => entry.includes("local-api.json")),
@@ -170,7 +180,7 @@ describe("config files round-trip", () => {
     let checks = 0;
     const security: LocalApiFileSecurity = {
       platform: "win32",
-      secureWindowsFile: () => undefined,
+      createWindowsPrivateFile: () => undefined,
       verifyWindowsFile: () => {
         checks += 1;
         return false;
@@ -179,6 +189,27 @@ describe("config files round-trip", () => {
 
     expect(readLocalApiConfig(path, security)).toBeNull();
     expect(checks).toBe(1);
+  });
+
+  it("local-api.json: removes the token temporary when Windows verification fails", () => {
+    const path = join(dir, "local-api.json");
+    const security: LocalApiFileSecurity = {
+      platform: "win32",
+      createWindowsPrivateFile: (file, contents) => {
+        writeFileSync(file, contents, "utf8");
+      },
+      verifyWindowsFile: () => false,
+    };
+
+    expect(() =>
+      writeLocalApiConfig(
+        path,
+        { url: "ws://127.0.0.1:8750", token: "tok-123" },
+        security,
+      ),
+    ).toThrow("Could not verify a current-user-only Windows ACL");
+    expect(existsSync(path)).toBe(false);
+    expect(readdirSync(dir)).toEqual([]);
   });
 });
 

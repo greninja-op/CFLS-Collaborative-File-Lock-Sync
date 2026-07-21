@@ -713,6 +713,13 @@ export const PAYLOAD_SCHEMAS: Record<MessageTypeName, ObjectSchema> = {
 
   // ---- Broadcast (Req 25) ----
   "coordination.update": coordinationUpdateSchema,
+  "participants.update": {
+    name: "ParticipantsUpdatePayload",
+    fields: {
+      connected: { spec: { kind: "array", items: { kind: "string" } } },
+      offline: { spec: { kind: "array", items: { kind: "string" } } },
+    },
+  },
 
   // ---- Per-event mutation acknowledgement ----
   "event.applied": {

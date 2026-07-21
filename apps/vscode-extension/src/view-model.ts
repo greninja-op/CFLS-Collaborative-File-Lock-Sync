@@ -16,10 +16,13 @@
 
 import type {
   ConnectionSnapshot,
+  ConnectionStatusData,
   GetRiskMapData,
   GetTeamStatusData,
   RiskEdge,
   StalenessSnapshot,
+  TeamActivityFile,
+  TeamActivityTask,
   TeamMemberActivity,
 } from "@cfls/mcp-server";
 import type { RiskLevel } from "@cfls/protocol";
@@ -59,6 +62,29 @@ export interface PlannedCreationView {
   memberId: string;
 }
 
+/** Live membership state as supplied by `get_connection_status`. */
+export type TeamMemberConnectionState = "connected" | "offline" | "unknown";
+
+/**
+ * One row in the expandable team panel.
+ *
+ * Activity is deliberately optional rather than inferred from connectivity: an
+ * admitted teammate can be live and idle, and a cached activity record can
+ * outlive a live roster update. The panel can therefore show both facts
+ * without claiming that every connected member is editing a file.
+ */
+export interface TeamPanelMember {
+  memberId: string;
+  connectionState: TeamMemberConnectionState;
+  /** Whether this member has an activity projection from `get_team_status`. */
+  activityKnown: boolean;
+  deviceIds: string[];
+  files: TeamActivityFile[];
+  tasks: TeamActivityTask[];
+  /** Null for a roster-only, currently idle member. */
+  lastEventRevision: number | null;
+}
+
 /** The full rendered coordination view for a Repository_Session. */
 export interface CoordinationViewModel {
   paths: PathView[];
@@ -73,8 +99,8 @@ export interface CoordinationViewModel {
   statusText: string;
   /** Team identifier supplied by the agent's live team-status projection. */
   teamId: string | null;
-  /** Active member/task/file coordination state for the expandable team panel. */
-  members: TeamMemberActivity[];
+  /** Live roster merged with metadata-only member/task/file coordination state. */
+  members: TeamPanelMember[];
 }
 
 /** The inputs the extension holds to render coordination state. */
@@ -82,10 +108,68 @@ export interface CoordinationSnapshot {
   riskMap: GetRiskMapData;
   /** Optional so the extension can still render an offline state before auth. */
   teamStatus?: GetTeamStatusData;
+  /** Optional live roster; supplied independently of activity snapshots. */
+  connectionStatus?: ConnectionStatusData;
   /** Known from the local Repository_Session before activity is available. */
   teamId?: string;
   connection: ConnectionSnapshot;
   staleness: StalenessSnapshot;
+}
+
+/**
+ * Build the active-team panel model when the independent Risk_Map query is
+ * unavailable. A successful team-status response still carries its own
+ * authoritative connection and staleness snapshots, so the UI must preserve
+ * those facts rather than presenting a live team as offline.
+ */
+export function buildTeamStatusOnlyViewModel(input: {
+  teamStatus: GetTeamStatusData;
+  /** Optional live roster, fetched independently of `get_team_status`. */
+  connectionStatus?: ConnectionStatusData;
+  /** Known from the current Repository_Session. */
+  teamId?: string;
+  connection: ConnectionSnapshot;
+  staleness: StalenessSnapshot;
+}): CoordinationViewModel {
+  return buildCoordinationViewModel({
+    riskMap: {
+      paths: [],
+      plannedFileCreations: [],
+      highestRevision: input.teamStatus.highestRevision,
+    },
+    teamStatus: input.teamStatus,
+    ...(input.connectionStatus !== undefined
+      ? { connectionStatus: input.connectionStatus }
+      : {}),
+    ...(input.teamId !== undefined ? { teamId: input.teamId } : {}),
+    connection: input.connection,
+    staleness: input.staleness,
+  });
+}
+
+/**
+ * Build a roster-only panel while the richer activity query is unavailable.
+ * This keeps idle participants visible even if `get_team_status` is delayed or
+ * temporarily fails, without inventing files, tasks, or device metadata.
+ */
+export function buildConnectionStatusOnlyViewModel(input: {
+  connectionStatus: ConnectionStatusData;
+  /** Known from the current Repository_Session. */
+  teamId?: string;
+  connection: ConnectionSnapshot;
+  staleness: StalenessSnapshot;
+}): CoordinationViewModel {
+  return buildCoordinationViewModel({
+    riskMap: {
+      paths: [],
+      plannedFileCreations: [],
+      highestRevision: 0,
+    },
+    connectionStatus: input.connectionStatus,
+    ...(input.teamId !== undefined ? { teamId: input.teamId } : {}),
+    connection: input.connection,
+    staleness: input.staleness,
+  });
 }
 
 /**
@@ -109,6 +193,76 @@ function membersOfKind(
   return [...seen];
 }
 
+/** Merge the independent roster and activity projections for the team panel. */
+function mergeTeamMembers(
+  teamStatus: GetTeamStatusData | undefined,
+  connectionStatus: ConnectionStatusData | undefined,
+  forceOffline: boolean,
+): TeamPanelMember[] {
+  const activityByMember = new Map<string, TeamMemberActivity>();
+  for (const activity of teamStatus?.members ?? []) {
+    if (activity.memberId !== "") {
+      activityByMember.set(activity.memberId, activity);
+    }
+  }
+
+  const connected = new Set(
+    connectionStatus?.participants.connected.filter(
+      (memberId) => memberId !== "",
+    ) ?? [],
+  );
+  const offline = new Set(
+    connectionStatus?.participants.offline.filter(
+      (memberId) => memberId !== "",
+    ) ?? [],
+  );
+  const memberIds = new Set([
+    ...activityByMember.keys(),
+    ...connected,
+    ...offline,
+  ]);
+  const rosterIsOffline =
+    forceOffline || connectionStatus?.status === "offline";
+
+  const connectionStateFor = (memberId: string): TeamMemberConnectionState => {
+    // A local agent without host connectivity cannot authoritatively report a
+    // peer as connected. Prefer the conservative offline state for malformed
+    // overlapping roster entries as well.
+    if (rosterIsOffline || offline.has(memberId)) {
+      return "offline";
+    }
+    if (connected.has(memberId)) {
+      return "connected";
+    }
+    return "unknown";
+  };
+
+  const connectionRank: Record<TeamMemberConnectionState, number> = {
+    connected: 0,
+    unknown: 1,
+    offline: 2,
+  };
+  return [...memberIds]
+    .map((memberId) => {
+      const activity = activityByMember.get(memberId);
+      return {
+        memberId,
+        connectionState: connectionStateFor(memberId),
+        activityKnown: activity !== undefined,
+        deviceIds: activity?.deviceIds ?? [],
+        files: activity?.files ?? [],
+        tasks: activity?.tasks ?? [],
+        lastEventRevision: activity?.lastEventRevision ?? null,
+      };
+    })
+    .sort(
+      (left, right) =>
+        connectionRank[left.connectionState] -
+          connectionRank[right.connectionState] ||
+        left.memberId.localeCompare(right.memberId),
+    );
+}
+
 /** Compose the offline/stale status line (Req 3.6, 33.3). */
 export function statusLine(
   connection: ConnectionSnapshot,
@@ -130,8 +284,16 @@ export function statusLine(
 export function buildCoordinationViewModel(
   snapshot: CoordinationSnapshot,
 ): CoordinationViewModel {
-  const offline = snapshot.connection.status === "offline";
-  const stale = snapshot.staleness.stale;
+  // `get_connection_status` is the roster query's own live gateway verdict.
+  // Honor it defensively if a concurrent request races an older envelope, so
+  // the panel never labels the host live while marking every participant down.
+  const offline =
+    snapshot.connection.status === "offline" ||
+    snapshot.connectionStatus?.status === "offline";
+  const stale = snapshot.staleness.stale || offline;
+  const displayConnection = offline
+    ? { ...snapshot.connection, status: "offline" as const }
+    : snapshot.connection;
 
   const paths: PathView[] = snapshot.riskMap.paths.map((entry) => {
     const indirect =
@@ -172,9 +334,13 @@ export function buildCoordinationViewModel(
     offline,
     stale,
     secondsSinceSync: snapshot.staleness.secondsSinceSync,
-    statusText: statusLine(snapshot.connection, snapshot.staleness),
+    statusText: statusLine(displayConnection, snapshot.staleness),
     teamId: snapshot.teamStatus?.teamId ?? snapshot.teamId ?? null,
-    members: snapshot.teamStatus?.members ?? [],
+    members: mergeTeamMembers(
+      snapshot.teamStatus,
+      snapshot.connectionStatus,
+      offline,
+    ),
   };
 }
 

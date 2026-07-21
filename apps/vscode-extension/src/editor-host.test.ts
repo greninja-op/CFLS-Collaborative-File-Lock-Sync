@@ -7,6 +7,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  ActiveEditorPathTracker,
   EditorEventForwarder,
   EmitterEditorHost,
   type EditorEvent,
@@ -69,6 +70,50 @@ describe("EditorEventForwarder (Req 3.2)", () => {
       path: "src/new.ts",
       oldPath: "src/old.ts",
     });
+  });
+
+  it("carries an active-editor transition so the agent can retire the prior file", () => {
+    const tracker = new ActiveEditorPathTracker();
+
+    expect(tracker.setActive("src/already-open.ts")).toEqual({
+      path: "src/already-open.ts",
+    });
+    expect(tracker.setActive("src/next.ts")).toEqual({
+      path: "src/next.ts",
+      oldPath: "src/already-open.ts",
+    });
+    expect(tracker.setActive(undefined)).toEqual({ oldPath: "src/next.ts" });
+  });
+
+  it("keeps the active path aligned across rename, close, and duplicate activation", () => {
+    const tracker = new ActiveEditorPathTracker();
+    tracker.setActive("src/old.ts");
+    tracker.rename("src/old.ts", "src/new.ts");
+
+    // The rename itself is a separate file_renamed event; it must not make a
+    // later active-editor notification retire the new path by mistake.
+    expect(tracker.setActive("src/new.ts")).toBeUndefined();
+    tracker.clearIfActive("src/new.ts");
+    expect(tracker.setActive("src/other.ts")).toEqual({
+      path: "src/other.ts",
+    });
+  });
+
+  it("retains the current active state for a reconnect reassertion", () => {
+    const tracker = new ActiveEditorPathTracker();
+    tracker.setActive("src/current.ts");
+    expect(tracker.currentState()).toEqual({ path: "src/current.ts" });
+
+    expect(tracker.clearIfActive("src/current.ts")).toEqual({
+      oldPath: "src/current.ts",
+    });
+    // A reconnect with no repository editor still carries the last explicit
+    // clear, so the agent can retire its old durable active scope.
+    expect(tracker.currentState()).toEqual({ oldPath: "src/current.ts" });
+
+    tracker.setActive("src/renamed.ts");
+    tracker.rename("src/renamed.ts", "src/final.ts");
+    expect(tracker.currentState()).toEqual({ path: "src/final.ts" });
   });
 
   it("stops forwarding after dispose", () => {

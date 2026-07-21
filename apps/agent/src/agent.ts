@@ -26,6 +26,7 @@ import type {
   CoordinationUpdate,
   DependencyGraph,
   MemberRef,
+  ParticipantsUpdatePayload,
   SessionId,
   SessionStateSnapshot,
 } from "@cfls/protocol";
@@ -177,9 +178,13 @@ export class CoordinationAgent extends EventEmitter {
   /** True when {@link localGraph} was built here (and should be uploaded), not injected. */
   private localGraphBuilt = false;
 
-  /** Repository-relative paths currently open/being edited in this agent's editors. */
-  private readonly openScopes = new Set<string>();
-  /** Bounded end-of-activity timers for watcher-confirmed saves. */
+  /**
+   * Repository-relative paths owned by an actively selected editor. Unlike the
+   * old open-document set, these scopes are retired on a tab switch so merely
+   * keeping a document open never makes it look like current editing.
+   */
+  private readonly activeEditorScopes = new Set<string>();
+  /** Bounded end-of-activity timers for watcher and passive editor signals. */
   private readonly watcherActivityTimers = new Map<string, NodeJS.Timeout>();
   /** Per-path activity generation; lets a later save re-announce after stop. */
   private readonly watcherActivityGenerations = new Map<string, number>();
@@ -327,6 +332,9 @@ export class CoordinationAgent extends EventEmitter {
     this.connection.on("graph", (graph: DependencyGraph) => {
       this.port?.setGraph(graph);
     });
+    this.connection.on("participants", (roster: ParticipantsUpdatePayload) => {
+      this.port?.setParticipants(roster.connected, roster.offline);
+    });
     this.connection.on("state", (state: string) => {
       if (state === "offline") {
         this.view.markStale();
@@ -465,10 +473,11 @@ export class CoordinationAgent extends EventEmitter {
 
   /**
    * Translate an Editor_Event from the extension into live host coordination:
-   * opening/editing a file reports editing presence and claims a soft lock on
-   * that path (once), closing it reports end-of-editing and releases the lock,
-   * and renames/deletions are forwarded as path changes. This is what makes a
-   * teammate's live editing visible to others without waiting for a save.
+   * a selected/edited file reports editing presence and claims a soft lock,
+   * while passive opens/saves remain bounded activity signals. A tab switch
+   * explicitly retires the old selected file before claiming the new one, so
+   * an open-but-background tab never remains falsely "current". Renames and
+   * deletions keep that editor state aligned with the host's path updates.
    */
   private handleEditorEvent(event: unknown): void {
     const connection = this.connection;
@@ -479,66 +488,181 @@ export class CoordinationAgent extends EventEmitter {
       kind?: string;
       path?: string;
       oldPath?: string;
+      activeEditorSnapshot?: unknown;
     };
     const path = repositoryRelativePath(e.path);
+    const oldPath = repositoryRelativePath(e.oldPath);
 
     switch (e.kind) {
       case "file_opened":
-      case "active_editor_changed":
-      case "editing_started":
       case "file_saved": {
         if (path === undefined || path.length === 0) {
           return;
         }
-        // Only announce the first time a path becomes active, to avoid a flood
-        // of presence/lock messages on every keystroke (Req 34 spirit).
-        if (!this.openScopes.has(path)) {
-          // A pending watcher save may still flush as editing; that is harmless
-          // here because the editor has just taken ownership of this presence.
-          this.clearWatcherActivity(path);
-          this.openScopes.add(path);
-          connection.send("presence.report", { path, state: "editing" });
-          connection.send("lock.acquire", {
-            scope: path,
-            scopeKind: "file",
-            mode: "soft",
-          });
+        // Opening or saving a background document is useful coordination
+        // metadata, but it must expire rather than turning every open tab into
+        // permanent "editing" presence.
+        this.beginBoundedActivity(path);
+        return;
+      }
+      case "active_editor_changed": {
+        if (e.activeEditorSnapshot === true) {
+          this.reconcileActiveEditorSnapshot(path);
+          return;
         }
+        // The extension includes oldPath on a real tab switch (and may send an
+        // oldPath-only transition when focus moves to an untitled/non-repo
+        // editor). Retire it before claiming the new file.
+        if (oldPath !== undefined && oldPath !== path) {
+          this.retireActiveEditorScope(oldPath);
+        }
+        if (path !== undefined && path.length > 0) {
+          this.claimActiveEditorScope(path);
+        }
+        return;
+      }
+      case "editing_started": {
+        if (path === undefined || path.length === 0) {
+          return;
+        }
+        // Text-change notifications can be raised for a background or
+        // programmatically updated document. Only an explicit active-editor
+        // transition owns a durable current-file scope; this remains a
+        // short-lived activity signal.
+        this.beginBoundedActivity(path);
         return;
       }
       case "file_closed": {
         if (path === undefined || path.length === 0) {
           return;
         }
-        if (this.openScopes.delete(path)) {
-          this.clearWatcherActivity(path, true);
-          connection.send("presence.report", { path, state: "stopped" });
-          connection.send("lock.release", { scope: path });
-        }
+        this.retireActiveEditorScope(path);
         return;
       }
       case "file_renamed": {
-        const oldPath = repositoryRelativePath(e.oldPath);
         if (oldPath !== undefined && path !== undefined) {
-          this.clearWatcherActivity(oldPath, true);
-          this.clearWatcherActivity(path, true);
-          connection.send("path.renamed", {
-            fromPath: oldPath,
-            toPath: path,
-          });
+          this.forwardPathRename(oldPath, path);
         }
         return;
       }
       case "file_deleted": {
         if (path !== undefined) {
-          this.clearWatcherActivity(path, true);
-          connection.send("path.deleted", { path });
+          this.forwardPathDeletion(path);
         }
         return;
       }
       default:
         // workspace_opened and unknown kinds need no host coordination.
         return;
+    }
+  }
+
+  /**
+   * Reconcile durable editor ownership to the extension's latest current
+   * state after the Local_API authenticates or reconnects. This intentionally
+   * does not replay any intermediate offline edits: every earlier active scope
+   * is retired and at most the one currently selected repository file is
+   * claimed again.
+   */
+  private reconcileActiveEditorSnapshot(path: string | undefined): void {
+    for (const activePath of [...this.activeEditorScopes]) {
+      if (activePath !== path) {
+        this.retireActiveEditorScope(activePath);
+      }
+    }
+    if (path !== undefined) {
+      this.claimActiveEditorScope(path);
+    }
+  }
+
+  /** Claim persistent editor ownership for the file currently in focus. */
+  private claimActiveEditorScope(path: string): void {
+    if (this.activeEditorScopes.has(path)) {
+      return;
+    }
+    // A fresh bounded activity entry supersedes any queued stop from a previous
+    // tab visit while its timer remains harmlessly bounded while this editor is
+    // selected. The direct signal/lock make the current file visible promptly.
+    this.beginBoundedActivity(path);
+    this.activeEditorScopes.add(path);
+    const connection = this.connection;
+    if (connection === undefined || !connection.isOnline()) {
+      return;
+    }
+    connection.send("presence.report", { path, state: "editing" });
+    connection.send("lock.acquire", {
+      scope: path,
+      scopeKind: "file",
+      mode: "soft",
+    });
+  }
+
+  /**
+   * Retire editor-owned activity immediately. This also supersedes any queued
+   * watcher edit for the same path with a stop, preventing a background tab
+   * from being revived at the next coalescing flush.
+   */
+  private retireActiveEditorScope(path: string): void {
+    const wasActive = this.activeEditorScopes.delete(path);
+    if (!wasActive) {
+      // A passive document can still have a bounded save/change timer. Cancel
+      // it on close, but avoid a duplicate stopped report after the same path
+      // was already retired by an oldPath-only active-editor transition.
+      if (
+        this.watcherActivityTimers.has(path) ||
+        this.pendingWatcherStops.has(path)
+      ) {
+        this.clearWatcherActivity(path, true);
+      }
+      return;
+    }
+    this.clearWatcherActivity(path, true);
+    const connection = this.connection;
+    if (connection === undefined || !connection.isOnline()) {
+      return;
+    }
+    connection.send("presence.report", { path, state: "stopped" });
+    connection.send("lock.release", { scope: path });
+  }
+
+  /**
+   * Forward a rename while keeping active-editor ownership and presence aligned
+   * with the host. The host transfers locks/intents, but presence has no path
+   * migration primitive, so an active file must explicitly stop on the old
+   * path and begin on the new one.
+   */
+  private forwardPathRename(fromPath: string, toPath: string): void {
+    const wasActive = this.activeEditorScopes.delete(fromPath);
+    this.clearWatcherActivity(fromPath, true);
+    this.clearWatcherActivity(toPath, true);
+
+    const connection = this.connection;
+    if (connection === undefined || !connection.isOnline()) {
+      if (wasActive) {
+        this.activeEditorScopes.add(toPath);
+      }
+      return;
+    }
+    if (wasActive) {
+      connection.send("presence.report", {
+        path: fromPath,
+        state: "stopped",
+      });
+    }
+    connection.send("path.renamed", { fromPath, toPath });
+    if (wasActive) {
+      this.beginBoundedActivity(toPath);
+      this.activeEditorScopes.add(toPath);
+      connection.send("presence.report", { path: toPath, state: "editing" });
+    }
+  }
+
+  /** Retire active editor ownership before forwarding a confirmed deletion. */
+  private forwardPathDeletion(path: string): void {
+    this.retireActiveEditorScope(path);
+    const connection = this.connection;
+    if (connection !== undefined && connection.isOnline()) {
+      connection.send("path.deleted", { path });
     }
   }
 
@@ -553,23 +677,21 @@ export class CoordinationAgent extends EventEmitter {
         if (typeof path !== "string") {
           continue;
         }
-        const activityGeneration = this.scheduleWatcherActivityEnd(path);
-        this.enqueueWatcherPresence(path, "editing", activityGeneration);
+        this.beginBoundedActivity(path);
         continue;
       }
       if (message.type === "path.renamed") {
         const fromPath = message.payload.fromPath;
         const toPath = message.payload.toPath;
-        if (typeof fromPath === "string") {
-          this.clearWatcherActivity(fromPath, true);
-        }
-        if (typeof toPath === "string") {
-          this.clearWatcherActivity(toPath, true);
+        if (typeof fromPath === "string" && typeof toPath === "string") {
+          this.forwardPathRename(fromPath, toPath);
+          continue;
         }
       } else if (message.type === "path.deleted") {
         const path = message.payload.path;
         if (typeof path === "string") {
-          this.clearWatcherActivity(path, true);
+          this.forwardPathDeletion(path);
+          continue;
         }
       }
       // Path renames/deletes/creations are transmitted promptly (metadata only).
@@ -616,7 +738,20 @@ export class CoordinationAgent extends EventEmitter {
     });
   }
 
-  /** Start/reset a bounded watcher-only editing signal for one saved path. */
+  /**
+   * Start/reset a short-lived activity signal for a passive editor event or a
+   * watcher-confirmed save. The currently focused editor owns a stronger direct
+   * signal; its timer is only used to supersede stale queued transitions.
+   */
+  private beginBoundedActivity(path: string): void {
+    if (this.activeEditorScopes.has(path)) {
+      return;
+    }
+    const activityGeneration = this.scheduleWatcherActivityEnd(path);
+    this.enqueueWatcherPresence(path, "editing", activityGeneration);
+  }
+
+  /** Start/reset a bounded watcher/passive-editor editing signal for one path. */
   private scheduleWatcherActivityEnd(path: string): number {
     const hadTimer = this.watcherActivityTimers.has(path);
     this.clearWatcherActivityTimer(path);
@@ -653,9 +788,9 @@ export class CoordinationAgent extends EventEmitter {
     }
   }
 
-  /** Emit an end-of-editing only when an editor has not claimed the path. */
+  /** Emit an end-of-editing only when no currently active editor owns the path. */
   private endWatcherActivity(path: string): void {
-    if (this.openScopes.has(path)) {
+    if (this.activeEditorScopes.has(path)) {
       return;
     }
     const connection = this.connection;

@@ -63,8 +63,10 @@ released when you close the file.
 
 ### 2.3 Hard-stop locks (opt-in)
 
-**What it is:** For files you mark as hard-stop, a second person is **physically
-blocked** from starting to edit while someone else holds the lock.
+**What it is:** For files you mark as hard-stop, CFLS-aware clients receive a
+clear stop decision while someone else holds the lock. In the current VS Code /
+Kiro integration this is a pre-save warning: it does not change operating-system
+file permissions, silently discard work, or block non-CFLS tools.
 
 **What it's for:** Your hottest, most collision-prone shared files (shared config,
 a central router, a schema). This is the single most effective way to prevent
@@ -80,7 +82,8 @@ conflicts on a specific file.
 - **soft** — someone may be nearby; proceed with awareness.
 - **coordination-required** — your change indirectly affects a file a teammate
   holds (via dependencies); talk first.
-- **hard** — blocked; a hard-stop lock is held by someone else.
+- **hard** — stop signal; a hard-stop lock is held by someone else. Coordinate
+  before proceeding.
 
 **What it's for:** Turning "who's editing what" into a clear go / caution / stop
 signal.
@@ -128,9 +131,12 @@ configuration.
 
 ### 2.9 Coding-agent team awareness (MCP)
 
-**What it is:** `get_team_status` gives a coding agent the active team projection: members,
-their declared task descriptions, repository-relative files, and current activity roles. It is
-part of the 13-tool MCP surface alongside the risk, intent, lock, and live-update tools.
+**What it is:** `get_team_status` gives a coding agent the active-work projection: members,
+their declared task descriptions, repository-relative files, and current activity roles.
+`get_connection_status` provides the live connected/offline team roster, including idle
+teammates. The editor panel combines both projections so the team list remains visible even
+before someone edits a file. They are part of the 13-tool MCP surface alongside the risk,
+intent, lock, and live-update tools.
 
 **How to use it:** Start the local Agent, then configure the coding-agent client to run:
 

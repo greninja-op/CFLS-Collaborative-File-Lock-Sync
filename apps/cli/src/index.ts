@@ -90,7 +90,77 @@ import {
 } from "./service";
 
 /** Default loopback Local_API port for `cfls agent` (matches the extension default). */
-const DEFAULT_LOCAL_API_PORT = 8750;
+export const DEFAULT_LOCAL_API_PORT = 8750;
+
+/** A successfully started local agent, narrowed to the fields CLI publishing needs. */
+export interface LocalApiPublishingAgent {
+  start: () => Promise<{
+    readonly localApiAddress: { readonly wsUrl?: string };
+  }>;
+  stop: () => Promise<void>;
+}
+
+/** Injectable seam for testing that discovery is published only after Local_API starts. */
+export type LocalApiDiscoveryWriter = (
+  path: string,
+  value: { readonly url: string; readonly token: string },
+) => void;
+
+/**
+ * Strictly parse the user-facing Local_API port. `net.listen` accepts only the
+ * TCP range, so accepting e.g. `70000` here would otherwise publish a discovery
+ * token for an API that cannot bind.
+ */
+export function parseLocalApiPort(value: string | boolean | undefined): number {
+  if (value === undefined) {
+    return DEFAULT_LOCAL_API_PORT;
+  }
+  if (typeof value !== "string" || !/^[0-9]+$/u.test(value)) {
+    throw new Error("--local-port must be an integer from 1 through 65535.");
+  }
+  const port = Number(value);
+  if (!Number.isSafeInteger(port) || port < 1 || port > 65_535) {
+    throw new Error("--local-port must be an integer from 1 through 65535.");
+  }
+  return port;
+}
+
+/**
+ * Start the loopback API before publishing its discovery token. If either API
+ * startup or private-record publication fails, stop the partially started
+ * agent. This prevents a fresh discovery record from ever pointing at an API
+ * that failed to bind.
+ */
+export async function startAndPublishLocalApi(
+  agent: LocalApiPublishingAgent,
+  discoveryPath: string,
+  token: string,
+  writeDiscovery: LocalApiDiscoveryWriter = writeLocalApiConfig,
+): Promise<string> {
+  let startAttempted = false;
+  try {
+    startAttempted = true;
+    const running = await agent.start();
+    const url = running.localApiAddress.wsUrl;
+    if (url === undefined || url.length === 0) {
+      throw new Error(
+        "The CFLS Local_API started without a loopback WebSocket address.",
+      );
+    }
+    writeDiscovery(discoveryPath, { url, token });
+    return url;
+  } catch (error) {
+    if (startAttempted) {
+      try {
+        await agent.stop();
+      } catch {
+        // Preserve the original startup/publication error. The agent owns all
+        // local resources and its stop path is independently best-effort.
+      }
+    }
+    throw error;
+  }
+}
 
 /** Default Host_URL for `cfls host`. */
 const DEFAULT_HOST_URL = "wss://0.0.0.0:8730";
@@ -303,6 +373,9 @@ function cmdConnect(args: ParsedArgs, cwd: string): void {
 
 /** `cfls agent [--insecure-tls] [--local-port 8750]` — run the CoordinationAgent. */
 async function cmdAgent(args: ParsedArgs, cwd: string): Promise<void> {
+  // Validate this before doing any config or secret work. In particular, an
+  // invalid port must not cause a discovery token to be written.
+  const port = parseLocalApiPort(args.options["local-port"]);
   const repoRoot = resolveRepoRoot(cwd);
   const config = readAgentConfig(agentConfigPath(repoRoot));
   if (config.hostUrl === undefined) {
@@ -334,23 +407,8 @@ async function cmdAgent(args: ParsedArgs, cwd: string): Promise<void> {
   const self = { memberId, deviceId: deriveDeviceId(deviceKey.publicKey) };
   const rules = loadRulesConfig(repoRoot).config;
 
-  const localApiPort = Number.parseInt(
-    stringOption(args, "local-port") ?? "",
-    10,
-  );
-  const port =
-    Number.isInteger(localApiPort) && localApiPort > 0
-      ? localApiPort
-      : DEFAULT_LOCAL_API_PORT;
   const localAuthToken = generateLocalAuthToken();
-
-  // Publish the Local_API address + token so the VS Code extension auto-connects
-  // with zero manual settings (Req 3.1). This file holds a per-session loopback
-  // token only — no long-lived secret — and is gitignored.
-  writeLocalApiConfig(localApiConfigPath(repoRoot), {
-    url: `ws://127.0.0.1:${port}`,
-    token: localAuthToken,
-  });
+  const discoveryPath = localApiConfigPath(repoRoot);
 
   const agent = new CoordinationAgent({
     session,
@@ -367,12 +425,16 @@ async function cmdAgent(args: ParsedArgs, cwd: string): Promise<void> {
     enableNamedPipe: false,
     connection: { autoReconnect: true },
   });
-  await agent.start();
+  const localApiUrl = await startAndPublishLocalApi(
+    agent,
+    discoveryPath,
+    localAuthToken,
+  );
 
   log.info(`CoordinationAgent started for "${memberId}".`);
   log.info(`Host_URL:  ${config.hostUrl}`);
   log.info(
-    `Local_API: ws://127.0.0.1:${port} (extension auto-discovers via ${localApiConfigPath(repoRoot)})`,
+    `Local_API: ${localApiUrl} (extension auto-discovers via ${discoveryPath})`,
   );
   log.info(`Session:   ${describeSession(session)}`);
   log.info(
@@ -485,8 +547,8 @@ function nativeServiceExecutor(): ServicePlanExecutor {
   };
 }
 
-/** Build argv for a background agent when this CLI is Node-hosted or a SEA exe. */
-function serviceAgentArgs(args: ParsedArgs): string[] {
+/** Build validated argv for a background agent when this CLI is Node-hosted or a SEA exe. */
+export function serviceAgentArgs(args: ParsedArgs): string[] {
   const agentArgs: string[] = [];
   // A standalone Node SEA executable invokes itself directly. A normal npm/pnpm
   // install needs Node to run the current JavaScript entry file first.
@@ -503,9 +565,12 @@ function serviceAgentArgs(args: ParsedArgs): string[] {
   if (boolOption(args, "insecure-tls")) {
     agentArgs.push("--insecure-tls");
   }
-  const localPort = stringOption(args, "local-port");
+  const localPort = args.options["local-port"];
   if (localPort !== undefined) {
-    agentArgs.push("--local-port", localPort);
+    // The installed service must receive the same strictly valid port as an
+    // interactive `cfls agent`; otherwise it could install successfully but
+    // fail on every background launch.
+    agentArgs.push("--local-port", String(parseLocalApiPort(localPort)));
   }
   return agentArgs;
 }

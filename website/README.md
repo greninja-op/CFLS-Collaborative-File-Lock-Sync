@@ -63,12 +63,13 @@ The marketing copy deliberately distinguishes current MVP behavior from planned
 hardening:
 
 - Supported editor paths: VS Code and Kiro through the packaged .vsix.
-- The local Agent currently runs through cfls agent; do not promise an
-  installed background Windows service yet.
-- Soft coordination signals are demoable now. Do not promise hard edit blocking
-  as a finished feature.
-- Dependency ingestion and MCP transport are active architecture work; do not
-  present them as ready-to-install workflows.
+- The local Agent can run directly with `cfls agent` or as a per-user service:
+  `systemd --user` on Linux and Task Scheduler on Windows.
+- Soft coordination signals and the clickable active-team panel are demoable
+  now. Do not promise operating-system-level hard edit blocking as a finished
+  feature.
+- Local dependency analysis and the authenticated 13-tool MCP bridge are part
+  of the current MVP. Broader coding-agent integrations remain future work.
 - Source code remains in Git. CFLS is designed to share coordination metadata;
   local dependency analysis may read source files locally to derive metadata.
 - The standalone cfls.exe must be shipped through a GitHub Release or internal

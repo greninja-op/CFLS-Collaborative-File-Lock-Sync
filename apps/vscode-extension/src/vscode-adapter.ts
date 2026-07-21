@@ -22,6 +22,7 @@ import {
 } from "@cfls/core-state";
 
 import {
+  ActiveEditorPathTracker,
   EmitterEditorHost,
   type EditorEvent,
   type EditorEventKind,
@@ -223,6 +224,8 @@ export function showInformationMessage(
 export class VsCodeEditorHost implements EditorHost {
   private readonly emitter = new EmitterEditorHost();
   private readonly disposables: vscode.Disposable[] = [];
+  private readonly activeEditor = new ActiveEditorPathTracker();
+  private disposed = false;
 
   constructor() {
     this.wire();
@@ -230,6 +233,20 @@ export class VsCodeEditorHost implements EditorHost {
 
   onEditorEvent(listener: (event: EditorEvent) => void): () => void {
     return this.emitter.onEditorEvent(listener);
+  }
+
+  /**
+   * Return the latest active-editor state for a newly authenticated Local_API
+   * client. This is a current-state reassertion, not buffered offline activity:
+   * it lets the agent correct any durable editor scope after startup/reconnect.
+   */
+  currentActiveEditorEvent(): EditorEvent {
+    return {
+      kind: "active_editor_changed",
+      activeEditorSnapshot: true,
+      at: Date.now(),
+      ...this.activeEditor.currentState(),
+    };
   }
 
   private fire(
@@ -249,6 +266,11 @@ export class VsCodeEditorHost implements EditorHost {
     ) {
       return;
     }
+    this.emit(kind, path, oldPath);
+  }
+
+  /** Emit a path payload already proven repository-relative by this adapter. */
+  private emit(kind: EditorEventKind, path?: string, oldPath?: string): void {
     const event: EditorEvent = {
       kind,
       at: Date.now(),
@@ -258,23 +280,52 @@ export class VsCodeEditorHost implements EditorHost {
     this.emitter.emit(event);
   }
 
+  /**
+   * Publish the active repository document, including the previous path on a
+   * tab switch. A non-repository/undefined editor deliberately becomes an
+   * `oldPath`-only transition so the agent can retire the prior repository
+   * file without receiving an external path.
+   */
+  private publishActiveEditor(editor: vscode.TextEditor | undefined): void {
+    const path =
+      editor === undefined
+        ? undefined
+        : toRepoRelativePath(editor.document.uri);
+    const transition = this.activeEditor.setActive(path);
+    if (transition !== undefined) {
+      this.emit("active_editor_changed", transition.path, transition.oldPath);
+    }
+  }
+
   private wire(): void {
     // workspace_opened: fire once for the currently open workspace.
     if (vscode.workspace.workspaceFolders !== undefined) {
-      queueMicrotask(() => this.fire("workspace_opened"));
+      queueMicrotask(() => {
+        if (!this.disposed) {
+          this.fire("workspace_opened");
+        }
+      });
     }
+    // `onDidChangeActiveTextEditor` does not replay the document already open
+    // when onStartupFinished activation runs. Queue this after construction so
+    // the entrypoint has attached its forwarder, then publish the current
+    // repository file exactly once.
+    queueMicrotask(() => {
+      if (!this.disposed) {
+        this.publishActiveEditor(vscode.window.activeTextEditor);
+      }
+    });
     this.disposables.push(
-      vscode.workspace.onDidChangeWorkspaceFolders(() =>
-        this.fire("workspace_opened"),
-      ),
+      vscode.workspace.onDidChangeWorkspaceFolders(() => {
+        this.fire("workspace_opened");
+        this.publishActiveEditor(vscode.window.activeTextEditor);
+      }),
       vscode.workspace.onDidOpenTextDocument((doc) =>
         this.fire("file_opened", doc.uri),
       ),
-      vscode.window.onDidChangeActiveTextEditor((editor) => {
-        if (editor !== undefined) {
-          this.fire("active_editor_changed", editor.document.uri);
-        }
-      }),
+      vscode.window.onDidChangeActiveTextEditor((editor) =>
+        this.publishActiveEditor(editor),
+      ),
       vscode.workspace.onDidChangeTextDocument((e) => {
         if (e.contentChanges.length > 0) {
           this.fire("editing_started", e.document.uri);
@@ -283,16 +334,47 @@ export class VsCodeEditorHost implements EditorHost {
       vscode.workspace.onDidSaveTextDocument((doc) =>
         this.fire("file_saved", doc.uri),
       ),
-      vscode.workspace.onDidCloseTextDocument((doc) =>
-        this.fire("file_closed", doc.uri),
-      ),
+      vscode.workspace.onDidCloseTextDocument((doc) => {
+        const transition = this.activeEditor.clearIfActive(
+          toRepoRelativePath(doc.uri),
+        );
+        if (transition !== undefined) {
+          this.emit(
+            "active_editor_changed",
+            transition.path,
+            transition.oldPath,
+          );
+        }
+        this.fire("file_closed", doc.uri);
+      }),
       vscode.workspace.onDidRenameFiles((e) => {
         for (const f of e.files) {
+          const transition = this.activeEditor.rename(
+            toRepoRelativePath(f.oldUri),
+            toRepoRelativePath(f.newUri),
+          );
+          if (transition !== undefined) {
+            this.emit(
+              "active_editor_changed",
+              transition.path,
+              transition.oldPath,
+            );
+          }
           this.fire("file_renamed", f.newUri, f.oldUri);
         }
       }),
       vscode.workspace.onDidDeleteFiles((e) => {
         for (const uri of e.files) {
+          const transition = this.activeEditor.clearIfActive(
+            toRepoRelativePath(uri),
+          );
+          if (transition !== undefined) {
+            this.emit(
+              "active_editor_changed",
+              transition.path,
+              transition.oldPath,
+            );
+          }
           this.fire("file_deleted", uri);
         }
       }),
@@ -300,6 +382,7 @@ export class VsCodeEditorHost implements EditorHost {
   }
 
   dispose(): void {
+    this.disposed = true;
     for (const d of this.disposables) {
       d.dispose();
     }

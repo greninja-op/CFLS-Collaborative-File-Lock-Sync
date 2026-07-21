@@ -246,8 +246,8 @@ interface McpEnvelope<T> {
 ### Editor_Extension (`apps/vscode-extension`)
 
 Talks only to the Local_API (never to the host). Emits Editor_Events within 2s, renders
-coordination state within 2s, enforces hard-stop for cooperating edits, shows offline/stale
-indicators, and sends heartbeats to the agent. Its CFLS status-bar item opens an active-team
+coordination state within 2s, applies cooperative hard-stop decisions and surfaces pre-save
+warnings, shows offline/stale indicators, and sends heartbeats to the agent. Its CFLS status-bar item opens an active-team
 panel with member task and repository-relative file metadata; it does not display or transmit
 source patches or diffs.
 

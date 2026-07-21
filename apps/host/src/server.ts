@@ -284,11 +284,19 @@ export class CoordinationServer {
   }
 
   private handleClose(conn: Connection): void {
-    this.connections.delete(conn);
-    if (conn.principal !== undefined) {
-      const set = this.bySession.get(sessionKey(conn.principal.session));
-      set?.delete(conn);
+    // `error` and `close` can both arrive for one socket. Only the first path
+    // mutates the roster and notifies peers.
+    if (!this.connections.delete(conn) || conn.principal === undefined) {
+      return;
     }
+    const session = conn.principal.session;
+    const key = sessionKey(session);
+    const set = this.bySession.get(key);
+    set?.delete(conn);
+    if (set?.size === 0) {
+      this.bySession.delete(key);
+    }
+    this.broadcastParticipants(session);
   }
 
   private handleMessage(conn: Connection, raw: string): void {
@@ -364,6 +372,10 @@ export class CoordinationServer {
         type: AuthMessageType.OK,
         payload: { highestRevision: result.highestRevision },
       });
+      // Connection membership is independent of path activity. Broadcast the
+      // current roster after auth so idle teammates are visible to MCP clients
+      // and the editor panel, and peers see the new live member immediately.
+      this.broadcastParticipants(result.principal.session);
       // Hand the freshly-connected agent the current metadata-only
       // Dependency_Graph so it can compute indirect risk immediately, sharing
       // one graph across the whole session (Req 19, 20).
@@ -574,6 +586,49 @@ export class CoordinationServer {
       if (conn.principal !== undefined) devices.add(conn.principal.deviceId);
     }
     return [...devices].sort();
+  }
+
+  /** Build the live, metadata-only member roster for one authorized session. */
+  private participants(session: SessionId): {
+    connected: string[];
+    offline: string[];
+  } {
+    const set = this.bySession.get(sessionKey(session));
+    const connected = new Set<string>();
+    for (const conn of set ?? []) {
+      if (conn.principal !== undefined) {
+        connected.add(conn.principal.memberId);
+      }
+    }
+    const offline = new Set<string>();
+    for (const entry of this.authority.membership(session)) {
+      if (
+        entry.invitationValid &&
+        !entry.revoked &&
+        !connected.has(entry.memberId)
+      ) {
+        offline.add(entry.memberId);
+      }
+    }
+    return {
+      connected: [...connected].sort((a, b) => a.localeCompare(b)),
+      offline: [...offline].sort((a, b) => a.localeCompare(b)),
+    };
+  }
+
+  /** Fan a live participant roster out only to authenticated session peers. */
+  private broadcastParticipants(session: SessionId): void {
+    const set = this.bySession.get(sessionKey(session));
+    if (set === undefined) {
+      return;
+    }
+    const payload = this.participants(session);
+    for (const conn of set) {
+      this.send(conn, {
+        type: BroadcastMessageType.PARTICIPANTS,
+        payload,
+      });
+    }
   }
 
   private uptimeSeconds(): number {

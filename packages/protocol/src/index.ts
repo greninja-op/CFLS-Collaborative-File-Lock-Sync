@@ -114,6 +114,7 @@ export type {
   SessionStateSnapshot,
   SyncSnapshotPayload,
   CoordinationUpdatePayload,
+  ParticipantsUpdatePayload,
   EventAppliedLockConflict,
   EventAppliedPayload,
   ErrorPayload,

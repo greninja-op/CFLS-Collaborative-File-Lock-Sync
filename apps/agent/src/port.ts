@@ -304,13 +304,23 @@ export class AgentCoordinationPort implements AgentPort {
 
   getConnectionStatus(): AgentResult<ConnectionStatusData> {
     const online = this.gateway.online();
+    // A locally disconnected agent cannot authoritatively claim any peer is
+    // still connected. Preserve the last known roster, but surface every known
+    // member as offline until the Host provides a fresh participants.update.
+    const knownMembers = new Set([
+      this.self.memberId,
+      ...this.connectedMembers,
+      ...this.offlineMembers,
+    ]);
     return {
       ok: true,
       data: {
         status: online ? "online" : "offline",
         participants: {
-          connected: [...this.connectedMembers],
-          offline: [...this.offlineMembers],
+          connected: online ? [...this.connectedMembers] : [],
+          offline: online
+            ? [...this.offlineMembers]
+            : [...knownMembers].sort((a, b) => a.localeCompare(b)),
         },
         manualCoordinationRequired: !online,
       },
@@ -517,9 +527,16 @@ export class AgentCoordinationPort implements AgentPort {
     this.authorized = authorized;
   }
 
-  setParticipants(connected: string[], offline: string[]): void {
-    this.connectedMembers = connected;
-    this.offlineMembers = offline;
+  setParticipants(
+    connected: readonly string[],
+    offline: readonly string[],
+  ): void {
+    const live = new Set(connected);
+    const disconnected = new Set(
+      offline.filter((memberId) => !live.has(memberId)),
+    );
+    this.connectedMembers = [...live].sort((a, b) => a.localeCompare(b));
+    this.offlineMembers = [...disconnected].sort((a, b) => a.localeCompare(b));
   }
 
   /**

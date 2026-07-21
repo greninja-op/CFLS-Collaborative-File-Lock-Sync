@@ -9,6 +9,7 @@
 import { ALL_SOFT_CONFIG, type RepositoryRulesConfig } from "@cfls/core-state";
 import type {
   ConnectionSnapshot,
+  ConnectionStatusData,
   GetRiskMapData,
   GetTeamStatusData,
   McpEnvelope,
@@ -35,7 +36,9 @@ import {
   VsCodeEditorHost,
 } from "./vscode-adapter";
 import {
+  buildConnectionStatusOnlyViewModel,
   buildCoordinationViewModel,
+  buildTeamStatusOnlyViewModel,
   type CoordinationViewModel,
 } from "./view-model";
 
@@ -66,8 +69,12 @@ let rules: RepositoryRulesConfig = ALL_SOFT_CONFIG;
 let latestRiskSnapshot: RiskSnapshot | undefined;
 /** The last successful metadata-only team projection. */
 let cachedTeamStatus: GetTeamStatusData | undefined;
+/** The last successful live roster, independent of members' active work. */
+let cachedConnectionStatus: ConnectionStatusData | undefined;
 /** One in-flight team request prevents the two-second poll from piling up. */
 let teamStatusRequest: Promise<void> | undefined;
+/** One in-flight roster request prevents the two-second poll from piling up. */
+let connectionStatusRequest: Promise<void> | undefined;
 /** One in-flight risk request prevents out-of-order snapshots from overwriting newer UI. */
 let riskMapRequest: Promise<void> | undefined;
 /** Invalidates asynchronous refreshes after deactivate/reactivate. */
@@ -103,10 +110,64 @@ function renderRiskResponse(
   currentViewModel = buildCoordinationViewModel({
     riskMap: latestRiskSnapshot.riskMap,
     ...(cachedTeamStatus !== undefined ? { teamStatus: cachedTeamStatus } : {}),
+    ...(cachedConnectionStatus !== undefined
+      ? { connectionStatus: cachedConnectionStatus }
+      : {}),
     teamId: session.teamId,
     connection: latestRiskSnapshot.connection,
     staleness: latestRiskSnapshot.staleness,
   });
+  ui.render(currentViewModel);
+}
+
+/**
+ * Render whichever metadata projections have arrived without making live
+ * roster visibility depend on a Risk_Map or an active-work record. Both
+ * `get_team_status` and `get_connection_status` call this after updating their
+ * independent caches.
+ */
+function renderMetadataResponse(
+  ui: CoordinationUiController,
+  session: SessionId,
+  connection: ConnectionSnapshot,
+  staleness: StalenessSnapshot,
+): void {
+  if (latestRiskSnapshot?.session === session) {
+    currentViewModel = buildCoordinationViewModel({
+      riskMap: latestRiskSnapshot.riskMap,
+      ...(cachedTeamStatus !== undefined
+        ? { teamStatus: cachedTeamStatus }
+        : {}),
+      ...(cachedConnectionStatus !== undefined
+        ? { connectionStatus: cachedConnectionStatus }
+        : {}),
+      teamId: session.teamId,
+      // Keep the exact Risk_Map, but use the newest metadata response for the
+      // connection chip and roster states. In particular, an offline roster
+      // response must never leave the panel header claiming the host is live.
+      connection,
+      staleness,
+    });
+  } else if (cachedTeamStatus !== undefined) {
+    currentViewModel = buildTeamStatusOnlyViewModel({
+      teamStatus: cachedTeamStatus,
+      ...(cachedConnectionStatus !== undefined
+        ? { connectionStatus: cachedConnectionStatus }
+        : {}),
+      teamId: session.teamId,
+      connection,
+      staleness,
+    });
+  } else if (cachedConnectionStatus !== undefined) {
+    currentViewModel = buildConnectionStatusOnlyViewModel({
+      connectionStatus: cachedConnectionStatus,
+      teamId: session.teamId,
+      connection,
+      staleness,
+    });
+  } else {
+    return;
+  }
   ui.render(currentViewModel);
 }
 
@@ -144,29 +205,12 @@ function refreshTeamStatus(
       // changing risk/decorations or waiting for the next poll. If risk is
       // temporarily unavailable, still render the live metadata-only team
       // panel rather than making it depend on a separate query succeeding.
-      if (latestRiskSnapshot?.session === session) {
-        currentViewModel = buildCoordinationViewModel({
-          riskMap: latestRiskSnapshot.riskMap,
-          teamStatus: cachedTeamStatus,
-          teamId: session.teamId,
-          connection: latestRiskSnapshot.connection,
-          staleness: latestRiskSnapshot.staleness,
-        });
-        ui.render(currentViewModel);
-      } else {
-        const fallback = offlineSnapshot();
-        currentViewModel = buildCoordinationViewModel({
-          riskMap: {
-            paths: [],
-            plannedFileCreations: [],
-            highestRevision: envelope.data.highestRevision,
-          },
-          teamStatus: cachedTeamStatus,
-          teamId: session.teamId,
-          ...fallback,
-        });
-        ui.render(currentViewModel);
-      }
+      renderMetadataResponse(
+        ui,
+        session,
+        envelope.connection,
+        envelope.staleness,
+      );
     })
     .catch(() => {
       // Keep the previous team metadata; risk/decorations remain responsive.
@@ -180,8 +224,58 @@ function refreshTeamStatus(
 }
 
 /**
- * Fetch the risk map and the richer team metadata independently. A slow or
- * failed risk query must never prevent the status-bar panel from refreshing.
+ * Refresh the live host roster separately from activity. The response includes
+ * idle admitted members, which must remain visible even before they edit a
+ * file or declare work.
+ */
+function refreshConnectionStatus(
+  client: LocalApiClient,
+  ui: CoordinationUiController,
+  session: SessionId,
+  epoch: number,
+): void {
+  if (
+    !isCurrentLocalApiClient(client) ||
+    connectionStatusRequest !== undefined
+  ) {
+    return;
+  }
+  const request = client
+    .request("get_connection_status", {})
+    .then((response) => {
+      if (
+        epoch !== runtimeEpoch ||
+        currentSession !== session ||
+        !isCurrentLocalApiClient(client)
+      ) {
+        return;
+      }
+      const envelope = response as McpEnvelope<ConnectionStatusData>;
+      if (!envelope.ok || envelope.data === undefined) {
+        return;
+      }
+      cachedConnectionStatus = envelope.data;
+      renderMetadataResponse(
+        ui,
+        session,
+        envelope.connection,
+        envelope.staleness,
+      );
+    })
+    .catch(() => {
+      // Keep the last known roster; activity and risk refresh independently.
+    })
+    .finally(() => {
+      if (connectionStatusRequest === request) {
+        connectionStatusRequest = undefined;
+      }
+    });
+  connectionStatusRequest = request;
+}
+
+/**
+ * Fetch risk, team activity, and roster independently. A slow or failed risk
+ * query must never prevent the status-bar panel from refreshing.
  */
 function refresh(
   client: LocalApiClient,
@@ -193,8 +287,9 @@ function refresh(
   const session = currentSession;
   const epoch = runtimeEpoch;
   // Start this first, independently of the risk request. It is intentionally
-  // not awaited: its result can update the panel even while risk is timing out.
+  // not awaited: either result can update the panel while risk is timing out.
   refreshTeamStatus(client, ui, session, epoch);
+  refreshConnectionStatus(client, ui, session, epoch);
   if (riskMapRequest !== undefined) {
     return riskMapRequest;
   }
@@ -283,6 +378,9 @@ function renderLocalAgentUnavailable(ui: CoordinationUiController): void {
       highestRevision,
     },
     ...(cachedTeamStatus !== undefined ? { teamStatus: cachedTeamStatus } : {}),
+    ...(cachedConnectionStatus !== undefined
+      ? { connectionStatus: cachedConnectionStatus }
+      : {}),
     ...(currentSession !== undefined ? { teamId: currentSession.teamId } : {}),
     ...offlineSnapshot(),
   });
@@ -296,7 +394,9 @@ export async function activate(context: VsCodeExtensionContext): Promise<void> {
   currentViewModel = undefined;
   selfMemberId = "self";
   cachedTeamStatus = undefined;
+  cachedConnectionStatus = undefined;
   teamStatusRequest = undefined;
+  connectionStatusRequest = undefined;
   riskMapRequest = undefined;
   latestRiskSnapshot = undefined;
   // Load the team's committed rules so hard-stop resolves path modes as the
@@ -351,6 +451,11 @@ export async function activate(context: VsCodeExtensionContext): Promise<void> {
       // A connected client becomes visible only after auth, session resolution,
       // and its one subscription all succeeded. No request from the dead client
       // is replayed here; refresh issues a brand-new snapshot query instead.
+      // Editor events emitted before local authentication are deliberately not
+      // replayed, but the *current* active editor is durable state. Reassert it
+      // for startup and every Local_API recovery so the agent can retire any
+      // stale prior active scope and claim only the file currently in focus.
+      client.sendEditorEvent(editorHost.currentActiveEditorEvent());
       void refresh(client, ui);
     },
     onUnavailable: () => {
@@ -360,6 +465,7 @@ export async function activate(context: VsCodeExtensionContext): Promise<void> {
       // Drop the old in-flight guards so a recovered client can immediately
       // issue fresh reads rather than waiting for a dead socket's timeout.
       teamStatusRequest = undefined;
+      connectionStatusRequest = undefined;
       riskMapRequest = undefined;
       renderLocalAgentUnavailable(ui);
     },
@@ -385,8 +491,10 @@ export async function activate(context: VsCodeExtensionContext): Promise<void> {
   }, 2_000);
   refreshTimer.unref?.();
 
-  // Cooperative hard-stop: reject a save to a hard-locked path held by another
-  // member. It remains a clear error message, never an OS-level file lock.
+  // Cooperative hard-stop: surface a clear warning when a save is attempted on
+  // a hard-locked path held by another member. The public VS Code API exposes
+  // this as a pre-save notification rather than a cancellable edit operation;
+  // CFLS therefore never misrepresents it as an OS-level file lock.
   context.subscriptions.push(
     onWillSaveTextDocument((path) => {
       if (currentViewModel === undefined) {
@@ -438,8 +546,10 @@ export function deactivate(): void {
   void runtime.recovery.close();
   runtime = undefined;
   teamStatusRequest = undefined;
+  connectionStatusRequest = undefined;
   riskMapRequest = undefined;
   cachedTeamStatus = undefined;
+  cachedConnectionStatus = undefined;
   latestRiskSnapshot = undefined;
   currentSession = undefined;
   currentViewModel = undefined;

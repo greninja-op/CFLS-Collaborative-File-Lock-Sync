@@ -75,7 +75,7 @@ export function buildTeamPanelHtml(
     <div class="state" id="connection-state"></div>
   </header>
   <main class="layout">
-    <aside class="members"><div class="members-label">Active team members</div><div id="member-list"></div></aside>
+    <aside class="members"><div class="members-label">Team members</div><div id="member-list"></div></aside>
     <section class="detail" id="member-detail"></section>
   </main>
   <script>
@@ -83,6 +83,7 @@ export function buildTeamPanelHtml(
     let state = ${initialState};
     let selectedMemberId = null;
     const roleLabel = { editing: "editing", "soft-lock": "lock", intent: "intent", "planned-create": "new file" };
+    const connectionLabel = { connected: "Connected", offline: "Offline", unknown: "Roster pending" };
     const el = (tag, className) => { const node = document.createElement(tag); if (className) node.className = className; return node; };
     const text = (node, value) => { node.textContent = String(value ?? ""); return node; };
     const initials = (name) => Array.from(name || "?").slice(0, 2).join("").toUpperCase();
@@ -96,28 +97,30 @@ export function buildTeamPanelHtml(
       stateNode.className = "state" + (vm.offline ? " offline" : vm.stale ? " stale" : "");
       text(stateNode, vm.offline ? "Offline" : vm.stale ? "Stale" : "Live");
       const list = document.getElementById("member-list"); list.replaceChildren();
-      if (members.length === 0) { list.append(text(el("div", "empty"), "No active coordination signals yet.")); }
+      if (members.length === 0) { list.append(text(el("div", "empty"), "No team members are currently visible.")); }
       for (const member of members) {
         const button = el("button", "member" + (member.memberId === selectedMemberId ? " selected" : "")); button.type = "button";
         button.addEventListener("click", () => { selectedMemberId = member.memberId; render(); vscode?.setState({ selectedMemberId }); });
         const avatar = text(el("span", "avatar"), initials(member.memberId));
         const copy = el("span"); copy.style.minWidth = "0";
         copy.append(text(el("div", "member-name"), member.memberId));
-        copy.append(text(el("div", "member-meta"), member.files.length + " active file" + (member.files.length === 1 ? "" : "s")));
+        const activity = member.activityKnown ? member.files.length + " active file" + (member.files.length === 1 ? "" : "s") : "No activity reported";
+        copy.append(text(el("div", "member-meta"), (connectionLabel[member.connectionState] || "Roster pending") + " · " + activity));
         button.append(avatar, copy); list.append(button);
       }
       const detail = document.getElementById("member-detail"); detail.replaceChildren();
       const member = members.find((item) => item.memberId === selectedMemberId);
-      if (!member) { detail.append(text(el("div", "empty"), "When a teammate edits, locks, or declares work, their details appear here in real time.")); return; }
+      if (!member) { detail.append(text(el("div", "empty"), "Live roster members and their activity appear here in real time.")); return; }
       detail.append(text(el("h2"), member.memberId));
-      const devices = member.deviceIds.length ? member.deviceIds.join(", ") : "No device id reported";
-      detail.append(text(el("div", "subtle"), "Active devices: " + devices + " · Active entry revision " + member.lastEventRevision));
+      const devices = member.activityKnown ? (member.deviceIds.length ? member.deviceIds.join(", ") : "No device id reported") : "No activity metadata reported";
+      const revision = member.lastEventRevision === null ? "No activity revision" : "Active entry revision " + member.lastEventRevision;
+      detail.append(text(el("div", "subtle"), "Connection: " + (connectionLabel[member.connectionState] || "Roster pending") + " · Active devices: " + devices + " · " + revision));
       const tasks = el("div", "section"); tasks.append(text(el("h3"), "Declared work"));
-      if (!member.tasks.length) tasks.append(text(el("div", "empty"), "No explicit task declared. Active files are shown below."));
+      if (!member.tasks.length) tasks.append(text(el("div", "empty"), member.activityKnown ? "No explicit task declared. Active files are shown below." : "This teammate is in the live roster but has not reported active work."));
       for (const task of member.tasks) { const card = el("article", "card"); card.append(text(el("div", "card-title"), task.description || "Undescribed coordination task")); const body = el("div", "card-body"); const paths = [...task.modifyPaths.map((path) => "Modify: " + path), ...task.createPaths.map((path) => "Create: " + path)]; text(body, paths.length ? paths.join("\n") : "No paths recorded."); card.append(body); tasks.append(card); }
       detail.append(tasks);
       const files = el("div", "section"); files.append(text(el("h3"), "Current files"));
-      if (!member.files.length) files.append(text(el("div", "empty"), "No active files."));
+      if (!member.files.length) files.append(text(el("div", "empty"), member.activityKnown ? "No active files." : "No activity metadata reported yet."));
       for (const file of member.files) { const row = el("div", "file-row"); row.append(text(el("code"), file.path)); const roles = el("div", "roles"); for (const role of file.roles) roles.append(text(el("span", "tag"), roleLabel[role] || role)); row.append(roles); files.append(row); }
       detail.append(files);
       const diff = el("div", "section"); diff.append(text(el("h3"), "Diff privacy")); diff.append(text(el("div", "privacy"), "CFLS currently shares file and task metadata only. Teammates’ source patches are not transmitted or stored by this panel.")); detail.append(diff);

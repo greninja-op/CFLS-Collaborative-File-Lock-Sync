@@ -105,6 +105,14 @@ describe("validatePayload — accepted payloads", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("accepts a live participant roster payload", () => {
+    const result = validatePayload("participants.update", {
+      connected: ["alice", "bob"],
+      offline: ["carol"],
+    });
+    expect(result.ok).toBe(true);
+  });
+
   it("accepts a correlated event.applied acknowledgement with lock conflict metadata", () => {
     const result = validatePayload("event.applied", {
       eventId: "evt-lock-bob",

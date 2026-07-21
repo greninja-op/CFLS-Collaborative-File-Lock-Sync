@@ -7,13 +7,17 @@
 
 import type {
   ConnectionSnapshot,
+  ConnectionStatusData,
   GetRiskMapData,
+  GetTeamStatusData,
   StalenessSnapshot,
 } from "@cfls/mcp-server";
 import { describe, expect, it } from "vitest";
 
 import {
+  buildConnectionStatusOnlyViewModel,
   buildCoordinationViewModel,
+  buildTeamStatusOnlyViewModel,
   findPathView,
   statusLine,
 } from "./view-model";
@@ -70,6 +74,29 @@ const riskMap: GetRiskMapData = {
   ],
   plannedFileCreations: [{ path: "src/new.ts", memberId: "bob" }],
   highestRevision: 421,
+};
+
+const teamStatus: GetTeamStatusData = {
+  teamId: "team-demo",
+  highestRevision: 422,
+  members: [
+    {
+      memberId: "bob",
+      deviceIds: ["device-bob"],
+      files: [{ path: "src/shared.ts", roles: ["editing"] }],
+      tasks: [],
+      lastEventRevision: 422,
+    },
+  ],
+};
+
+const connectionStatus: ConnectionStatusData = {
+  status: "online",
+  participants: {
+    connected: ["alice", "bob"],
+    offline: ["carol"],
+  },
+  manualCoordinationRequired: false,
 };
 
 describe("buildCoordinationViewModel (Req 3.4)", () => {
@@ -148,5 +175,128 @@ describe("offline / stale indicator (Req 3.6, 33.3)", () => {
 
   it("reports stale when online but data has not synced", () => {
     expect(statusLine(online, staleSnap)).toMatch(/Stale/);
+  });
+
+  it("keeps a successful team-only response online and fresh when risk data is unavailable", () => {
+    const vm = buildTeamStatusOnlyViewModel({
+      teamStatus,
+      teamId: "team-demo",
+      connection: online,
+      staleness: fresh,
+    });
+
+    expect(vm.paths).toEqual([]);
+    expect(vm.members).toEqual([
+      {
+        ...teamStatus.members[0],
+        connectionState: "unknown",
+        activityKnown: true,
+      },
+    ]);
+    expect(vm.offline).toBe(false);
+    expect(vm.stale).toBe(false);
+    expect(vm.statusText).toBe("Online");
+  });
+
+  it("merges idle live-roster members with metadata-only active work", () => {
+    const vm = buildCoordinationViewModel({
+      riskMap,
+      teamStatus,
+      connectionStatus,
+      connection: online,
+      staleness: fresh,
+    });
+
+    expect(
+      vm.members.map((member) => ({
+        memberId: member.memberId,
+        connectionState: member.connectionState,
+        activityKnown: member.activityKnown,
+        files: member.files,
+        tasks: member.tasks,
+        lastEventRevision: member.lastEventRevision,
+      })),
+    ).toEqual([
+      {
+        memberId: "alice",
+        connectionState: "connected",
+        activityKnown: false,
+        files: [],
+        tasks: [],
+        lastEventRevision: null,
+      },
+      {
+        memberId: "bob",
+        connectionState: "connected",
+        activityKnown: true,
+        files: [{ path: "src/shared.ts", roles: ["editing"] }],
+        tasks: [],
+        lastEventRevision: 422,
+      },
+      {
+        memberId: "carol",
+        connectionState: "offline",
+        activityKnown: false,
+        files: [],
+        tasks: [],
+        lastEventRevision: null,
+      },
+    ]);
+  });
+
+  it("renders a live roster even while the activity query is unavailable", () => {
+    const vm = buildConnectionStatusOnlyViewModel({
+      connectionStatus,
+      teamId: "team-demo",
+      connection: online,
+      staleness: fresh,
+    });
+
+    expect(vm.paths).toEqual([]);
+    expect(vm.members).toHaveLength(3);
+    expect(
+      vm.members.find((member) => member.memberId === "alice"),
+    ).toMatchObject({
+      connectionState: "connected",
+      activityKnown: false,
+      files: [],
+      tasks: [],
+      lastEventRevision: null,
+    });
+  });
+
+  it("never presents cached peers as connected when the local agent is offline", () => {
+    const vm = buildCoordinationViewModel({
+      riskMap,
+      teamStatus,
+      connectionStatus,
+      connection: offline,
+      staleness: staleSnap,
+    });
+
+    expect(vm.members.map((member) => member.connectionState)).toEqual([
+      "offline",
+      "offline",
+      "offline",
+    ]);
+  });
+
+  it("honors an offline roster verdict if another response races its envelope", () => {
+    const vm = buildCoordinationViewModel({
+      riskMap,
+      teamStatus,
+      connectionStatus: { ...connectionStatus, status: "offline" },
+      connection: online,
+      staleness: fresh,
+    });
+
+    expect(vm.offline).toBe(true);
+    expect(vm.stale).toBe(true);
+    expect(vm.statusText).toMatch(/^Offline/);
+    expect(vm.members.map((member) => member.connectionState)).toEqual([
+      "offline",
+      "offline",
+      "offline",
+    ]);
   });
 });

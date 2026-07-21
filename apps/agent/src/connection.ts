@@ -19,6 +19,7 @@ import { randomUUID, randomBytes } from "node:crypto";
 
 import {
   buildEnvelope,
+  BroadcastMessageType,
   ErrorMessageType,
   EventMessageType,
   MESSAGE_FORMAT_VERSION,
@@ -27,6 +28,7 @@ import {
   type EventAppliedPayload,
   type MessagePayloadMap,
   type MessageTypeName,
+  type ParticipantsUpdatePayload,
   type SessionId,
   type SessionStateSnapshot,
 } from "@cfls/protocol";
@@ -87,6 +89,22 @@ export interface HostConnectionOptions {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type WireMessage = any;
 
+/** Reject malformed roster data rather than letting it pollute local status. */
+function isParticipantsUpdatePayload(
+  value: unknown,
+): value is ParticipantsUpdatePayload {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  const payload = value as { connected?: unknown; offline?: unknown };
+  return (
+    Array.isArray(payload.connected) &&
+    payload.connected.every((member) => typeof member === "string") &&
+    Array.isArray(payload.offline) &&
+    payload.offline.every((member) => typeof member === "string")
+  );
+}
+
 /** One pending inbound response waiter. */
 interface MessageWaiter {
   predicate: (message: WireMessage) => boolean;
@@ -108,6 +126,7 @@ export type MutationAcknowledgementResult =
 /**
  * A single outbound WSS connection to the CoordinationHost. Emits:
  *   - `"update"` `(CoordinationUpdate)` — a broadcast coordination change.
+ *   - `"participants"` `(ParticipantsUpdatePayload)` — a live session roster.
  *   - `"graph"`  `(DependencyGraph)`    — the session's shared Dependency_Graph.
  *   - `"state"`  `(ConnectionState)`    — connectivity transitions.
  *   - `"online"` `()`                   — a handshake just completed (drive sync).
@@ -343,6 +362,12 @@ export class HostConnection extends EventEmitter {
     if (message?.type === "coordination.update") {
       const update = message.payload as CoordinationUpdate;
       this.emit("update", update);
+      return;
+    }
+    if (message?.type === BroadcastMessageType.PARTICIPANTS) {
+      if (isParticipantsUpdatePayload(message.payload)) {
+        this.emit("participants", message.payload);
+      }
       return;
     }
     if (message?.type === "dep.snapshot") {

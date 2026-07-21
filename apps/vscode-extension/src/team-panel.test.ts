@@ -14,6 +14,8 @@ const viewModel: CoordinationViewModel = {
   members: [
     {
       memberId: "<script>alert(1)</script>",
+      connectionState: "connected",
+      activityKnown: true,
       deviceIds: ["device-1"],
       files: [{ path: "src/demo.ts", roles: ["editing"] }],
       tasks: [
@@ -26,6 +28,15 @@ const viewModel: CoordinationViewModel = {
       ],
       lastEventRevision: 4,
     },
+    {
+      memberId: "idle-offline-member",
+      connectionState: "offline",
+      activityKnown: false,
+      deviceIds: [],
+      files: [],
+      tasks: [],
+      lastEventRevision: null,
+    },
   ],
 };
 
@@ -34,7 +45,10 @@ describe("buildTeamPanelHtml", () => {
     const html = buildTeamPanelHtml(viewModel, "Team Demo");
 
     expect(html).toContain("CFLS Team Coordination");
-    expect(html).toContain("Active team members");
+    expect(html).toContain("Team members");
+    expect(html).toContain("connectionLabel");
+    expect(html).toContain('"connectionState":"offline"');
+    expect(html).toContain('"activityKnown":false');
     expect(html).toContain("Diff privacy");
     expect(html).toContain("\\u003cscript\\u003ealert(1)\\u003c/script\\u003e");
     expect(html).not.toContain("<script>alert(1)</script>");
