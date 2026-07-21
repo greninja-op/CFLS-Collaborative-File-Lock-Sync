@@ -216,12 +216,15 @@ For the full multi-laptop guide, see [team onboarding](./docs/onboarding.md). Th
 
 ### 1. An admin creates the team identity and starts the Host
 
-Run these from the shared repository after building the workspace:
+Run these from the shared repository after installing dependencies and building
+the workspace. In a source checkout, invoke the CLI with
+`node apps/cli/dist/index.js` (there is no globally installed `cfls` binary).
 
 ```bash
+pnpm install --frozen-lockfile
 pnpm -r build
-pnpm --filter @cfls/cli exec cfls admin-init --team my-team
-pnpm --filter @cfls/cli exec cfls host --url wss://0.0.0.0:8730 --db ./cfls-host.db
+node apps/cli/dist/index.js admin-init --team my-team
+node apps/cli/dist/index.js host --url wss://0.0.0.0:8730 --db ./cfls-host.db
 ```
 
 Without `--cert` and `--key`, the Host uses a development self-signed certificate. That is suitable only for a controlled demo or local development; Agents connecting to it need `--insecure-tls`.
@@ -231,21 +234,24 @@ Without `--cert` and `--key`, the Host uses a development self-signed certificat
 From the same Git repository on that teammate's computer:
 
 ```bash
-pnpm --filter @cfls/cli exec cfls join --host wss://HOST-IP:8730 --name alice --team my-team
-pnpm --filter @cfls/cli exec cfls id
+node apps/cli/dist/index.js join --host wss://sync.cfls.cyberkunju.com --name alice --team cyberkunju-cfls
+node apps/cli/dist/index.js id
 ```
 
 Send the displayed public key to the admin. The admin issues a signed invitation:
 
 ```bash
-pnpm --filter @cfls/cli exec cfls invite alice <alice-device-public-key>
+# On the deployed Host, issue the invitation on reticule, where the authorized
+# host-admin identity is stored:
+PUBLIC_KEY='<alice-device-public-key>'
+ssh reticule "sh /opt/cfls/deploy/host/admin.sh invite alice '$PUBLIC_KEY'"
 ```
 
 ### 3. The teammate connects their local Agent
 
 ```bash
-pnpm --filter @cfls/cli exec cfls connect <invitation>
-pnpm --filter @cfls/cli exec cfls agent --insecure-tls
+node apps/cli/dist/index.js connect <invitation>
+node apps/cli/dist/index.js agent
 ```
 
 Every teammate must coordinate the same Git remote, branch, and base revision. For production, use a reachable DNS name or stable address, a real certificate via `cfls host --cert <pem> --key <pem>`, durable storage, and omit `--insecure-tls`.
@@ -257,20 +263,22 @@ to source content beyond the authorized folder watcher, and it shares only coord
 
 ```bash
 # Linux: installs and starts a per-user systemd unit
-pnpm --filter @cfls/cli exec cfls service install --workspace /absolute/repo/path
+node apps/cli/dist/index.js service install --workspace /absolute/repo/path
 
 # Windows: creates a per-user Task Scheduler task; identify the task principal explicitly
-pnpm --filter @cfls/cli exec cfls service install --workspace C:\path\to\repo \
+node apps/cli/dist/index.js service install --workspace C:\path\to\repo \
   --windows-user 'DOMAIN\User-or-SID'
 
 # Either platform
-pnpm --filter @cfls/cli exec cfls service status --workspace /absolute/repo/path
-pnpm --filter @cfls/cli exec cfls service uninstall --workspace /absolute/repo/path
+node apps/cli/dist/index.js service status --workspace /absolute/repo/path
+node apps/cli/dist/index.js service uninstall --workspace /absolute/repo/path
 ```
 
-For a development Host using a self-signed certificate, add `--insecure-tls` to the install
-command. Linux users who need the Agent to survive logout may also need to enable lingering for
-their account with their system administrator's policy.
+The deployed `sync.cfls.cyberkunju.com` Host has a trusted certificate, so do
+not add `--insecure-tls`. For a development Host using a self-signed
+certificate, add it to the install command. Linux users who need the Agent to
+survive logout may also need to enable lingering for their account with their
+system administrator's policy.
 
 ### Install the editor extension
 
@@ -303,8 +311,13 @@ outer configuration key varies by client; the process definition is:
 
 ```json
 {
-  "command": "cfls",
-  "args": ["mcp", "--workspace", "/absolute/repo/path"]
+  "command": "node",
+  "args": [
+    "/absolute/repo/path/apps/cli/dist/index.js",
+    "mcp",
+    "--workspace",
+    "/absolute/repo/path"
+  ]
 }
 ```
 
