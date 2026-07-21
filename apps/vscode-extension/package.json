@@ -2,7 +2,7 @@
   "name": "@cfls/vscode-extension",
   "displayName": "CFLS Collaborative File Lock Sync",
   "description": "VS Code Editor_Extension that talks only to the local CoordinationAgent: emits editor events, renders coordination state, and opens a metadata-only team status panel.",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "license": "MIT",
   "private": true,
   "publisher": "greninja-op",
