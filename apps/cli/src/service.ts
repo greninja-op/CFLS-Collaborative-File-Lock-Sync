@@ -87,6 +87,8 @@ export interface ServiceFileWrite {
   readonly path: string;
   readonly content: string;
   readonly mode?: number;
+  /** Task Scheduler's XML importer requires UTF-16LE with a BOM on Windows. */
+  readonly encoding?: "utf8" | "utf16le-bom";
 }
 
 /** A file that an uninstall plan needs the executor to remove. */
@@ -489,7 +491,7 @@ export function buildWindowsUserTaskXml(
   const argumentsText = validated.args.map(quoteWindowsArgument).join(" ");
 
   return [
-    '<?xml version="1.0" encoding="UTF-8"?>',
+    '<?xml version="1.0" encoding="UTF-16"?>',
     '<Task version="1.3" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">',
     "  <RegistrationInfo>",
     `    <URI>${escapeTaskXml(paths.platformServiceId)}</URI>`,
@@ -602,6 +604,7 @@ export function buildServiceInstallPlan(
       {
         path: paths.definitionPath,
         content: buildWindowsUserTaskXml(validated),
+        encoding: "utf16le-bom",
       },
     ],
     filesToRemove: [],

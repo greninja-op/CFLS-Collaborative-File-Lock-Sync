@@ -724,8 +724,15 @@ function nativeServiceExecutor(): ServicePlanExecutor {
       await mkdir(path, { recursive: true });
     },
     writeFile: async (file) => {
-      await writeFile(file.path, file.content, {
-        encoding: "utf8",
+      const content =
+        file.encoding === "utf16le-bom"
+          ? Buffer.concat([
+              Buffer.from([0xff, 0xfe]),
+              Buffer.from(file.content, "utf16le"),
+            ])
+          : file.content;
+      await writeFile(file.path, content, {
+        ...(file.encoding === "utf16le-bom" ? {} : { encoding: "utf8" }),
         ...(file.mode !== undefined ? { mode: file.mode } : {}),
       });
     },

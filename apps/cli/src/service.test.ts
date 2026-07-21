@@ -202,6 +202,10 @@ describe("Windows Task Scheduler plans", () => {
     expect(plan.filesToWrite[0]?.path).toBe(
       "C:\\Users\\Alice\\AppData\\Local\\CFLS\\services\\cfls-agent.xml",
     );
+    expect(plan.filesToWrite[0]?.encoding).toBe("utf16le-bom");
+    expect(plan.filesToWrite[0]?.content).toContain(
+      '<?xml version="1.0" encoding="UTF-16"?>',
+    );
     expect(plan.filesToWrite[0]?.content).toContain(
       "<LogonType>InteractiveToken</LogonType>",
     );
