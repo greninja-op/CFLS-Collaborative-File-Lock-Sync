@@ -26,6 +26,59 @@ function safeJson(value: unknown): string {
     .replace(/\u2029/g, "\\u2029");
 }
 
+/** Escape text emitted into the no-JavaScript webview fallback. */
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+/**
+ * Render an immediately useful roster into the initial document. The normal
+ * renderer replaces it once the webview script runs, but this means a VS Code
+ * CSP or webview-engine fault can never leave an online team looking empty.
+ */
+function initialRosterHtml(viewModel: CoordinationViewModel): string {
+  if (viewModel.members.length === 0) {
+    return '<div class="empty">No team members are currently visible.</div>';
+  }
+  return viewModel.members
+    .map((member) => {
+      const initials = Array.from(member.memberId || "?")
+        .slice(0, 2)
+        .join("")
+        .toUpperCase();
+      const connection =
+        member.connectionState === "connected"
+          ? "Connected"
+          : member.connectionState === "offline"
+            ? "Offline"
+            : "Roster pending";
+      const activity = member.activityKnown
+        ? `${member.files.length} active file${member.files.length === 1 ? "" : "s"}`
+        : "No activity reported";
+      return `<div class="member fallback-member" aria-label="${escapeHtml(member.memberId)}"><span class="avatar">${escapeHtml(initials)}</span><span style="min-width:0"><span class="member-name">${escapeHtml(member.memberId)}</span><span class="member-meta">${escapeHtml(connection)} · ${escapeHtml(activity)}</span></span></div>`;
+    })
+    .join("");
+}
+
+/** Render enough current activity to make the static fallback demonstrable. */
+function initialDetailHtml(viewModel: CoordinationViewModel): string {
+  const member = viewModel.members[0];
+  if (member === undefined) {
+    return '<div class="empty">Live roster members and their activity appear here in real time.</div>';
+  }
+  const files = member.files.length
+    ? member.files
+        .map((file) => `<div class="file-row"><code>${escapeHtml(file.path)}</code></div>`)
+        .join("")
+    : '<div class="empty">No active files reported yet.</div>';
+  return `<h2>${escapeHtml(member.memberId)}</h2><div class="subtle">${member.connectionState === "connected" ? "Connected" : member.connectionState === "offline" ? "Offline" : "Roster pending"} · ${member.activityKnown ? "Activity reported" : "No activity reported"}</div><div class="section"><h3>Current files</h3>${files}</div>`;
+}
+
 /** Build the webview document for a live, member-selectable team panel. */
 export function buildTeamPanelHtml(
   viewModel: CoordinationViewModel,
@@ -33,6 +86,8 @@ export function buildTeamPanelHtml(
   localState: TeamPanelLocalState = { selfMemberId: "self" },
 ): string {
   const initialState = safeJson({ viewModel, teamName, ...localState });
+  const initialRoster = initialRosterHtml(viewModel);
+  const initialDetail = initialDetailHtml(viewModel);
   // VS Code webviews enforce their CSP even for extension-owned markup. A
   // nonce is therefore required for the small renderer below; without it the
   // static shell is visible but no roster can ever be painted.
@@ -97,8 +152,8 @@ export function buildTeamPanelHtml(
     <div class="state" id="connection-state"></div>
   </header>
   <main class="layout">
-    <aside class="members"><div class="members-label">Team members</div><div id="member-list"></div></aside>
-    <section class="detail" id="member-detail"></section>
+    <aside class="members"><div class="members-label">Team members</div><div id="member-list">${initialRoster}</div></aside>
+    <section class="detail" id="member-detail">${initialDetail}</section>
   </main>
   <script nonce="${scriptNonce}">
     const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;

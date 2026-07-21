@@ -2,7 +2,7 @@
   "name": "cfls-coordination",
   "displayName": "CFLS Collaborative File Lock Sync",
   "description": "Talks only to the local CoordinationAgent: shows a metadata-only team status panel, presence, locks, declared intents, and warnings.",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "license": "MIT",
   "publisher": "greninja-op",
   "repository": {

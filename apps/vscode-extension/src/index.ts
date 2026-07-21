@@ -513,7 +513,32 @@ export async function activate(context: VsCodeExtensionContext): Promise<void> {
         showWarningMessage(`${decision.message} (${path})`);
       }
     }),
-    registerCommand("cfls.showCoordinationStatus", () => {
+    registerCommand("cfls.showCoordinationStatus", async () => {
+      // The user explicitly opened the team panel: make one fresh roster read
+      // first. This ensures its initial document contains every connected
+      // teammate even if a webview later refuses script execution.
+      const client = recovery.current();
+      const session = currentSession;
+      if (client !== undefined && session !== undefined) {
+        try {
+          const response = (await client.request(
+            "get_connection_status",
+            {},
+          )) as McpEnvelope<ConnectionStatusData>;
+          if (response.ok && response.data !== undefined) {
+            cachedConnectionStatus = response.data;
+            renderMetadataResponse(
+              ui,
+              session,
+              response.connection,
+              response.staleness,
+            );
+          }
+        } catch {
+          // Keep the last rendered state; the normal reconnect loop remains
+          // responsible for recovering a temporarily unavailable local agent.
+        }
+      }
       const vm = currentViewModel;
       if (vm === undefined) {
         showWarningMessage(
