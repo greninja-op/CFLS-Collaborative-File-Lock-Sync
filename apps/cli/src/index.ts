@@ -747,9 +747,14 @@ function nativeServiceExecutor(): ServicePlanExecutor {
 export function serviceAgentArgs(args: ParsedArgs): string[] {
   const agentArgs: string[] = [];
   // A standalone Node SEA executable invokes itself directly. A normal npm/pnpm
-  // install needs Node to run the current JavaScript entry file first.
-  if (process.versions["sea"] === undefined) {
-    const entry = process.argv[1];
+  // install needs Node to run the current JavaScript entry file first. Some
+  // Node SEA builds do not expose `process.versions.sea`, so also recognise the
+  // packaged shape where argv[1] resolves to the executable itself.
+  const entry = process.argv[1];
+  const isSelfContainedExecutable =
+    process.versions["sea"] !== undefined ||
+    (entry !== undefined && resolve(entry) === resolve(process.execPath));
+  if (!isSelfContainedExecutable) {
     if (entry === undefined || entry === "") {
       throw new Error(
         "Cannot determine the CFLS CLI entry point for the background service.",
