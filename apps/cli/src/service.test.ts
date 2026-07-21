@@ -16,6 +16,7 @@ import {
   getServiceStatus,
   parseLinuxUserServiceStatus,
   parseWindowsUserTaskStatus,
+  escapeSystemdPath,
   quoteSystemdArgument,
   quoteWindowsArgument,
   type ServiceCommand,
@@ -138,7 +139,7 @@ describe("Linux systemd --user plans", () => {
       'ExecStart="/opt/CFLS/cfls agent" "agent" "--team" "north$$star%%"',
     );
     expect(plan.filesToWrite[0]?.content).toContain(
-      'WorkingDirectory="/work/team alpha"',
+      "WorkingDirectory=/work/team\\x20alpha",
     );
     expect(plan.commands).toEqual([
       {
@@ -156,6 +157,13 @@ describe("Linux systemd --user plans", () => {
 
   it("escapes systemd interpolation characters as literals", () => {
     expect(quoteSystemdArgument('a\\b"c$d%e')).toBe('"a\\\\b\\"c$$d%%e"');
+  });
+
+  it("renders WorkingDirectory paths without invalid quote characters", () => {
+    expect(escapeSystemdPath("/work/team alpha/%quoted")).toBe(
+      "/work/team\\x20alpha/%%quoted",
+    );
+    expect(() => escapeSystemdPath("relative/path")).toThrow(/absolute/);
   });
 
   it("uses an idempotent stop/remove/reload plan for uninstall", () => {

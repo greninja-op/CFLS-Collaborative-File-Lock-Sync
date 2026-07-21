@@ -355,6 +355,28 @@ export function quoteSystemdArgument(value: string): string {
 }
 
 /**
+ * Escape a path-valued systemd directive without surrounding quotes.
+ *
+ * `ExecStart=` accepts shell-like quoted argv elements, but path directives
+ * such as `WorkingDirectory=` do not: quote characters become part of the
+ * value and systemd rejects the path as non-absolute. Use systemd's C-style
+ * escapes for the few characters that need protection instead.
+ */
+export function escapeSystemdPath(value: string): string {
+  const path = requireSafeText(value, "systemd path");
+  if (!posix.isAbsolute(path)) {
+    throw new ServiceValidationError(
+      "systemd path must be an absolute POSIX path.",
+    );
+  }
+  return path
+    .replace(/\\/gu, "\\\\")
+    .replace(/ /gu, "\\x20")
+    .replace(/"/gu, "\\x22")
+    .replace(/%/gu, "%%");
+}
+
+/**
  * Turn one argv element into a Windows command-line argument using the standard
  * `CommandLineToArgvW` escaping rules. It is intentionally not a shell escape.
  */
@@ -437,7 +459,7 @@ export function buildLinuxUserServiceUnit(
     "",
     "[Service]",
     "Type=simple",
-    `WorkingDirectory=${quoteSystemdArgument(validated.workspacePath)}`,
+    `WorkingDirectory=${escapeSystemdPath(validated.workspacePath)}`,
     `ExecStart=${execStart}`,
     "Restart=on-failure",
     "RestartSec=3",
