@@ -324,9 +324,21 @@ outer configuration key varies by client; the process definition is:
 Every MCP result carries connection and staleness information. `get_team_status` returns active
 members, their declared task descriptions, and repository-relative file/activity metadata. The
 VS Code/Kiro status item opens the same kind of active-team view: select a member to inspect the
-tasks and files currently attributed to them. Neither surface transmits source text, file
-patches, or diffs. A member's own active work is excluded from that member's Risk Map so the
+tasks and files currently attributed to them. Selecting your own active file can show a bounded
+local saved-versus-unsaved preview; neither surface transmits source text, file patches, or
+diffs. A member's own active work is excluded from that member's Risk Map so the
 result focuses on possible conflicts with others. See the [protocol's MCP tool surface](./docs/protocol.md#mcp-tool-surface) for schemas and responses.
+
+### Optional hosted read-only MCP
+
+The deployed relay can also expose a bearer-authenticated Streamable HTTP MCP
+endpoint at `https://sync.cfls.cyberkunju.com/mcp`. It is explicitly scoped to
+one Repository_Session and can only read team, connection, risk, and dependency
+metadata. It cannot impersonate a device or create/change intents and locks.
+Ask the team admin for the bearer token and configure the remote client with an
+`Authorization: Bearer <token>` header. The hosted Risk Map is advisory because
+repository protection rules remain client-local; use the enrolled local
+`cfls mcp` bridge for authoritative mutations and policy enforcement.
 
 ## Security, privacy, and offline behavior
 
@@ -391,9 +403,16 @@ pnpm -C apps/vscode-extension package:vsix
 
 # Build the Windows CLI executable
 pnpm -C apps/cli package:win
+
+# Build the Linux x64 CLI executable (run natively on ARM64 for that target)
+pnpm -C apps/cli package:linux
 ```
 
-The VSIX is written to `apps/vscode-extension/vsix-pkg/cfls-coordination.vsix`. The Windows executable is written to `apps/cli/dist-exe/cfls.exe`; large executables should be shipped through a GitHub Release or an internal distribution channel rather than committed to Git history.
+The VSIX is written to `apps/vscode-extension/vsix-pkg/cfls-coordination.vsix`.
+The standalone client is written to `apps/cli/dist-exe/`; build targets one at
+a time because each packaging run cleans that directory. Large executables
+should be shipped through a GitHub Release or an internal distribution channel
+rather than committed to Git history.
 
 ### Repository map
 

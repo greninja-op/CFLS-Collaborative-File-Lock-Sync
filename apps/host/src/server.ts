@@ -42,6 +42,7 @@ import {
 } from "./authority";
 import type { HostConfig } from "./config";
 import { buildDashboardState, renderDashboardHtml } from "./dashboard";
+import { HostedMcpEndpoint } from "./remote-mcp";
 import { resolveTls } from "./tls";
 
 /** Per-connection state tracked by the server. */
@@ -96,6 +97,8 @@ export class CoordinationServer {
   private readonly connections = new Set<Connection>();
   /** `session_key` → connections authorized for that session (Req 25). */
   private readonly bySession = new Map<string, Set<Connection>>();
+  /** Optional, bearer-gated read-only MCP endpoint for a single session. */
+  private readonly hostedMcp: HostedMcpEndpoint | undefined;
   private sweepTimer: NodeJS.Timeout | undefined;
   private startedAt = 0;
 
@@ -105,6 +108,13 @@ export class CoordinationServer {
     private readonly options: ServerOptions = {},
   ) {
     this.authority = authority;
+    if (this.config.remoteMcp !== undefined) {
+      this.hostedMcp = new HostedMcpEndpoint({
+        config: this.config.remoteMcp,
+        authority: this.authority,
+        connectedMembers: (session) => this.connectedMemberIds(session),
+      });
+    }
   }
 
   /**
@@ -169,6 +179,7 @@ export class CoordinationServer {
     }
     this.connections.clear();
     this.bySession.clear();
+    await this.hostedMcp?.close();
     await new Promise<void>((resolve) => {
       this.wss?.close(() => resolve());
     });
@@ -211,6 +222,10 @@ export class CoordinationServer {
   // -------------------------------------------------------------------------
 
   private handleHttp(req: IncomingMessage, res: ServerResponse): void {
+    if (this.hostedMcp?.matches(req)) {
+      void this.hostedMcp.handle(req, res);
+      return;
+    }
     const url = req.url ?? "/";
     if (req.method === "GET" && url.startsWith("/health")) {
       this.sendJson(res, 200, this.health());
@@ -586,6 +601,19 @@ export class CoordinationServer {
       if (conn.principal !== undefined) devices.add(conn.principal.deviceId);
     }
     return [...devices].sort();
+  }
+
+  /** Active member IDs for the hosted MCP's metadata-only roster projection. */
+  private connectedMemberIds(session: SessionId): string[] {
+    const set = this.bySession.get(sessionKey(session));
+    if (set === undefined) return [];
+    const members = new Set<string>();
+    for (const conn of set) {
+      if (conn.principal !== undefined) {
+        members.add(conn.principal.memberId);
+      }
+    }
+    return [...members].sort((a, b) => a.localeCompare(b));
   }
 
   /** Build the live, metadata-only member roster for one authorized session. */

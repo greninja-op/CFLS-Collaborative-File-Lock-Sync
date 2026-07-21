@@ -9,6 +9,7 @@
  */
 
 import type { ExpiryConfigInput } from "@cfls/core-state";
+import type { SessionId } from "@cfls/protocol";
 
 /** TLS material for the WSS listener (Req 6.1, 6.3; design §4.1). */
 export interface HostTlsConfig {
@@ -22,6 +23,21 @@ export interface HostTlsConfig {
    * clients must skip certificate validation to connect, defeating TLS trust.
    */
   devSelfSigned?: boolean;
+}
+
+/**
+ * Opt-in configuration for the hosted, read-only MCP endpoint. The bearer
+ * token is deliberately separate from device credentials: it can read the
+ * scoped session's metadata, but can never impersonate a device or mutate
+ * coordination state.
+ */
+export interface RemoteMcpConfig {
+  /** High-entropy bearer token required on every `/mcp` request. */
+  token: string;
+  /** The only Repository_Session this remote credential is allowed to read. */
+  session: SessionId;
+  /** Public relay URL reported in MCP connection envelopes. */
+  publicHostUrl?: string;
 }
 
 /** Fully-resolved host configuration. */
@@ -42,6 +58,8 @@ export interface HostConfig {
   dbPath: string;
   /** Whether the read-only coordination dashboard HTTP routes are available. */
   dashboard: boolean;
+  /** Optional bearer-gated hosted MCP endpoint. Omitted means the route is off. */
+  remoteMcp?: RemoteMcpConfig;
   /** Heartbeat/expiry tuning forwarded to the core-state expiry engine (Req 26). */
   expiry?: ExpiryConfigInput;
   /** Milliseconds the {@link start} call is allowed before failing (Req 1.1). */
@@ -55,6 +73,8 @@ export interface HostConfigInput {
   dbPath?: string;
   /** Enable the read-only dashboard routes. Defaults to true. */
   dashboard?: boolean;
+  /** Enable a bearer-gated, read-only hosted MCP endpoint for one session. */
+  remoteMcp?: RemoteMcpConfig;
   expiry?: ExpiryConfigInput;
   startTimeoutMs?: number;
 }
@@ -104,6 +124,8 @@ export function parseHostUrl(hostUrl: string): {
  *   - `CFLS_TLS_DEV_SELF_SIGNED`  `"1"`/`"true"` to use a dev self-signed cert
  *   - `CFLS_DB_PATH`          SQLite database file path
  *   - `CFLS_DASHBOARD`        `"1"`/`"true"` to enable the dashboard (default true)
+ *   - `CFLS_REMOTE_MCP_TOKEN` enable the hosted MCP endpoint when the CLI also
+ *                              supplies its explicit session scope
  *
  * There is no built-in default address: an absent `Host_URL` throws so the host
  * never silently listens on a hardcoded address (Req 6.1).
@@ -135,8 +157,41 @@ export function loadHostConfig(
     dashboard:
       input.dashboard ??
       (env.CFLS_DASHBOARD === undefined ? true : isTruthy(env.CFLS_DASHBOARD)),
+    ...(input.remoteMcp !== undefined
+      ? { remoteMcp: normalizeRemoteMcp(input.remoteMcp) }
+      : {}),
     ...(input.expiry !== undefined ? { expiry: input.expiry } : {}),
     startTimeoutMs: input.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS,
+  };
+}
+
+function normalizeRemoteMcp(config: RemoteMcpConfig): RemoteMcpConfig {
+  const token = config.token.trim();
+  if (token.length < 24) {
+    throw new Error(
+      "CFLS hosted MCP token must be at least 24 characters long.",
+    );
+  }
+  if (
+    config.session.repoId.trim() === "" ||
+    config.session.teamId.trim() === "" ||
+    config.session.branch.trim() === ""
+  ) {
+    throw new Error(
+      "CFLS hosted MCP requires a complete Repository_Session scope.",
+    );
+  }
+  return {
+    token,
+    session: {
+      repoId: config.session.repoId,
+      teamId: config.session.teamId,
+      branch: config.session.branch,
+      baseRevision: config.session.baseRevision ?? null,
+    },
+    ...(config.publicHostUrl !== undefined && config.publicHostUrl.trim() !== ""
+      ? { publicHostUrl: config.publicHostUrl }
+      : {}),
   };
 }
 

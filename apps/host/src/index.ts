@@ -17,7 +17,13 @@ export {
   type HostConfig,
   type HostConfigInput,
   type HostTlsConfig,
+  type RemoteMcpConfig,
 } from "./config";
+export {
+  HostedMcpEndpoint,
+  buildHostedMcpRiskMap,
+  buildHostedMcpTeamStatus,
+} from "./remote-mcp";
 export { resolveTls, generateDevCertificate, type ResolvedTls } from "./tls";
 export {
   SqliteStore,

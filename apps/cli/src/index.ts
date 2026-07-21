@@ -175,6 +175,13 @@ export async function startAndPublishLocalApi(
 /** Default Host_URL for `cfls host`. */
 const DEFAULT_HOST_URL = "wss://0.0.0.0:8730";
 
+/**
+ * The hosted demo relay used when a teammate has not supplied another Host_URL.
+ * An invitation is still required: this only removes manual relay-address
+ * configuration, never weakens device enrollment.
+ */
+export const DEFAULT_DEMO_RELAY_URL = "wss://sync.cfls.cyberkunju.com";
+
 /** `cfls admin-init` — create + store the team admin key, register it in host.json. */
 async function cmdAdminInit(args: ParsedArgs): Promise<void> {
   const teamId =
@@ -240,12 +247,24 @@ async function cmdHost(args: ParsedArgs, cwd: string): Promise<void> {
   const dbPath =
     stringOption(args, "db") ?? process.env["CFLS_DB_PATH"] ?? "host.db";
   const dashboard = parseDashboardEnv(process.env["CFLS_DASHBOARD"]);
+  const remoteMcpToken = process.env["CFLS_REMOTE_MCP_TOKEN"]?.trim();
   const running = await startHost(
     {
       hostUrl,
       tls,
       dbPath,
       ...(dashboard === undefined ? {} : { dashboard }),
+      ...(remoteMcpToken === undefined || remoteMcpToken === ""
+        ? {}
+        : {
+            remoteMcp: {
+              token: remoteMcpToken,
+              session,
+              ...(process.env["CFLS_PUBLIC_RELAY_URL"] !== undefined
+                ? { publicHostUrl: process.env["CFLS_PUBLIC_RELAY_URL"] }
+                : {}),
+            },
+          }),
     },
     { expirySweepIntervalMs: 15_000 },
   );
@@ -262,6 +281,11 @@ async function cmdHost(args: ParsedArgs, cwd: string): Promise<void> {
   log.info(
     `Authorized admin keys: ${hostConfig.authorizedAdminPublicKeys.length}`,
   );
+  if (remoteMcpToken !== undefined && remoteMcpToken !== "") {
+    log.info(
+      "Hosted read-only MCP endpoint: /mcp (bearer authentication required).",
+    );
+  }
   log.info("Press Ctrl+C to stop.");
 
   await waitForShutdown(() => running.stop());
@@ -327,14 +351,12 @@ async function cmdInvite(args: ParsedArgs, cwd: string): Promise<void> {
   log.info(`The teammate runs:  cfls connect <the string above>`);
 }
 
-/** `cfls join --host <wss-url> [--name <memberName>]` — save join state. */
+/** `cfls join [--host <wss-url>] [--name <memberName>]` — save join state. */
 async function cmdJoin(args: ParsedArgs, cwd: string): Promise<void> {
-  const hostUrl = stringOption(args, "host");
-  if (hostUrl === undefined) {
-    throw new Error(
-      "Usage: cfls join --host <wss-url> [--name <memberName>] [--team <id>]",
-    );
-  }
+  const hostUrl =
+    stringOption(args, "host") ??
+    process.env["CFLS_DEMO_RELAY_URL"] ??
+    DEFAULT_DEMO_RELAY_URL;
   const repoRoot = resolveRepoRoot(cwd);
   const memberName = stringOption(args, "name");
   const teamId = stringOption(args, "team");
@@ -363,7 +385,7 @@ async function cmdJoin(args: ParsedArgs, cwd: string): Promise<void> {
   log.info(
     "  3. Paste the invitation they return into:  cfls connect <invitation>",
   );
-  log.info("  4. Then start coordinating:  cfls agent --insecure-tls");
+  log.info("  4. Then start coordinating:  cfls agent");
 }
 
 /** `cfls connect <invitationBase64>` — validate + store the invitation. */
@@ -396,7 +418,7 @@ async function cmdAgent(args: ParsedArgs, cwd: string): Promise<void> {
   const config = readAgentConfig(agentConfigPath(repoRoot));
   if (config.hostUrl === undefined) {
     throw new Error(
-      'No Host_URL saved. Run "cfls join --host <wss-url>" first.',
+      'No Host_URL saved. Run "cfls join" first (or pass --host <wss-url>).',
     );
   }
   if (config.invitation === undefined) {
@@ -978,8 +1000,8 @@ function printUsage(): void {
       "",
       "Teammate commands:",
       "  cfls id                                       Show this device's public key + id",
-      "  cfls join --host <wss-url> [--name <name>] [--team <id>]",
-      "                                                Save host + name, print next steps",
+      "  cfls join [--host <wss-url>] [--name <name>] [--team <id>]",
+      "                                                Defaults to the hosted demo relay",
       "  cfls connect <invitationBase64>               Store an invitation",
       "  cfls agent [--insecure-tls] [--local-port 8750]",
       "                                                Run the local CoordinationAgent",
