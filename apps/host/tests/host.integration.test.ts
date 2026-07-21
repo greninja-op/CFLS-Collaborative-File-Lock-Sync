@@ -323,11 +323,17 @@ describe("demo short-code pairing", () => {
       },
     });
     host.authority.registerSession(session, [admin.key.publicKey]);
+    const workspaceSession = makeSession({
+      repoId: "github.com/acme/idea",
+      branch: "demo-work",
+      baseRevision: "workspace-revision",
+    });
 
     const first = makeDevice("alice");
     const issued = await postHttp("/demo-pair/host", {
       devicePublicKey: first.key.publicKey,
       memberId: first.memberId,
+      session: workspaceSession,
     });
     expect(issued.statusCode).toBe(201);
     const hosted = JSON.parse(issued.body) as {
@@ -335,6 +341,9 @@ describe("demo short-code pairing", () => {
       invitation: unknown;
     };
     expect(hosted.code).toMatch(/^\d{8}$/u);
+    expect(
+      (hosted.invitation as { claims: { session: SessionId } }).claims.session,
+    ).toEqual(workspaceSession);
 
     const second = makeDevice("bob");
     const joined = await postHttp("/demo-pair/join", {
@@ -350,9 +359,9 @@ describe("demo short-code pairing", () => {
       "utf8",
     ).toString("base64");
     const client = await TestClient.open(url());
-    expect(await client.handshake(session, second, joinedInvitation)).toEqual({
-      ok: true,
-    });
+    expect(
+      await client.handshake(workspaceSession, second, joinedInvitation),
+    ).toEqual({ ok: true });
     client.close();
 
     const replay = await postHttp("/demo-pair/join", {

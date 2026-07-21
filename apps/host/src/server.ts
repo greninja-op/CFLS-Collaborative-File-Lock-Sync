@@ -119,7 +119,10 @@ export class CoordinationServer {
       });
     }
     if (this.config.demoPairing !== undefined) {
-      this.demoPairing = new DemoPairingEndpoint(this.config.demoPairing);
+      this.demoPairing = new DemoPairingEndpoint(
+        this.config.demoPairing,
+        this.authority,
+      );
     }
   }
 

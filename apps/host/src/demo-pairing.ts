@@ -9,12 +9,15 @@
 import { randomInt } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 
+import type { SessionId } from "@cfls/protocol";
 import { issueInvitation } from "@cfls/security";
 
+import type { CoordinationAuthority } from "./authority";
 import type { DemoPairingConfig } from "./config";
 
 interface PendingCode {
   expiresAt: number;
+  session: SessionId;
 }
 
 interface PairRequest {
@@ -35,7 +38,10 @@ export class DemoPairingEndpoint {
     { count: number; resetAt: number }
   >();
 
-  public constructor(private readonly config: DemoPairingConfig) {}
+  public constructor(
+    private readonly config: DemoPairingConfig,
+    private readonly authority: CoordinationAuthority,
+  ) {}
 
   matches(req: IncomingMessage): boolean {
     const pathname = (req.url ?? "").split("?", 1)[0];
@@ -59,13 +65,24 @@ export class DemoPairingEndpoint {
     this.pruneExpired();
     const pathname = (req.url ?? "").split("?", 1)[0];
     if (pathname === "/demo-pair/host") {
+      const session = requestedSession(parsed.session, this.config.session);
+      if (session === null) {
+        this.send(res, 400, { error: "invalid_workspace_session" });
+        return;
+      }
+      // Open demo enrollment supports any workspace. The invitation remains
+      // device-bound and this exact session is registered before a client can
+      // authenticate to the coordination host.
+      this.authority.registerSession(session, [this.config.issuerPublicKey], {
+        manualConfig: true,
+      });
       const code = this.createCode();
       const expiresAt = Date.now() + (this.config.codeTtlMs ?? 10 * 60_000);
-      this.pendingCodes.set(code, { expiresAt });
+      this.pendingCodes.set(code, { expiresAt, session });
       this.send(res, 201, {
         code,
         expiresAt: new Date(expiresAt).toISOString(),
-        invitation: this.issue(parsed),
+        invitation: this.issue(parsed, session),
       });
       return;
     }
@@ -82,16 +99,19 @@ export class DemoPairingEndpoint {
       this.send(res, 404, { error: "invalid_or_expired_code" });
       return;
     }
-    this.send(res, 201, { invitation: this.issue(parsed) });
+    this.send(res, 201, { invitation: this.issue(parsed, pending.session) });
   }
 
-  private issue(request: PairRequest): ReturnType<typeof issueInvitation> {
+  private issue(
+    request: PairRequest,
+    session: SessionId,
+  ): ReturnType<typeof issueInvitation> {
     const expiresAt = new Date(
       Date.now() + (this.config.invitationTtlMs ?? 12 * 60 * 60_000),
     ).toISOString();
     return issueInvitation(
       {
-        session: this.config.session,
+        session,
         devicePublicKey: request.devicePublicKey,
         memberId: request.memberId.trim(),
         issuerPublicKey: this.config.issuerPublicKey,
@@ -140,7 +160,7 @@ export class DemoPairingEndpoint {
 
 function isPairRequest(
   value: unknown,
-): value is PairRequest & { code?: unknown } {
+): value is PairRequest & { code?: unknown; session?: unknown } {
   if (typeof value !== "object" || value === null) return false;
   const request = value as Record<string, unknown>;
   return (
@@ -149,6 +169,43 @@ function isPairRequest(
     typeof request.memberId === "string" &&
     MEMBER_PATTERN.test(request.memberId.trim())
   );
+}
+
+/** Keep the relay's configured team while accepting any local repository. */
+function requestedSession(
+  value: unknown,
+  relaySession: SessionId,
+): SessionId | null {
+  if (typeof value !== "object" || value === null) return null;
+  const source = value as Record<string, unknown>;
+  const repoId = safeSessionPart(source.repoId, 512);
+  const branch = safeSessionPart(source.branch, 256);
+  const baseRevision = source.baseRevision;
+  if (
+    repoId === null ||
+    branch === null ||
+    (baseRevision !== null &&
+      (typeof baseRevision !== "string" ||
+        baseRevision.length > 256 ||
+        /[\u0000-\u001f\u007f]/u.test(baseRevision)))
+  ) {
+    return null;
+  }
+  return {
+    repoId,
+    teamId: relaySession.teamId,
+    branch,
+    baseRevision,
+  };
+}
+
+function safeSessionPart(value: unknown, maxLength: number): string | null {
+  return typeof value === "string" &&
+    value.trim() !== "" &&
+    value.length <= maxLength &&
+    !/[\u0000-\u001f\u007f]/u.test(value)
+    ? value
+    : null;
 }
 
 async function readJson(req: IncomingMessage): Promise<unknown | null> {

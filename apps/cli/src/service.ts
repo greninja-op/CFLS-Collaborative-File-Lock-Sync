@@ -132,7 +132,7 @@ export interface ServicePaths {
   readonly definitionDirectory: string;
   /** Full path to the persisted systemd unit or task XML definition. */
   readonly definitionPath: string;
-  /** `cfls-agent.service` on Linux, `\\CFLS\\cfls-agent` on Windows. */
+  /** `cfls-agent.service` on Linux, `\\CFLS-cfls-agent` on Windows. */
   readonly platformServiceId: string;
 }
 
@@ -335,7 +335,9 @@ export function resolveServicePaths(
       definitionDirectory,
       `${validated.serviceName}.xml`,
     ),
-    platformServiceId: `\\CFLS\\${validated.serviceName}`,
+    // A custom Task Scheduler folder may not exist for ordinary user accounts.
+    // A root-level CFLS-prefixed task has no hidden folder prerequisite.
+    platformServiceId: `\\CFLS-${validated.serviceName}`,
   };
 }
 

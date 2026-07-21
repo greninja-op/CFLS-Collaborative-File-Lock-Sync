@@ -230,7 +230,7 @@ describe("Windows Task Scheduler plans", () => {
         args: [
           "/Create",
           "/TN",
-          "\\CFLS\\cfls-agent",
+          "\\CFLS-cfls-agent",
           "/XML",
           "C:\\Users\\Alice\\AppData\\Local\\CFLS\\services\\cfls-agent.xml",
           "/F",
@@ -239,7 +239,7 @@ describe("Windows Task Scheduler plans", () => {
       {
         id: "task-start",
         executable: "schtasks.exe",
-        args: ["/Run", "/TN", "\\CFLS\\cfls-agent"],
+        args: ["/Run", "/TN", "\\CFLS-cfls-agent"],
       },
     ]);
   });
@@ -277,11 +277,11 @@ describe("Windows Task Scheduler plans", () => {
       serviceName: "demo-agent",
     });
     expect(uninstall.commands[0]).toMatchObject({
-      args: ["/End", "/TN", "\\CFLS\\demo-agent"],
+      args: ["/End", "/TN", "\\CFLS-demo-agent"],
       allowMissingService: true,
     });
     expect(uninstall.commands[1]).toMatchObject({
-      args: ["/Delete", "/TN", "\\CFLS\\demo-agent", "/F"],
+      args: ["/Delete", "/TN", "\\CFLS-demo-agent", "/F"],
       allowMissingService: true,
     });
   });
@@ -482,8 +482,8 @@ describe("executor-backed lifecycle", () => {
     expect(result).toMatchObject({ ok: true });
     expect(result.warnings).toHaveLength(2);
     expect(calls).toEqual([
-      "run:schtasks.exe /End /TN \\CFLS\\cfls-agent",
-      "run:schtasks.exe /Delete /TN \\CFLS\\cfls-agent /F",
+      "run:schtasks.exe /End /TN \\CFLS-cfls-agent",
+      "run:schtasks.exe /Delete /TN \\CFLS-cfls-agent /F",
       "remove:C:\\Users\\Alice\\AppData\\Local\\CFLS\\services\\cfls-agent.xml",
     ]);
   });

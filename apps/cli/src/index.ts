@@ -13,7 +13,7 @@
  * Commands: admin-init · host · id · invite · join · connect · agent · mcp · service.
  */
 
-import { execFile } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { homedir, userInfo } from "node:os";
 import { resolve } from "node:path";
@@ -435,7 +435,7 @@ function defaultDemoMemberName(devicePublicKey: string): string {
 async function requestDemoPairing(
   hostUrl: string,
   action: "host" | "join",
-  body: Record<string, string>,
+  body: Record<string, unknown>,
 ): Promise<DemoPairResponse> {
   let response: Response;
   try {
@@ -501,6 +501,7 @@ async function cmdDemoPair(
   const result = await requestDemoPairing(hostUrl, action, {
     devicePublicKey: deviceKey.publicKey,
     memberId,
+    session: localSession.session,
     ...(code !== undefined ? { code } : {}),
   });
   const encoded = Buffer.from(
@@ -842,8 +843,17 @@ async function cmdService(args: ParsedArgs, cwd: string): Promise<void> {
       result.failure?.exitCode === undefined
         ? ""
         : ` (exit code ${result.failure.exitCode})`;
+    const native = result.commandResults.at(-1);
+    const nativeDetail =
+      native === undefined
+        ? ""
+        : `${native.stderr}\n${native.stdout}`
+            .replace(/\s+/gu, " ")
+            .trim()
+            .slice(0, 500);
     throw new Error(
-      `Could not ${action} CFLS agent service at ${target}${exit}.`,
+      `Could not ${action} CFLS agent service at ${target}${exit}.` +
+        (nativeDetail === "" ? "" : ` Windows reported: ${nativeDetail}`),
     );
   }
   log.info(
@@ -860,6 +870,19 @@ async function cmdService(args: ParsedArgs, cwd: string): Promise<void> {
 
 /** Resolve the current interactive Windows identity for one-click extension setup. */
 function defaultWindowsUserId(): string | undefined {
+  // A SID survives local, domain, Azure AD, and renamed-account differences.
+  // Task Scheduler accepts it directly, unlike a guessed DOMAIN\\user value.
+  try {
+    const identity = execFileSync(
+      "whoami.exe",
+      ["/user", "/fo", "csv", "/nh"],
+      { encoding: "utf8", windowsHide: true },
+    );
+    const sid = /S-\d-(?:\d+-){1,14}\d+/iu.exec(identity)?.[0];
+    if (sid !== undefined) return sid;
+  } catch {
+    // Compatibility fallback below when whoami is unavailable.
+  }
   const name = process.env["USERNAME"]?.trim() || userInfo().username.trim();
   const domain = process.env["USERDOMAIN"]?.trim();
   return name === ""

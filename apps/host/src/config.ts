@@ -48,7 +48,7 @@ export interface RemoteMcpConfig {
  * for a production relay.
  */
 export interface DemoPairingConfig {
-  /** The one hosted session this demo relay is allowed to enroll into. */
+  /** Team/default session used when enrolling arbitrary demo workspaces. */
   session: SessionId;
   /** Persistent relay admin identity that signs the resulting invitations. */
   issuerPublicKey: DevicePublicKey;
