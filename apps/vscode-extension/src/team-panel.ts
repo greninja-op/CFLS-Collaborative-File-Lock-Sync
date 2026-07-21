@@ -8,6 +8,7 @@
 
 import type { CoordinationViewModel } from "./view-model";
 import type { LocalDiffPreview } from "./local-diff-preview";
+import { randomBytes } from "node:crypto";
 
 /** Local-only state supplied by the VS Code adapter, never by the host. */
 export interface TeamPanelLocalState {
@@ -32,12 +33,16 @@ export function buildTeamPanelHtml(
   localState: TeamPanelLocalState = { selfMemberId: "self" },
 ): string {
   const initialState = safeJson({ viewModel, teamName, ...localState });
+  // VS Code webviews enforce their CSP even for extension-owned markup. A
+  // nonce is therefore required for the small renderer below; without it the
+  // static shell is visible but no roster can ever be painted.
+  const scriptNonce = randomBytes(16).toString("base64");
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline';" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${scriptNonce}';" />
   <title>CFLS Team Coordination</title>
   <style>
     :root { color-scheme: light dark; font-family: var(--vscode-font-family); color: var(--vscode-foreground); }
@@ -95,7 +100,7 @@ export function buildTeamPanelHtml(
     <aside class="members"><div class="members-label">Team members</div><div id="member-list"></div></aside>
     <section class="detail" id="member-detail"></section>
   </main>
-  <script>
+  <script nonce="${scriptNonce}">
     const vscode = typeof acquireVsCodeApi === "function" ? acquireVsCodeApi() : undefined;
     let state = ${initialState};
     let selectedMemberId = null;
