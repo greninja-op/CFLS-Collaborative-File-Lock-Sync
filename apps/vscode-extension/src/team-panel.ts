@@ -7,6 +7,13 @@
  */
 
 import type { CoordinationViewModel } from "./view-model";
+import type { LocalDiffPreview } from "./local-diff-preview";
+
+/** Local-only state supplied by the VS Code adapter, never by the host. */
+export interface TeamPanelLocalState {
+  selfMemberId: string;
+  localDiffPreview?: LocalDiffPreview;
+}
 
 /** Serialize data safely for an inline script element. */
 function safeJson(value: unknown): string {
@@ -22,8 +29,9 @@ function safeJson(value: unknown): string {
 export function buildTeamPanelHtml(
   viewModel: CoordinationViewModel,
   teamName: string,
+  localState: TeamPanelLocalState = { selfMemberId: "self" },
 ): string {
-  const initialState = safeJson({ viewModel, teamName });
+  const initialState = safeJson({ viewModel, teamName, ...localState });
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -65,6 +73,15 @@ export function buildTeamPanelHtml(
     .tag { background: var(--vscode-badge-background); border-radius: 10px; color: var(--vscode-badge-foreground); font-size: 10px; padding: 2px 6px; }
     .empty { color: var(--vscode-descriptionForeground); font-size: 13px; line-height: 1.55; padding: 15px 8px; }
     .privacy { background: color-mix(in srgb, var(--vscode-editorWarning-foreground) 10%, transparent); border-left: 3px solid var(--vscode-editorWarning-foreground); color: var(--vscode-descriptionForeground); font-size: 12px; line-height: 1.5; padding: 10px 12px; }
+    .diff-card { border: 1px solid var(--vscode-panel-border); border-radius: 7px; overflow: hidden; }
+    .diff-meta { color: var(--vscode-descriptionForeground); font-size: 11px; padding: 8px 10px; border-bottom: 1px solid var(--vscode-panel-border); }
+    .diff-preview { background: var(--vscode-textCodeBlock-background); font-family: var(--vscode-editor-font-family); font-size: 11px; line-height: 1.5; margin: 0; overflow-x: auto; padding: 6px 0; }
+    .diff-line { display: grid; grid-template-columns: 22px minmax(0, 1fr); min-width: max-content; padding: 1px 10px; white-space: pre; }
+    .diff-line.added { background: color-mix(in srgb, var(--vscode-testing-iconPassed) 16%, transparent); }
+    .diff-line.removed { background: color-mix(in srgb, var(--vscode-testing-iconFailed) 16%, transparent); }
+    .diff-prefix { color: var(--vscode-descriptionForeground); user-select: none; }
+    .diff-line.added .diff-prefix { color: var(--vscode-testing-iconPassed); }
+    .diff-line.removed .diff-prefix { color: var(--vscode-testing-iconFailed); }
     @media (max-width: 560px) { .layout { grid-template-columns: 1fr; } .members { border-bottom: 1px solid var(--vscode-panel-border); border-right: 0; } }
   </style>
 </head>
@@ -84,6 +101,7 @@ export function buildTeamPanelHtml(
     let selectedMemberId = null;
     const roleLabel = { editing: "editing", "soft-lock": "lock", intent: "intent", "planned-create": "new file" };
     const connectionLabel = { connected: "Connected", offline: "Offline", unknown: "Roster pending" };
+    const diffPrefix = { added: "+", removed: "−", context: " " };
     const el = (tag, className) => { const node = document.createElement(tag); if (className) node.className = className; return node; };
     const text = (node, value) => { node.textContent = String(value ?? ""); return node; };
     const initials = (name) => Array.from(name || "?").slice(0, 2).join("").toUpperCase();
@@ -123,7 +141,31 @@ export function buildTeamPanelHtml(
       if (!member.files.length) files.append(text(el("div", "empty"), member.activityKnown ? "No active files." : "No activity metadata reported yet."));
       for (const file of member.files) { const row = el("div", "file-row"); row.append(text(el("code"), file.path)); const roles = el("div", "roles"); for (const role of file.roles) roles.append(text(el("span", "tag"), roleLabel[role] || role)); row.append(roles); files.append(row); }
       detail.append(files);
-      const diff = el("div", "section"); diff.append(text(el("h3"), "Diff privacy")); diff.append(text(el("div", "privacy"), "CFLS currently shares file and task metadata only. Teammates’ source patches are not transmitted or stored by this panel.")); detail.append(diff);
+      const diff = el("div", "section");
+      const isLocalMember = member.memberId === state.selfMemberId;
+      diff.append(text(el("h3"), isLocalMember ? "Your local diff preview" : "Teammate diff preview"));
+      if (!isLocalMember) {
+        const paths = member.files.map((file) => file.path).slice(0, 3);
+        const pathText = paths.length ? " Current activity: " + paths.join(", ") + "." : "";
+        diff.append(text(el("div", "privacy"), "CFLS never uploads or relays teammate source patches." + pathText + " Ask this teammate to open their own CFLS panel to view their local preview."));
+      } else if (!state.localDiffPreview) {
+        diff.append(text(el("div", "empty"), "Open a locally changed, unsaved file to show a small diff here. This preview remains only on this computer."));
+      } else {
+        const preview = state.localDiffPreview;
+        const card = el("div", "diff-card");
+        const meta = preview.changedLines + " changed line" + (preview.changedLines === 1 ? "" : "s") + (preview.truncated ? " · preview limited" : "") + " · source stays local";
+        card.append(text(el("div", "card-title"), preview.path));
+        card.append(text(el("div", "diff-meta"), meta));
+        const pre = el("pre", "diff-preview");
+        for (const line of preview.lines) {
+          const row = el("div", "diff-line " + line.kind);
+          row.append(text(el("span", "diff-prefix"), diffPrefix[line.kind] || " "));
+          row.append(text(el("span"), line.text));
+          pre.append(row);
+        }
+        card.append(pre); diff.append(card);
+      }
+      detail.append(diff);
     }
     const restored = vscode?.getState(); if (restored?.selectedMemberId) selectedMemberId = restored.selectedMemberId;
     window.addEventListener("message", (event) => { if (event.data?.type === "team-state") { state = event.data.state; render(); } });

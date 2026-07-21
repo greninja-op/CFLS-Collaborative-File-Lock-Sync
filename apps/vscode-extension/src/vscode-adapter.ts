@@ -39,7 +39,11 @@ import {
   decorateForPath,
   fileBadgeForPath,
 } from "./presence-ui";
-import { buildTeamPanelHtml } from "./team-panel";
+import { buildTeamPanelHtml, type TeamPanelLocalState } from "./team-panel";
+import {
+  buildLocalDiffPreview,
+  type LocalDiffPreview,
+} from "./local-diff-preview";
 import type { CoordinationViewModel } from "./view-model";
 
 export type { LocalApiSettings } from "./local-api-settings";
@@ -419,7 +423,7 @@ export class StatusBarRenderer {
     );
     const hasActiveCoordination =
       !vm.offline && !vm.stale && coordinatedPaths.length > 0;
-    const icon = vm.offline
+    const stateIcon = vm.offline
       ? "$(cloud-offline)"
       : vm.stale
         ? "$(sync)"
@@ -429,7 +433,10 @@ export class StatusBarRenderer {
       : vm.statusText;
     const team = (vm.teamId ?? "Team").trim() || "Team";
     const teamLabel = team.length > 20 ? `${team.slice(0, 19)}…` : team;
-    this.item.text = `$(organization) ${hasActiveCoordination ? "$(warning)" : icon} CFLS · ${teamLabel}: ${summary}`;
+    const coordinationIcon = hasActiveCoordination ? "$(warning)" : stateIcon;
+    // Keep the CFLS mark at the leading edge. The whole chip is a command, so
+    // it remains obvious that clicking it opens the live team desk.
+    this.item.text = `$(organization) CFLS  ${coordinationIcon}  ${teamLabel} · ${summary}`;
     this.item.backgroundColor = hasActiveCoordination
       ? new vscode.ThemeColor("statusBarItem.warningBackground")
       : undefined;
@@ -524,6 +531,8 @@ export class CoordinationUiController implements vscode.Disposable {
   private decoratedEditor: vscode.TextEditor | undefined;
   private teamPanel: vscode.WebviewPanel | undefined;
   private teamName = "CFLS Team";
+  /** Local, unsaved source preview; never attached to coordination metadata. */
+  private localDiffPreview: LocalDiffPreview | undefined;
   private registered = false;
   private disposed = false;
   private addedToSubscriptions = false;
@@ -566,6 +575,17 @@ export class CoordinationUiController implements vscode.Disposable {
         ),
         vscode.window.onDidChangeActiveTextEditor(() => {
           this.applyActiveEditorDecoration();
+          this.postTeamPanelState();
+        }),
+        vscode.workspace.onDidChangeTextDocument((event) => {
+          if (event.document === vscode.window.activeTextEditor?.document) {
+            this.postTeamPanelState();
+          }
+        }),
+        vscode.workspace.onDidSaveTextDocument((document) => {
+          if (document === vscode.window.activeTextEditor?.document) {
+            this.postTeamPanelState();
+          }
         }),
       );
     }
@@ -606,6 +626,7 @@ export class CoordinationUiController implements vscode.Disposable {
     if (this.viewModel !== undefined) {
       this.statusBar.render(this.viewModel);
       this.applyActiveEditorDecoration();
+      this.postTeamPanelState();
     }
   }
 
@@ -626,7 +647,11 @@ export class CoordinationUiController implements vscode.Disposable {
         },
       );
       this.teamPanel = panel;
-      panel.webview.html = buildTeamPanelHtml(viewModel, teamName);
+      panel.webview.html = buildTeamPanelHtml(
+        viewModel,
+        teamName,
+        this.currentTeamPanelLocalState(),
+      );
       this.disposables.push(
         panel.onDidDispose(() => {
           if (this.teamPanel === panel) {
@@ -641,13 +666,60 @@ export class CoordinationUiController implements vscode.Disposable {
     this.postTeamPanelState(viewModel);
   }
 
-  private postTeamPanelState(viewModel: CoordinationViewModel): void {
-    if (this.teamPanel === undefined) {
+  /**
+   * Produce a bounded comparison only from the active local document and its
+   * saved on-disk version. This stays in the extension/webview process and is
+   * deliberately never merged into `CoordinationViewModel` or sent to CFLS.
+   */
+  private refreshLocalDiffPreview(): void {
+    const document = vscode.window.activeTextEditor?.document;
+    if (
+      document === undefined ||
+      document.uri.scheme !== "file" ||
+      !document.isDirty
+    ) {
+      this.localDiffPreview = undefined;
+      return;
+    }
+    const path = toRepoRelativePath(document.uri);
+    if (path === undefined) {
+      this.localDiffPreview = undefined;
+      return;
+    }
+    try {
+      this.localDiffPreview =
+        buildLocalDiffPreview(
+          path,
+          readFileSync(document.uri.fsPath, "utf8"),
+          document.getText(),
+        ) ?? undefined;
+    } catch {
+      // A newly created/virtual/unreadable file has no stable saved baseline.
+      this.localDiffPreview = undefined;
+    }
+  }
+
+  private currentTeamPanelLocalState(): TeamPanelLocalState {
+    this.refreshLocalDiffPreview();
+    return {
+      selfMemberId: this.selfMemberId,
+      ...(this.localDiffPreview !== undefined
+        ? { localDiffPreview: this.localDiffPreview }
+        : {}),
+    };
+  }
+
+  private postTeamPanelState(viewModel = this.viewModel): void {
+    if (this.teamPanel === undefined || viewModel === undefined) {
       return;
     }
     void this.teamPanel.webview.postMessage({
       type: "team-state",
-      state: { viewModel, teamName: this.teamName },
+      state: {
+        viewModel,
+        teamName: this.teamName,
+        ...this.currentTeamPanelLocalState(),
+      },
     });
   }
 
