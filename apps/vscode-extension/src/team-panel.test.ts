@@ -50,16 +50,20 @@ describe("buildTeamPanelHtml", () => {
         truncated: false,
         lines: [{ kind: "added", text: "const demo = true;" }],
       },
+    }, {
+      cspSource: "vscode-webview://test",
+      scriptUri: "vscode-webview://test/media/team-panel.js",
     });
 
     expect(html).toContain("CFLS Team Coordination");
     expect(html).toContain("Team members");
-    expect(html).toContain("connectionLabel");
+    expect(html).toContain('script-src vscode-webview://test');
+    expect(html).toContain('src="vscode-webview://test/media/team-panel.js"');
+    expect(html).toContain('id="cfls-initial-state"');
     expect(html).toContain('"connectionState":"offline"');
     expect(html).toContain('"activityKnown":false');
-    expect(html).toContain("Your local diff preview");
-    expect(html).toContain("Teammate diff preview");
-    expect(html).toContain("source stays local");
+    expect(html).toContain('"localDiffPreview"');
+    expect(html).toContain("team-panel.js");
     expect(html).toContain('"selfMemberId":"alice"');
     expect(html).toContain("\\u003cscript\\u003ealert(1)\\u003c/script\\u003e");
     expect(html).not.toContain("<script>alert(1)</script>");

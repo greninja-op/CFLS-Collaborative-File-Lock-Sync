@@ -66,12 +66,16 @@ export interface SubscriptionCollection {
  */
 export interface VsCodeExtensionContext {
   subscriptions: SubscriptionCollection;
+  /** Root of the installed extension; used for CSP-safe webview assets. */
+  extensionUri?: vscode.Uri;
 }
 
 /** Options shared by the status bar and richer editor coordination cues. */
 export interface CoordinationUiOptions {
   /** The local member id; never show this member as someone else coordinating. */
   selfMemberId?: string;
+  /** Root of this extension's packaged resources. */
+  extensionUri?: vscode.Uri;
 }
 
 /** The current extension member id until per-device identities are wired in. */
@@ -677,6 +681,7 @@ export class CoordinationUiController implements vscode.Disposable {
     vscode.TextEditorDecorationType
   >;
   private readonly fileDecorationProvider: CoordinationFileDecorationProvider;
+  private readonly extensionUri: vscode.Uri | undefined;
   private readonly disposables: vscode.Disposable[] = [];
   private viewModel: CoordinationViewModel | undefined;
   private decoratedEditor: vscode.TextEditor | undefined;
@@ -690,6 +695,7 @@ export class CoordinationUiController implements vscode.Disposable {
 
   constructor(options: CoordinationUiOptions = {}) {
     this.selfMemberId = options.selfMemberId ?? DEFAULT_SELF_MEMBER_ID;
+    this.extensionUri = options.extensionUri;
     this.statusBar = new StatusBarRenderer({ selfMemberId: this.selfMemberId });
     this.fileDecorationProvider = new CoordinationFileDecorationProvider(
       this.selfMemberId,
@@ -795,13 +801,36 @@ export class CoordinationUiController implements vscode.Disposable {
         {
           enableScripts: true,
           retainContextWhenHidden: true,
+          ...(this.extensionUri !== undefined
+            ? {
+                localResourceRoots: [
+                  vscode.Uri.joinPath(this.extensionUri, "media"),
+                ],
+              }
+            : {}),
         },
       );
       this.teamPanel = panel;
+      const assets =
+        this.extensionUri === undefined
+          ? undefined
+          : {
+              scriptUri: panel.webview
+                .asWebviewUri(
+                  vscode.Uri.joinPath(
+                    this.extensionUri,
+                    "media",
+                    "team-panel.js",
+                  ),
+                )
+                .toString(),
+              cspSource: panel.webview.cspSource,
+            };
       panel.webview.html = buildTeamPanelHtml(
         viewModel,
         teamName,
         this.currentTeamPanelLocalState(),
+        assets,
       );
       this.disposables.push(
         panel.onDidDispose(() => {

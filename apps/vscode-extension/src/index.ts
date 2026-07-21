@@ -406,7 +406,12 @@ export async function activate(context: VsCodeExtensionContext): Promise<void> {
   const epoch = runtimeEpoch;
 
   const editorHost = new VsCodeEditorHost();
-  const ui = new CoordinationUiController({ selfMemberId });
+  const ui = new CoordinationUiController({
+    selfMemberId,
+    ...(context.extensionUri !== undefined
+      ? { extensionUri: context.extensionUri }
+      : {}),
+  });
   ui.register(context.subscriptions);
 
   // Seed an offline model so the status chip and all empty UI states are ready
