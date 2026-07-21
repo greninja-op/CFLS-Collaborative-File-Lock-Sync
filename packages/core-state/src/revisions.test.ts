@@ -136,3 +136,31 @@ describe("RevisionCounter.resume validation", () => {
     expect(() => counter.resume(sessionA, 3.5)).toThrow(RangeError);
   });
 });
+
+describe("RevisionCounter.restoreCheckpoint", () => {
+  it("restores an exact pre-transaction checkpoint without changing other sessions", () => {
+    const counter = new RevisionCounter();
+    counter.resume(sessionA, 4);
+    counter.resume(sessionB, 9);
+    counter.next(sessionA);
+
+    counter.restoreCheckpoint(sessionA, 4);
+
+    expect(counter.highest(sessionA)).toBe(4);
+    expect(counter.next(sessionA)).toBe(5);
+    expect(counter.highest(sessionB)).toBe(9);
+  });
+
+  it("removes a zero-valued checkpoint so the next revision starts at one", () => {
+    const counter = new RevisionCounter();
+    counter.next(sessionA);
+    counter.restoreCheckpoint(sessionA, 0);
+    expect(counter.next(sessionA)).toBe(1);
+  });
+
+  it("validates checkpoint values", () => {
+    const counter = new RevisionCounter();
+    expect(() => counter.restoreCheckpoint(sessionA, -1)).toThrow(RangeError);
+    expect(() => counter.restoreCheckpoint(sessionA, 1.5)).toThrow(RangeError);
+  });
+});

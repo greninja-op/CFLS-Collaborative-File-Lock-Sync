@@ -73,6 +73,11 @@ export interface LocalApiHandlers {
     params: unknown,
     push: (update: unknown) => void,
   ) => Promise<LocalResponseBody>;
+  /**
+   * Dispose a successfully registered subscription when its local connection
+   * closes. Optional for backwards-compatible, request-only Local_API users.
+   */
+  unsubscribe?: (subscriptionId: string) => void | Promise<void>;
 }
 
 /** Options for a {@link LocalApiServer}. */
@@ -98,9 +103,19 @@ export interface LocalApiAddress {
   pipePath?: string;
 }
 
-/** A single authenticated connection's lifecycle flags. */
+/** A successfully registered, per-connection coordination subscription. */
+interface ClientSubscription {
+  subscriptionId: string;
+  response: LocalResponseBody;
+}
+
+/** A single authenticated connection's lifecycle flags and resources. */
 interface ClientState {
   authenticated: boolean;
+  closed: boolean;
+  subscription?: ClientSubscription;
+  subscriptionInFlight?: Promise<LocalResponseBody>;
+  disposePromise?: Promise<void>;
 }
 
 /**
@@ -113,6 +128,7 @@ export class LocalApiServer {
   private wss: WebSocketServer | undefined;
   private pipeServer: NetServer | undefined;
   private address: LocalApiAddress = {};
+  private readonly clients = new Set<ClientState>();
 
   constructor(options: LocalApiServerOptions) {
     this.options = options;
@@ -132,13 +148,20 @@ export class LocalApiServer {
     const enablePipe =
       this.options.enableNamedPipe ?? process.platform === "win32";
 
-    if (enableWs) {
-      this.address.wsUrl = await this.startWebSocket();
+    try {
+      if (enableWs) {
+        this.address.wsUrl = await this.startWebSocket();
+      }
+      if (enablePipe) {
+        this.address.pipePath = await this.startNamedPipe();
+      }
+      return this.address;
+    } catch (error) {
+      // Do not leave a half-started Local_API reachable when a second transport
+      // failed to bind. The caller receives the original startup error.
+      await this.stop();
+      throw error;
     }
-    if (enablePipe) {
-      this.address.pipePath = await this.startNamedPipe();
-    }
-    return this.address;
   }
 
   private startWebSocket(): Promise<string> {
@@ -182,7 +205,7 @@ export class LocalApiServer {
   // ---- WebSocket transport --------------------------------------------------
 
   private handleWebSocket(socket: WebSocket): void {
-    const state: ClientState = { authenticated: false };
+    const state = this.createClientState();
     socket.on("message", (data) => {
       void this.onFrame(
         String(data),
@@ -195,16 +218,24 @@ export class LocalApiServer {
         () => socket.close(),
       );
     });
+    socket.once("close", () => {
+      void this.disposeClient(state);
+    });
+    socket.once("error", () => {
+      void this.disposeClient(state);
+    });
   }
 
   // ---- Named-pipe transport (newline-delimited JSON) ------------------------
 
   private handlePipe(socket: Socket): void {
-    const state: ClientState = { authenticated: false };
+    const state = this.createClientState();
     let buffer = "";
     socket.setEncoding("utf8");
     const send = (obj: unknown): void => {
-      socket.write(`${JSON.stringify(obj)}\n`);
+      if (!socket.destroyed && socket.writable) {
+        socket.write(`${JSON.stringify(obj)}\n`);
+      }
     };
     socket.on("data", (chunk: string) => {
       buffer += chunk;
@@ -217,6 +248,12 @@ export class LocalApiServer {
         }
         idx = buffer.indexOf("\n");
       }
+    });
+    socket.once("close", () => {
+      void this.disposeClient(state);
+    });
+    socket.once("error", () => {
+      void this.disposeClient(state);
     });
   }
 
@@ -265,22 +302,41 @@ export class LocalApiServer {
     }
 
     if (frame.type === "request" && typeof frame.method === "string") {
-      const body = await this.options.handlers.request(
-        frame.method,
-        frame.params,
-      );
-      send({ type: "response", id: frame.id ?? null, body });
+      try {
+        const body = await this.options.handlers.request(
+          frame.method,
+          frame.params,
+        );
+        send({ type: "response", id: frame.id ?? null, body });
+      } catch {
+        send({
+          type: "error",
+          id: frame.id ?? null,
+          message: "Local request failed.",
+        });
+      }
       return;
     }
 
     if (frame.type === "subscribe") {
-      const body = await this.options.handlers.subscribe(
-        frame.params,
-        (update) => {
-          send({ type: "update", payload: update });
-        },
-      );
-      send({ type: "response", id: frame.id ?? null, body });
+      try {
+        const body = await this.subscribeClient(
+          state,
+          frame.params,
+          (update) => {
+            if (!state.closed) {
+              send({ type: "update", payload: update });
+            }
+          },
+        );
+        send({ type: "response", id: frame.id ?? null, body });
+      } catch {
+        send({
+          type: "error",
+          id: frame.id ?? null,
+          message: "Local subscription failed.",
+        });
+      }
       return;
     }
 
@@ -291,8 +347,85 @@ export class LocalApiServer {
     });
   }
 
+  /** Register this connection's single update stream, idempotently. */
+  private async subscribeClient(
+    state: ClientState,
+    params: unknown,
+    push: (update: unknown) => void,
+  ): Promise<LocalResponseBody> {
+    if (state.subscription !== undefined) {
+      return state.subscription.response;
+    }
+    if (state.subscriptionInFlight !== undefined) {
+      return state.subscriptionInFlight;
+    }
+
+    const pending = this.options.handlers
+      .subscribe(params, push)
+      .then((response) => {
+        const subscriptionId = extractSubscriptionId(response);
+        if (subscriptionId !== undefined) {
+          const subscription: ClientSubscription = { subscriptionId, response };
+          if (state.closed) {
+            void this.disposeSubscription(subscription);
+          } else {
+            state.subscription = subscription;
+          }
+        }
+        return response;
+      });
+    state.subscriptionInFlight = pending;
+    try {
+      return await pending;
+    } finally {
+      if (state.subscriptionInFlight === pending) {
+        delete state.subscriptionInFlight;
+      }
+    }
+  }
+
+  private createClientState(): ClientState {
+    const state: ClientState = { authenticated: false, closed: false };
+    this.clients.add(state);
+    return state;
+  }
+
+  /** Dispose a connection once; safe to call from both error and close events. */
+  private disposeClient(state: ClientState): Promise<void> {
+    if (state.disposePromise !== undefined) {
+      return state.disposePromise;
+    }
+    state.closed = true;
+    this.clients.delete(state);
+    const subscription = state.subscription;
+    delete state.subscription;
+    state.disposePromise = this.disposeSubscription(subscription);
+    return state.disposePromise;
+  }
+
+  /** Best-effort listener cleanup: it must never make Local_API shutdown fail. */
+  private async disposeSubscription(
+    subscription: ClientSubscription | undefined,
+  ): Promise<void> {
+    if (
+      subscription === undefined ||
+      this.options.handlers.unsubscribe === undefined
+    ) {
+      return;
+    }
+    try {
+      await this.options.handlers.unsubscribe(subscription.subscriptionId);
+    } catch {
+      // The agent may already be stopping. Closing the local connection still
+      // must complete and the port's own dispose path is a final safety net.
+    }
+  }
+
   /** Stop both transports and release their handles. */
   async stop(): Promise<void> {
+    await Promise.all(
+      [...this.clients].map((state) => this.disposeClient(state)),
+    );
     await new Promise<void>((resolve) => {
       if (this.wss === undefined) {
         resolve();
@@ -312,5 +445,31 @@ export class LocalApiServer {
     });
     this.wss = undefined;
     this.pipeServer = undefined;
+    this.address = {};
   }
+}
+
+/** Extract the standard `AgentResult<SubscribeData>` subscription id safely. */
+function extractSubscriptionId(body: LocalResponseBody): string | undefined {
+  if (typeof body !== "object" || body === null) {
+    return undefined;
+  }
+  const top = body as {
+    ok?: unknown;
+    subscriptionId?: unknown;
+    data?: unknown;
+  };
+  if (top.ok !== undefined && top.ok !== true) {
+    return undefined;
+  }
+  if (typeof top.subscriptionId === "string") {
+    return top.subscriptionId;
+  }
+  if (typeof top.data !== "object" || top.data === null) {
+    return undefined;
+  }
+  const data = top.data as { subscriptionId?: unknown };
+  return typeof data.subscriptionId === "string"
+    ? data.subscriptionId
+    : undefined;
 }

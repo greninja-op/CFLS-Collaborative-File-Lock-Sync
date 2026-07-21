@@ -93,6 +93,28 @@ describe("coordinationEntryKey", () => {
       coordinationEntryKey({ ...base, member: bob }),
     );
   });
+
+  it("keeps separate devices and declared tasks on the same path distinct", () => {
+    const otherDevice: MemberRef = {
+      memberId: alice.memberId,
+      deviceId: "dev-a2",
+    };
+    const taskA = update({
+      entryType: "intent",
+      eventRevision: 1,
+      intent: { intentId: "intent-a", description: "First task" },
+    });
+    const taskB = update({
+      entryType: "intent",
+      eventRevision: 2,
+      intent: { intentId: "intent-b", description: "Second task" },
+    });
+
+    expect(coordinationEntryKey(taskA)).not.toBe(coordinationEntryKey(taskB));
+    expect(coordinationEntryKey(taskA)).not.toBe(
+      coordinationEntryKey({ ...taskA, member: otherDevice }),
+    );
+  });
 });
 
 describe("CoordinationEventLog.append + syncFrom (Req 9.3)", () => {
@@ -227,6 +249,46 @@ describe("AgentSyncCache incremental apply (Req 9.1, 9.3, 9.4)", () => {
     expect(cache.highestApplied(session)).toBe(5);
   });
 
+  it("keeps two same-member tasks on one file and removes only the named task", () => {
+    const cache = new AgentSyncCache();
+    const first = update({
+      entryType: "intent",
+      eventRevision: 1,
+      intent: { intentId: "intent-a", description: "First task" },
+    });
+    const second = update({
+      entryType: "intent",
+      eventRevision: 2,
+      intent: { intentId: "intent-b", description: "Second task" },
+    });
+    cache.applyEvents(session, [first, second]);
+
+    cache.applyEvents(session, [{ ...first, op: "removed", eventRevision: 3 }]);
+
+    expect(cache.cachedEntries(session)).toEqual([
+      expect.objectContaining({
+        intent: { intentId: "intent-b", description: "Second task" },
+      }),
+    ]);
+  });
+
+  it("retires a legacy unnamed cache entry when a modern named removal arrives", () => {
+    const cache = new AgentSyncCache();
+    const modern = update({
+      entryType: "intent",
+      eventRevision: 1,
+      intent: { intentId: "intent-a", description: "Task" },
+    });
+    const { intent: _legacyIntent, ...legacyAdded } = modern;
+    cache.applyEvents(session, [legacyAdded]);
+
+    cache.applyEvents(session, [
+      { ...modern, op: "removed", eventRevision: 2 },
+    ]);
+
+    expect(cache.cachedEntries(session)).toEqual([]);
+  });
+
   it("converges after a gap when the host serves a contiguous suffix", () => {
     const cache = new AgentSyncCache();
     cache.applyEvents(session, [
@@ -267,6 +329,17 @@ describe("AgentSyncCache snapshot replacement (Req 9.5)", () => {
           eventRevision: 7,
           acquiredAt: "2024-01-01T00:00:00Z",
           concurrent: false,
+        },
+        {
+          lockId: "lk-losing",
+          scope: "src/api.ts",
+          scopeKind: "file",
+          mode: "soft",
+          holder: bob,
+          branch: "main",
+          eventRevision: 2,
+          acquiredAt: "2024-01-01T00:00:00Z",
+          concurrent: true,
         },
       ],
       presence: [],
@@ -349,6 +422,11 @@ describe("projectSnapshot bridges snapshot and incremental convergence", () => {
       "presence:src/a.ts",
       "soft_lock:src/api.ts",
     ]);
+    expect(
+      entries.some(
+        (entry) => entry.entryType === "presence" && entry.path === "src/b.ts",
+      ),
+    ).toBe(false);
   });
 
   it("makes snapshot fallback and full incremental replay converge to the same state", () => {

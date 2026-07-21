@@ -76,9 +76,14 @@ describe("Scenario 6 — stale lock expiry after missed heartbeats (Req 26.3)", 
       label: "pre-expiry convergence",
     });
 
-    // Record a heartbeat, then sweep far past the Lock_Expiry_Interval so the
-    // holder is deemed stale (missed heartbeats) — deterministic, no waiting.
-    const t0 = 1_000;
+    // Authentication records an initial liveness heartbeat.  Advance the
+    // deterministic sweep clock from the current epoch instead of attempting
+    // to overwrite that newer receipt with an old synthetic timestamp: the
+    // expiry engine intentionally ignores out-of-order heartbeats.
+    //
+    // No wall-clock waiting is involved; only the sweep's supplied time moves
+    // forward past the Lock_Expiry_Interval.
+    const t0 = Date.now() + 1;
     sim.host.authority.recordHeartbeat(sim.session, holder.member.deviceId, t0);
     const removals = sim.host.authority.sweepExpiry(
       sim.session,

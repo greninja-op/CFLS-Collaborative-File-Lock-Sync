@@ -199,6 +199,31 @@ describe("IngestGate — idempotency (Req 7.4)", () => {
       duplicateOf: 7,
     });
   });
+
+  it("does not turn a domain rejection into a successful duplicate", () => {
+    const revisions = new RevisionCounter();
+    const gate = new IngestGate({ revisions });
+    const event = makeEvent({ eventId: "rejected", counter: 4 });
+    const apply = vi.fn(() => ({
+      code: "NOT_LOCK_HOLDER" as const,
+      reason: "Release attempted by a non-holder.",
+    }));
+
+    const rejected = gate.ingest(event, apply);
+    const retry = gate.ingest(event, apply);
+
+    expect(rejected).toMatchObject({
+      accepted: false,
+      eventRevision: 1,
+      error: "NOT_LOCK_HOLDER",
+    });
+    expect(gate.hasApplied(session, "rejected")).toBe(false);
+    // The signed event's counter was consumed, so the exact retransmission is
+    // a replay error rather than a fabricated idempotent success.
+    expect(retry).toMatchObject({ accepted: false, error: "FORMAT_ERROR" });
+    expect(apply).toHaveBeenCalledTimes(1);
+    expect(revisions.highest(session)).toBe(1);
+  });
 });
 
 describe("IngestGate — replay protection (Req 7.5)", () => {

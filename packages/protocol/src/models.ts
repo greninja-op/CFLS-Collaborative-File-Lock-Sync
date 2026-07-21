@@ -224,6 +224,14 @@ export interface MembershipRegistryEntry {
   rotatedFrom?: string;
 }
 
+/** Metadata attached to an intent-derived coordination update for team activity views. */
+export interface IntentActivity {
+  /** The stable Declared_Intent identifier. */
+  intentId: string;
+  /** The member-provided, metadata-only description of the planned work. */
+  description: string;
+}
+
 /** An incremental coordination update broadcast to authorized agents (Req 25.3). */
 export interface CoordinationUpdate {
   entryType:
@@ -236,4 +244,6 @@ export interface CoordinationUpdate {
   path?: string;
   member: MemberRef;
   eventRevision: number;
+  /** Present for intent-derived entries so local UI/MCP can show the stated task. */
+  intent?: IntentActivity;
 }

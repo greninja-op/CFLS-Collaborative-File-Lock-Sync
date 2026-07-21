@@ -44,6 +44,8 @@ import type {
   GetDependentsRequest,
   GetRiskMapData,
   GetRiskMapRequest,
+  GetTeamStatusData,
+  GetTeamStatusRequest,
   ProjectSessionStatusData,
   ReleaseLockData,
   ReleaseLockRequest,
@@ -108,6 +110,13 @@ export class AgentCoordinationPort implements AgentPort {
   private offlineMembers: string[];
 
   private subscriptionSeq = 0;
+  private readonly subscriptions = new Map<
+    string,
+    (update: CoordinationUpdate) => void
+  >();
+  private readonly onGatewayUpdate = (update: CoordinationUpdate): void => {
+    this.view.applyUpdate(this.session, update);
+  };
 
   constructor(options: AgentPortOptions) {
     this.session = options.session;
@@ -122,9 +131,7 @@ export class AgentCoordinationPort implements AgentPort {
     this.offlineMembers = options.offlineMembers ?? [];
 
     // One shared view fed by every host broadcast (multi-client fan-in, Req 31.1).
-    this.gateway.on("update", (update: CoordinationUpdate) => {
-      this.view.applyUpdate(this.session, update);
-    });
+    this.gateway.on("update", this.onGatewayUpdate);
   }
 
   // ---- Envelope inputs ------------------------------------------------------
@@ -134,7 +141,14 @@ export class AgentCoordinationPort implements AgentPort {
   }
 
   getStaleness(): StalenessSnapshot {
-    return this.gateway.getStaleness();
+    const transport = this.gateway.getStaleness();
+    return {
+      ...transport,
+      // A successful TLS handshake is not enough to declare data fresh: a
+      // reconnect sync can fail while the socket remains online. The shared
+      // AgentView is authoritative for that cache-level stale marker.
+      stale: transport.stale || this.view.isStale(),
+    };
   }
 
   // ---- Guards ---------------------------------------------------------------
@@ -209,6 +223,23 @@ export class AgentCoordinationPort implements AgentPort {
           this.session,
           this.self,
         ),
+        highestRevision: this.view.highestApplied(this.session),
+      },
+    };
+  }
+
+  getTeamStatus(req: GetTeamStatusRequest): AgentResult<GetTeamStatusData> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    return {
+      ok: true,
+      data: {
+        teamId: this.session.teamId,
+        members: this.view.teamActivity(this.session),
         highestRevision: this.view.highestApplied(this.session),
       },
     };
@@ -334,21 +365,16 @@ export class AgentCoordinationPort implements AgentPort {
     if (!result.ok) {
       return { ok: false, error: result.error };
     }
-    // Contention: the host's winning broadcast names a DIFFERENT member (Req 12.4).
-    if (
-      result.update !== undefined &&
-      result.update.member.memberId !== this.self.memberId
-    ) {
+    // A direct, Event_ID-correlated acknowledgement reports an accepted losing
+    // claim even when the host emits no winner-only cache broadcast (Req 12.4).
+    if (result.lockConflict !== undefined) {
       return {
         ok: true,
         data: {
           eventRevision: result.eventRevision,
           granted: false,
           concurrentClaim: true,
-          winner: {
-            memberId: result.update.member.memberId,
-            eventRevision: result.update.eventRevision,
-          },
+          winner: result.lockConflict.winner,
         },
       };
     }
@@ -452,13 +478,37 @@ export class AgentCoordinationPort implements AgentPort {
     if (!this.authorized) {
       return this.notAuthorized();
     }
+    const subscriptionId = `sub-${(this.subscriptionSeq += 1)}`;
     if (onUpdate !== undefined) {
+      this.subscriptions.set(subscriptionId, onUpdate);
       this.gateway.on("update", onUpdate);
     }
     return {
       ok: true,
-      data: { subscriptionId: `sub-${(this.subscriptionSeq += 1)}` },
+      data: { subscriptionId },
     };
+  }
+
+  /**
+   * Remove a local client's update listener. This is deliberately idempotent:
+   * Local_API close/error/agent-stop paths can race without leaving listeners
+   * on the host gateway.
+   */
+  unsubscribeFromCoordinationUpdates(subscriptionId: string): void {
+    const onUpdate = this.subscriptions.get(subscriptionId);
+    if (onUpdate === undefined) {
+      return;
+    }
+    this.gateway.off("update", onUpdate);
+    this.subscriptions.delete(subscriptionId);
+  }
+
+  /** Release all gateway listeners owned by this port during agent shutdown. */
+  dispose(): void {
+    this.gateway.off("update", this.onGatewayUpdate);
+    for (const subscriptionId of this.subscriptions.keys()) {
+      this.unsubscribeFromCoordinationUpdates(subscriptionId);
+    }
   }
 
   // ---- Authorization / participant controls ---------------------------------

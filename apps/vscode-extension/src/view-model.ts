@@ -17,8 +17,10 @@
 import type {
   ConnectionSnapshot,
   GetRiskMapData,
+  GetTeamStatusData,
   RiskEdge,
   StalenessSnapshot,
+  TeamMemberActivity,
 } from "@cfls/mcp-server";
 import type { RiskLevel } from "@cfls/protocol";
 
@@ -69,11 +71,19 @@ export interface CoordinationViewModel {
   secondsSinceSync: number | null;
   /** A short human-readable status line for the offline/stale indicator. */
   statusText: string;
+  /** Team identifier supplied by the agent's live team-status projection. */
+  teamId: string | null;
+  /** Active member/task/file coordination state for the expandable team panel. */
+  members: TeamMemberActivity[];
 }
 
 /** The inputs the extension holds to render coordination state. */
 export interface CoordinationSnapshot {
   riskMap: GetRiskMapData;
+  /** Optional so the extension can still render an offline state before auth. */
+  teamStatus?: GetTeamStatusData;
+  /** Known from the local Repository_Session before activity is available. */
+  teamId?: string;
   connection: ConnectionSnapshot;
   staleness: StalenessSnapshot;
 }
@@ -163,6 +173,8 @@ export function buildCoordinationViewModel(
     stale,
     secondsSinceSync: snapshot.staleness.secondsSinceSync,
     statusText: statusLine(snapshot.connection, snapshot.staleness),
+    teamId: snapshot.teamStatus?.teamId ?? snapshot.teamId ?? null,
+    members: snapshot.teamStatus?.members ?? [],
   };
 }
 

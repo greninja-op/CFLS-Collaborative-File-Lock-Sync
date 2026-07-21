@@ -147,4 +147,32 @@ describe("multi-client fan-in (Req 31.1)", () => {
     }
     expect(port.view.entries(session)).toHaveLength(0);
   });
+
+  it("keeps responses stale when cache synchronization failed despite an online transport", () => {
+    const { port, gateway } = makePort();
+    expect(gateway.online()).toBe(true);
+    port.view.markStale();
+    expect(port.getStaleness()).toMatchObject({ stale: true });
+  });
+
+  it("releases Local_API subscription listeners on disconnect and agent stop", () => {
+    const { port, gateway } = makePort();
+    const baseline = gateway.listenerCount("update");
+    const received: CoordinationUpdate[] = [];
+
+    const result = port.subscribeToCoordinationUpdates({ session }, (update) =>
+      received.push(update),
+    );
+    expect(result.ok).toBe(true);
+    expect(gateway.listenerCount("update")).toBe(baseline + 1);
+
+    if (result.ok) {
+      port.unsubscribeFromCoordinationUpdates(result.data.subscriptionId);
+    }
+    expect(gateway.listenerCount("update")).toBe(baseline);
+
+    port.dispose();
+    expect(gateway.listenerCount("update")).toBe(0);
+    expect(received).toEqual([]);
+  });
 });

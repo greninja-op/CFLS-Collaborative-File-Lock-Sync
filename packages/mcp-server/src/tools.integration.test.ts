@@ -9,13 +9,19 @@
 
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { LoggingMessageNotificationSchema } from "@modelcontextprotocol/sdk/types.js";
 import type { DependencyGraph, MemberRef, SessionId } from "@cfls/protocol";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { McpEnvelope } from "./envelope";
 import { CoreStateAgentPort } from "./fake-agent";
 import { createMcpServer } from "./server";
-import { TOOL_NAMES } from "./tools";
+import {
+  COORDINATION_UPDATE_LOGGER,
+  COORDINATION_UPDATE_NOTIFICATION_TYPE,
+  type CoordinationUpdateNotificationData,
+  TOOL_NAMES,
+} from "./tools";
 
 const session: SessionId = {
   repoId: "repo-1",
@@ -105,7 +111,7 @@ describe("MCP tool round-trips over the SDK in-memory transport", () => {
     await harness.close();
   });
 
-  it("exposes exactly the 12 named tools (Req 4.2)", async () => {
+  it("exposes every named coordination tool", async () => {
     harness = await connectHarness();
     const listed = await harness.client.listTools();
     const names = listed.tools.map((t) => t.name).sort();
@@ -184,6 +190,53 @@ describe("MCP tool round-trips over the SDK in-memory transport", () => {
     expect(Array.isArray(env.data?.plannedFileCreations)).toBe(true);
   });
 
+  it("get_team_status returns active task and file metadata for local tools", async () => {
+    harness = await connectHarness();
+    await harness.call("declare_intent", {
+      session,
+      modifyPaths: ["src/api.ts"],
+      createPaths: ["src/new.ts"],
+      description: "Refine API response handling",
+    });
+    await harness.call("acquire_lock", {
+      session,
+      scope: "src/api.ts",
+      scopeKind: "file",
+    });
+
+    const env = await harness.call<{
+      teamId: string;
+      members: Array<{
+        memberId: string;
+        files: Array<{ path: string; roles: string[] }>;
+        tasks: Array<{
+          description: string;
+          modifyPaths: string[];
+          createPaths: string[];
+        }>;
+      }>;
+    }>("get_team_status", { session });
+
+    expect(env.ok).toBe(true);
+    expect(env.data?.teamId).toBe("team-1");
+    expect(env.data?.members).toMatchObject([
+      {
+        memberId: "u-1",
+        tasks: [
+          {
+            description: "Refine API response handling",
+            modifyPaths: ["src/api.ts"],
+            createPaths: ["src/new.ts"],
+          },
+        ],
+      },
+    ]);
+    expect(env.data?.members[0]?.files).toContainEqual({
+      path: "src/api.ts",
+      roles: expect.arrayContaining(["intent", "soft-lock"]),
+    });
+  });
+
   it("acquire_lock (mutating tool) is granted and assigns an event revision (Req 12.1)", async () => {
     harness = await connectHarness();
     const env = await harness.call<{
@@ -244,13 +297,61 @@ describe("MCP tool round-trips over the SDK in-memory transport", () => {
     expect(env.staleness.stale).toBe(true);
   });
 
-  it("subscribe_to_coordination_updates returns a subscription id (Req 25.1)", async () => {
+  it("streams a deduplicated subscription through standard MCP notifications", async () => {
     harness = await connectHarness();
-    const env = await harness.call<{ subscriptionId: string }>(
+    const updates: CoordinationUpdateNotificationData[] = [];
+    harness.client.setNotificationHandler(
+      LoggingMessageNotificationSchema,
+      (notification) => {
+        if (
+          notification.params.logger === COORDINATION_UPDATE_LOGGER &&
+          isCoordinationUpdateNotification(notification.params.data)
+        ) {
+          updates.push(notification.params.data);
+        }
+      },
+    );
+
+    const first = await harness.call<{ subscriptionId: string }>(
       "subscribe_to_coordination_updates",
       { session },
     );
-    expect(env.ok).toBe(true);
-    expect(env.data?.subscriptionId).toMatch(/^sub-/);
+    const repeated = await harness.call<{ subscriptionId: string }>(
+      "subscribe_to_coordination_updates",
+      { session },
+    );
+    expect(first.ok).toBe(true);
+    expect(first.data?.subscriptionId).toMatch(/^sub-/);
+    expect(repeated.data?.subscriptionId).toBe(first.data?.subscriptionId);
+
+    const update = {
+      entryType: "presence",
+      op: "added",
+      path: "src/team.ts",
+      member: { memberId: "u-2", deviceId: "d-2" },
+      eventRevision: 42,
+    } as const;
+    harness.agent.emit(update);
+
+    await expect
+      .poll(() => updates)
+      .toEqual([
+        {
+          type: COORDINATION_UPDATE_NOTIFICATION_TYPE,
+          update,
+        },
+      ]);
   });
 });
+
+function isCoordinationUpdateNotification(
+  value: unknown,
+): value is CoordinationUpdateNotificationData {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "type" in value &&
+    value.type === COORDINATION_UPDATE_NOTIFICATION_TYPE &&
+    "update" in value
+  );
+}

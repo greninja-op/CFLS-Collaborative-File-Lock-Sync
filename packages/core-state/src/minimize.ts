@@ -221,6 +221,10 @@ const EXCLUDED_DIRECTORIES: ReadonlySet<string> = new Set([
   ".cache",
   ".turbo",
   ".parcel-cache",
+  // Local Agent discovery, cache, invitations, and workspace configuration are
+  // coordination control-plane data rather than project files. In particular,
+  // `.coordination/local-api.json` contains a loopback authentication token.
+  ".coordination",
   "coverage",
   "__pycache__",
   ".pytest_cache",

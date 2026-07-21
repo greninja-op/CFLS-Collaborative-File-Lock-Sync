@@ -88,6 +88,9 @@ const opArb = fc.record({
   entryType: entryTypeArb,
   pathIdx: fc.nat({ max: 3 }),
   memberIdx: fc.nat({ max: 2 }),
+  // Multiple declared tasks may touch one member/path; model the identity the
+  // real host now includes in Coordination_Update metadata.
+  intentIdx: fc.nat({ max: 2 }),
   op: fc.constantFrom<CoordinationUpdate["op"]>("added", "removed"),
 });
 
@@ -115,6 +118,7 @@ interface ComparableEntry {
   path: string | undefined;
   member: MemberRef;
   eventRevision: number;
+  intent?: CoordinationUpdate["intent"];
 }
 
 /** Index a set of active entries by their canonical coordination-entry key. */
@@ -129,6 +133,7 @@ function indexByKey(
       path: entry.path,
       member: { ...entry.member },
       eventRevision: entry.eventRevision,
+      ...(entry.intent !== undefined ? { intent: { ...entry.intent } } : {}),
     };
   }
   return out;
@@ -195,27 +200,27 @@ function snapshotFor(
         break;
       case "intent":
         intents.push({
-          intentId: `intent-${i}`,
+          intentId: entry.intent?.intentId ?? `intent-${i}`,
           owner: { ...entry.member },
           agentId: `agent-${i}`,
           modifyPaths: [path],
           createPaths: [],
           scopeKind: "file",
           branch: "main",
-          description: `edit ${i}`,
+          description: entry.intent?.description ?? `edit ${i}`,
           eventRevision: entry.eventRevision,
         });
         break;
       case "planned_file_creation":
         intents.push({
-          intentId: `create-${i}`,
+          intentId: entry.intent?.intentId ?? `create-${i}`,
           owner: { ...entry.member },
           agentId: `agent-${i}`,
           modifyPaths: [],
           createPaths: [{ path }],
           scopeKind: "file",
           branch: "main",
-          description: `create ${i}`,
+          description: entry.intent?.description ?? `create ${i}`,
           eventRevision: entry.eventRevision,
         });
         break;
@@ -239,13 +244,26 @@ describe(propertyTag(8, "reconnect synchronization converges"), () => {
 
           // The authoritative log: each op becomes a broadcast update stamped
           // with a strictly increasing Event_Revision (1..N).
-          const log: CoordinationUpdate[] = ops.map((op, i) => ({
-            entryType: op.entryType,
-            op: op.op,
-            path: pathFor(op.pathIdx),
-            member: member(op.memberIdx),
-            eventRevision: i + 1,
-          }));
+          const log: CoordinationUpdate[] = ops.map((op, i) => {
+            const isIntent =
+              op.entryType === "intent" ||
+              op.entryType === "planned_file_creation";
+            return {
+              entryType: op.entryType,
+              op: op.op,
+              path: pathFor(op.pathIdx),
+              member: member(op.memberIdx),
+              eventRevision: i + 1,
+              ...(isIntent
+                ? {
+                    intent: {
+                      intentId: `${op.entryType}-${op.memberIdx}-${op.pathIdx}-${op.intentIdx}`,
+                      description: `task ${op.intentIdx}`,
+                    },
+                  }
+                : {}),
+            };
+          });
 
           // Ground-truth authoritative state and highest revision.
           const authoritative = authoritativeState(log);

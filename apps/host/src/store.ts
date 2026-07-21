@@ -59,6 +59,32 @@ export interface PersistedEvent {
   createdAt: string;
 }
 
+/**
+ * All durable effects of one inbound coordination event. The store commits
+ * this bundle atomically: an Event_ID is never durable without its event row,
+ * audit records, and replacement authoritative snapshot (or vice versa).
+ */
+export interface PersistedMutation {
+  event: PersistedEvent;
+  audits: readonly (AuditRecord & { session: SessionId })[];
+  snapshot: SessionStateSnapshot;
+  /**
+   * Defaults to true. A valid event rejected on a domain rule still persists
+   * its replay counter/revision, but sets this false so it cannot later be
+   * acknowledged as an idempotently applied mutation.
+   */
+  recordApplied?: boolean;
+  /** Present for a `dep.snapshot` or `dep.delta` mutation. */
+  dependencyGraph?: DependencyGraph;
+}
+
+/** Durable effects of a background expiry sweep. */
+export interface PersistedExpiry {
+  session: SessionId;
+  audits: readonly (AuditRecord & { session: SessionId })[];
+  snapshot: SessionStateSnapshot;
+}
+
 /** A persisted session header (design §5.2 `sessions`). */
 export interface PersistedSession {
   session: SessionId;
@@ -100,6 +126,15 @@ export interface Store {
 
   /** Durably append an accepted event (Req 1.5). */
   appendEvent(event: PersistedEvent): void;
+  /**
+   * Atomically commit every durable effect of one inbound Signed_Event. This is
+   * the only write path the authority uses, so a storage failure cannot leave a
+   * replay/applied-id acknowledgement durable without the snapshot it
+   * acknowledges.
+   */
+  commitMutation(mutation: PersistedMutation): void;
+  /** Atomically commit an expiry sweep's audit trail and replacement snapshot. */
+  commitExpiry(expiry: PersistedExpiry): void;
   /** Persisted events with `eventRevision > fromRevision`, ascending (Req 9.3). */
   eventsSince(session: SessionId, fromRevision: number): PersistedEvent[];
   /**
@@ -319,6 +354,79 @@ export class SqliteStore implements Store {
         { cause: error },
       );
     }
+  }
+
+  commitMutation(mutation: PersistedMutation): void {
+    const {
+      event,
+      audits,
+      snapshot,
+      recordApplied = true,
+      dependencyGraph,
+    } = mutation;
+    const eventSessionKey = sessionKey(event.session);
+    if (sessionKey(snapshot.session) !== eventSessionKey) {
+      throw new StoreError(
+        "Mutation event and authoritative snapshot target different sessions.",
+      );
+    }
+    if (audits.some((audit) => sessionKey(audit.session) !== eventSessionKey)) {
+      throw new StoreError("Mutation audit targets a different session.");
+    }
+    if (
+      dependencyGraph !== undefined &&
+      sessionKey(dependencyGraph.snapshot.sessionId) !== eventSessionKey
+    ) {
+      throw new StoreError(
+        "Mutation dependency graph targets a different session.",
+      );
+    }
+
+    const highestRevision = Math.max(
+      event.eventRevision,
+      snapshot.highestRevision,
+      ...audits.map((audit) => audit.eventRevision),
+    );
+
+    this.transaction(() => {
+      this.appendEvent(event);
+      if (recordApplied) {
+        this.recordApplied(event.session, event.eventId, event.eventRevision);
+      }
+      for (const audit of audits) {
+        this.appendAudit(audit);
+      }
+      this.saveSnapshot(snapshot);
+      if (dependencyGraph !== undefined) {
+        this.upsertDependencyGraph(event.session, dependencyGraph);
+      }
+      this.saveSessionWatermark(event.session, highestRevision);
+    });
+  }
+
+  commitExpiry(expiry: PersistedExpiry): void {
+    const { session, audits, snapshot } = expiry;
+    const key = sessionKey(session);
+    if (sessionKey(snapshot.session) !== key) {
+      throw new StoreError(
+        "Expiry snapshot and expiry audit target different sessions.",
+      );
+    }
+    if (audits.some((audit) => sessionKey(audit.session) !== key)) {
+      throw new StoreError("Expiry audit targets a different session.");
+    }
+    const highestRevision = Math.max(
+      snapshot.highestRevision,
+      ...audits.map((audit) => audit.eventRevision),
+    );
+
+    this.transaction(() => {
+      for (const audit of audits) {
+        this.appendAudit(audit);
+      }
+      this.saveSnapshot(snapshot);
+      this.saveSessionWatermark(session, highestRevision);
+    });
   }
 
   eventsSince(session: SessionId, fromRevision: number): PersistedEvent[] {
@@ -549,6 +657,28 @@ export class SqliteStore implements Store {
       .get(sessionKey(session)) as { graph_json: string } | undefined;
     if (row === undefined) return null;
     return JSON.parse(row.graph_json) as DependencyGraph;
+  }
+
+  /** Keep the durable session watermark above every persisted derived update. */
+  private saveSessionWatermark(
+    session: SessionId,
+    highestRevision: number,
+  ): void {
+    this.db
+      .prepare(
+        `INSERT INTO sessions (session_key, repo_id, team_id, branch, base_revision, highest_revision, manual_config)
+         VALUES (?, ?, ?, ?, ?, ?, 0)
+         ON CONFLICT(session_key) DO UPDATE SET
+           highest_revision = MAX(sessions.highest_revision, excluded.highest_revision)`,
+      )
+      .run(
+        sessionKey(session),
+        session.repoId,
+        session.teamId,
+        session.branch,
+        session.baseRevision,
+        highestRevision,
+      );
   }
 
   close(): void {

@@ -93,6 +93,43 @@ export interface GetRiskMapData {
   highestRevision: number;
 }
 
+// ---- Team activity (metadata only) ------------------------------------------
+
+/** Request the active team projection for a Repository_Session. */
+export interface GetTeamStatusRequest {
+  session: SessionRef;
+}
+
+/** One active file and the coordination roles attributed to a member. */
+export interface TeamActivityFile {
+  path: string;
+  roles: Array<"editing" | "soft-lock" | "intent" | "planned-create">;
+}
+
+/** A member-declared task reconstructed from their active Declared_Intent. */
+export interface TeamActivityTask {
+  intentId: string;
+  description: string;
+  modifyPaths: string[];
+  createPaths: string[];
+}
+
+/** Active, metadata-only activity for a team member. */
+export interface TeamMemberActivity {
+  memberId: string;
+  deviceIds: string[];
+  files: TeamActivityFile[];
+  tasks: TeamActivityTask[];
+  lastEventRevision: number;
+}
+
+/** Live team activity available to local UI and coding agents. */
+export interface GetTeamStatusData {
+  teamId: string;
+  members: TeamMemberActivity[];
+  highestRevision: number;
+}
+
 // ---- 2. get_dependency_impact (design §3.4 #2; Req 23.1, 23.4, 23.5) ----------
 
 export interface GetDependencyImpactRequest {
@@ -251,6 +288,9 @@ export interface AgentPort {
 
   // Queries — succeed while offline with possibly-stale data (Req 33.1).
   getRiskMap(req: GetRiskMapRequest): MaybePromise<AgentResult<GetRiskMapData>>;
+  getTeamStatus(
+    req: GetTeamStatusRequest,
+  ): MaybePromise<AgentResult<GetTeamStatusData>>;
   getDependencyImpact(
     req: GetDependencyImpactRequest,
   ): MaybePromise<AgentResult<GetDependencyImpactData>>;

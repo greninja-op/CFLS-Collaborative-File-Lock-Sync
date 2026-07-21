@@ -17,12 +17,12 @@ and what is indirectly at risk. The actual file contents still travel through
 There are four moving parts. You don't interact with all of them directly, but
 it helps to know what each does:
 
-| Part                         | What it is                                                                                               | Who runs it                          |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------ |
-| **Coordination Host**        | The central server that everyone connects to. Keeps the single source of truth about who's editing what. | One person (or a small VPS) per team |
-| **Agent**                    | A small program on each teammate's laptop. Talks to the host, watches your folder, exposes a local API.  | Every teammate                       |
-| **VS Code / Kiro extension** | Shows the coordination status inside your editor (status bar + commands).                                | Every teammate                       |
-| **MCP server**               | Lets an AI coding agent read the same coordination data over the Model Context Protocol.                 | Automatic, inside the agent          |
+| Part                         | What it is                                                                                               | Who runs it                           |
+| ---------------------------- | -------------------------------------------------------------------------------------------------------- | ------------------------------------- |
+| **Coordination Host**        | The central server that everyone connects to. Keeps the single source of truth about who's editing what. | One person (or a small VPS) per team  |
+| **Agent**                    | A small program on each teammate's laptop. Talks to the host, watches your folder, exposes a local API.  | Every teammate                        |
+| **VS Code / Kiro extension** | Shows coordination status in a clickable CFLS status-bar item and active-team panel.                     | Every teammate                        |
+| **MCP bridge**               | Lets an AI coding agent read the same coordination data over the Model Context Protocol.                 | A local `cfls mcp` process per client |
 
 Everything is secured: each device has its own key, teammates join by signed
 invitation, and all host traffic is over TLS (`wss://`).
@@ -37,15 +37,18 @@ soon as your agent is running and your editor is open.
 ### 2.1 Live presence
 
 **What it is:** When you open or start editing a file, your teammates see it
-immediately — before you've even saved. The editor status bar shows how many
-files are "in play" and the "Show Coordination Status" command lists who is
-editing what.
+immediately — before you've even saved. The CFLS status-bar item shows the current team;
+click it (or run **CFLS: Show Coordination Status**) to open the active-team panel and inspect
+each member's declared tasks and repository-relative files.
 
 **What it's for:** The cheapest way to avoid a collision — just don't start on a
 file you can see someone else is already in.
 
 **How to use it:** Nothing to do. Open the repo with the extension installed and
 the agent running; presence is automatic.
+
+The panel is deliberately metadata-only. It can show activity roles such as editing or a soft
+lock, but it never sends or displays source text, diffs, or patches.
 
 ### 2.2 Soft locks (the default)
 
@@ -123,6 +126,21 @@ sessions, connected devices, locks, active editing, and planned file creations.
 It exposes coordination metadata only and can be disabled in the host
 configuration.
 
+### 2.9 Coding-agent team awareness (MCP)
+
+**What it is:** `get_team_status` gives a coding agent the active team projection: members,
+their declared task descriptions, repository-relative files, and current activity roles. It is
+part of the 13-tool MCP surface alongside the risk, intent, lock, and live-update tools.
+
+**How to use it:** Start the local Agent, then configure the coding-agent client to run:
+
+```bash
+cfls mcp --workspace /absolute/repo/path
+```
+
+The bridge authenticates to the already-running local Agent; it does not connect directly to
+the Host. The returned activity is coordination metadata, never source files or diffs.
+
 ---
 
 ## 3. Onboarding — the `cfls` command-line tool
@@ -146,6 +164,12 @@ metadata and public keys; **your repo files always come from git.**
 | `cfls join --host <wss-url> --name <you>` | Saves the host address + your name.                            |
 | `cfls connect <invitation>`               | Stores the invitation the admin sent back.                     |
 | `cfls agent --insecure-tls`               | Runs your local agent. The editor extension auto-discovers it. |
+| `cfls mcp --workspace <absolute-path>`    | Exposes the running local Agent to an MCP client over stdio.   |
+| `cfls service install`                    | Installs the per-user Agent service for the current workspace. |
+
+On Linux, `cfls service install` creates a `systemd --user` service. On Windows it creates a
+per-user Task Scheduler task and requires `--windows-user <DOMAIN\User-or-SID>`. Use
+`cfls service status` to inspect it or `cfls service uninstall` to remove it.
 
 Full step-by-step onboarding (including different-laptop setup) is in
 [`onboarding.md`](./onboarding.md).

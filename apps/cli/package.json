@@ -18,10 +18,14 @@
     "@cfls/agent": "workspace:*",
     "@cfls/core-state": "workspace:*",
     "@cfls/host": "workspace:*",
+    "@cfls/mcp-server": "workspace:*",
     "@cfls/protocol": "workspace:*",
-    "@cfls/security": "workspace:*"
+    "@cfls/security": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "ws": "^8.21.1"
   },
   "devDependencies": {
+    "@types/ws": "^8.18.1",
     "@cfls/test-utils": "workspace:*"
   }
 }

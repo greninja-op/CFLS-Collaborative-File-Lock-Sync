@@ -16,15 +16,18 @@ import { EventEmitter } from "node:events";
 
 import {
   Coalescer,
+  normalizePath,
   type RepositoryRulesConfig,
   type SyncResponse,
 } from "@cfls/core-state";
+import { isExcludedPath } from "@cfls/dependency-analyzer";
 import { createMcpServer } from "@cfls/mcp-server";
 import type {
   CoordinationUpdate,
   DependencyGraph,
   MemberRef,
   SessionId,
+  SessionStateSnapshot,
 } from "@cfls/protocol";
 import {
   createSecretStore,
@@ -51,6 +54,41 @@ import {
   reconcileFileChange,
   type FileChangeEvent,
 } from "./watcher";
+
+/** A saved-file signal is bounded activity, not permanent editor presence. */
+const DEFAULT_WATCHER_ACTIVITY_TTL_MS = 30_000;
+const LOCAL_CONTROL_PATH_PREFIXES = [".coordination/", ".cfls-cache/"];
+
+/**
+ * Normalize only paths that are demonstrably repository-relative. Local API
+ * clients are untrusted even after loopback authentication, so never forward an
+ * absolute or escaping editor path to the host.
+ */
+function repositoryRelativePath(value: unknown): string | undefined {
+  if (typeof value !== "string" || value.length === 0 || value.includes("\0")) {
+    return undefined;
+  }
+  const slashNormalized = value.replace(/\\/g, "/");
+  // Covers POSIX/UNC roots and both Windows drive-absolute and drive-relative
+  // forms. Drive-relative paths have host-dependent resolution, so reject them
+  // as well rather than guessing a repository root.
+  if (slashNormalized.startsWith("/") || /^[A-Za-z]:/.test(slashNormalized)) {
+    return undefined;
+  }
+  const normalized = normalizePath(value);
+  if (
+    normalized.length === 0 ||
+    normalized === ".." ||
+    normalized.startsWith("../") ||
+    isExcludedPath(normalized) ||
+    normalized === ".coordination" ||
+    normalized === ".cfls-cache" ||
+    LOCAL_CONTROL_PATH_PREFIXES.some((prefix) => normalized.startsWith(prefix))
+  ) {
+    return undefined;
+  }
+  return normalized;
+}
 
 /** Configuration for a {@link CoordinationAgent}. */
 export interface CoordinationAgentConfig {
@@ -86,6 +124,8 @@ export interface CoordinationAgentConfig {
   localApiPort?: number;
   /** Enable the named-pipe Local_API transport (default: win32). */
   enableNamedPipe?: boolean;
+  /** Duration a watcher-confirmed save remains editing before it ends locally. */
+  watcherActivityTtlMs?: number;
   /** Connection tuning forwarded to {@link HostConnection}. */
   connection?: Partial<
     Pick<
@@ -122,7 +162,10 @@ export class CoordinationAgent extends EventEmitter {
   private localAuthToken: LocalAuthToken;
 
   /** Coalescer for outbound presence/lock bursts (Req 34). */
-  private readonly coalescer = new Coalescer<{ path: string }>();
+  private readonly coalescer = new Coalescer<{
+    path: string;
+    state: "editing" | "stopped";
+  }>();
   private coalesceSeq = 0;
   private flushTimer: NodeJS.Timeout | undefined;
 
@@ -136,11 +179,24 @@ export class CoordinationAgent extends EventEmitter {
 
   /** Repository-relative paths currently open/being edited in this agent's editors. */
   private readonly openScopes = new Set<string>();
+  /** Bounded end-of-activity timers for watcher-confirmed saves. */
+  private readonly watcherActivityTimers = new Map<string, NodeJS.Timeout>();
+  /** Per-path activity generation; lets a later save re-announce after stop. */
+  private readonly watcherActivityGenerations = new Map<string, number>();
+  /** Stops that elapsed while offline and must be sent after a successful sync. */
+  private readonly pendingWatcherStops = new Set<string>();
+  private readonly watcherActivityTtlMs: number;
 
   constructor(config: CoordinationAgentConfig) {
     super();
     this.config = config;
     this.localAuthToken = config.localAuthToken ?? generateLocalAuthToken();
+    this.watcherActivityTtlMs =
+      typeof config.watcherActivityTtlMs === "number" &&
+      Number.isFinite(config.watcherActivityTtlMs) &&
+      config.watcherActivityTtlMs > 0
+        ? config.watcherActivityTtlMs
+        : DEFAULT_WATCHER_ACTIVITY_TTL_MS;
   }
 
   /** The embedded Local_MCP_Server (for connecting a transport). */
@@ -188,9 +244,16 @@ export class CoordinationAgent extends EventEmitter {
       passphrase: this.deviceKey.privateKey,
     });
     const cached = this.cache.load(this.config.session);
+    // The host's replay gate is keyed by Device_ID, not Repository_Session.
+    // A present-but-corrupt counter deliberately fails startup rather than
+    // resetting to zero and replaying an already accepted signed event.
+    const replayCounter = this.cache.loadReplayCounter();
     if (cached !== null) {
       this.view.loadSnapshot(this.config.session, cached);
     }
+    // Cached (or empty) state is only authoritative after the first successful
+    // sync. Keep local clients stale through the handshake/sync gap.
+    this.view.markStale();
 
     // 3. WSS connection + host gateway (Req 6).
     this.connection = new HostConnection({
@@ -198,6 +261,8 @@ export class CoordinationAgent extends EventEmitter {
       session: this.config.session,
       deviceKey: this.deviceKey,
       invitation: this.config.invitation,
+      initialReplayCounter: replayCounter,
+      onReplayCounter: (counter) => this.cache!.saveReplayCounter(counter),
       ...(this.config.insecureTls !== undefined
         ? { insecureTls: this.config.insecureTls }
         : {}),
@@ -250,7 +315,13 @@ export class CoordinationAgent extends EventEmitter {
     this.mcpServer = createMcpServer(this.port);
 
     // Track held locks for reconnect re-assert (Req 9.6).
-    this.connection.on("update", (u: CoordinationUpdate) => this.trackHeld(u));
+    this.connection.on("update", (u: CoordinationUpdate) => {
+      this.trackHeld(u);
+      // RealHostGateway/AgentCoordinationPort registered their listeners before
+      // this one, so the view has applied the authoritative update by now. Save
+      // every active transition so a service restart retains live task status.
+      this.persistCache();
+    });
     // Adopt the session's shared Dependency_Graph whenever the host shares one
     // so every agent computes indirect risk against the same graph (Req 19, 20).
     this.connection.on("graph", (graph: DependencyGraph) => {
@@ -302,6 +373,8 @@ export class CoordinationAgent extends EventEmitter {
               push,
             ),
           ),
+        unsubscribe: (subscriptionId) =>
+          this.port!.unsubscribeFromCoordinationUpdates(subscriptionId),
       },
     });
     const localApiAddress = await this.localApi.start();
@@ -344,10 +417,14 @@ export class CoordinationAgent extends EventEmitter {
     if (this.connection === undefined) {
       return;
     }
+    // `auth.ok` makes the transport online before the sync response arrives.
+    // Do not let that small window make cached data look authoritative.
+    this.view.markStale();
     try {
       const from = this.view.highestApplied(this.config.session);
       const response: SyncResponse = await this.connection.requestSync(from);
       this.view.applySync(this.config.session, response);
+      this.flushPendingWatcherStops();
       // Re-assert still-held locks so the host reinstates them (Req 9.6).
       for (const scope of this.heldScopes) {
         this.connection.send("lock.acquire", {
@@ -364,7 +441,10 @@ export class CoordinationAgent extends EventEmitter {
       this.persistCache();
       this.emit("synced", response.kind);
     } catch {
-      // Sync failed; remain stale until the next reconnect.
+      // A successful TLS/auth handshake is not enough to make coordination
+      // fresh: until sync converges, local clients must keep seeing stale data.
+      this.view.markStale();
+      this.persistCache();
       this.emit("sync-failed");
     }
   }
@@ -400,7 +480,7 @@ export class CoordinationAgent extends EventEmitter {
       path?: string;
       oldPath?: string;
     };
-    const path = typeof e.path === "string" ? e.path : undefined;
+    const path = repositoryRelativePath(e.path);
 
     switch (e.kind) {
       case "file_opened":
@@ -413,6 +493,9 @@ export class CoordinationAgent extends EventEmitter {
         // Only announce the first time a path becomes active, to avoid a flood
         // of presence/lock messages on every keystroke (Req 34 spirit).
         if (!this.openScopes.has(path)) {
+          // A pending watcher save may still flush as editing; that is harmless
+          // here because the editor has just taken ownership of this presence.
+          this.clearWatcherActivity(path);
           this.openScopes.add(path);
           connection.send("presence.report", { path, state: "editing" });
           connection.send("lock.acquire", {
@@ -428,15 +511,19 @@ export class CoordinationAgent extends EventEmitter {
           return;
         }
         if (this.openScopes.delete(path)) {
+          this.clearWatcherActivity(path, true);
           connection.send("presence.report", { path, state: "stopped" });
           connection.send("lock.release", { scope: path });
         }
         return;
       }
       case "file_renamed": {
-        if (typeof e.oldPath === "string" && path !== undefined) {
+        const oldPath = repositoryRelativePath(e.oldPath);
+        if (oldPath !== undefined && path !== undefined) {
+          this.clearWatcherActivity(oldPath, true);
+          this.clearWatcherActivity(path, true);
           connection.send("path.renamed", {
-            fromPath: e.oldPath,
+            fromPath: oldPath,
             toPath: path,
           });
         }
@@ -444,6 +531,7 @@ export class CoordinationAgent extends EventEmitter {
       }
       case "file_deleted": {
         if (path !== undefined) {
+          this.clearWatcherActivity(path, true);
           connection.send("path.deleted", { path });
         }
         return;
@@ -461,17 +549,28 @@ export class CoordinationAgent extends EventEmitter {
     }
     for (const message of reconcileFileChange(event)) {
       if (message.type === "presence.report") {
-        // Coalesce presence bursts (Req 34); flushed on the window timer.
-        this.coalesceSeq += 1;
-        this.coalescer.enqueue({
-          seq: this.coalesceSeq,
-          kind: "presence",
-          path: message.payload.path as string,
-          member: this.config.self,
-          stateSignature: `${message.payload.path}:${message.payload.state}`,
-          payload: { path: message.payload.path as string },
-        });
+        const path = message.payload.path;
+        if (typeof path !== "string") {
+          continue;
+        }
+        const activityGeneration = this.scheduleWatcherActivityEnd(path);
+        this.enqueueWatcherPresence(path, "editing", activityGeneration);
         continue;
+      }
+      if (message.type === "path.renamed") {
+        const fromPath = message.payload.fromPath;
+        const toPath = message.payload.toPath;
+        if (typeof fromPath === "string") {
+          this.clearWatcherActivity(fromPath, true);
+        }
+        if (typeof toPath === "string") {
+          this.clearWatcherActivity(toPath, true);
+        }
+      } else if (message.type === "path.deleted") {
+        const path = message.payload.path;
+        if (typeof path === "string") {
+          this.clearWatcherActivity(path, true);
+        }
       }
       // Path renames/deletes/creations are transmitted promptly (metadata only).
       connection.send(message.type, message.payload as never);
@@ -495,8 +594,103 @@ export class CoordinationAgent extends EventEmitter {
     for (const event of this.coalescer.flush()) {
       connection.send("presence.report", {
         path: event.payload.path,
-        state: "editing",
+        state: event.payload.state,
       });
+    }
+  }
+
+  /** Enqueue the latest watcher-derived state so cancellation supersedes saves. */
+  private enqueueWatcherPresence(
+    path: string,
+    state: "editing" | "stopped",
+    generation: number,
+  ): void {
+    this.coalesceSeq += 1;
+    this.coalescer.enqueue({
+      seq: this.coalesceSeq,
+      kind: "presence",
+      path,
+      member: this.config.self,
+      stateSignature: `${path}:${state}:${generation}`,
+      payload: { path, state },
+    });
+  }
+
+  /** Start/reset a bounded watcher-only editing signal for one saved path. */
+  private scheduleWatcherActivityEnd(path: string): number {
+    const hadTimer = this.watcherActivityTimers.has(path);
+    this.clearWatcherActivityTimer(path);
+    this.pendingWatcherStops.delete(path);
+    const generation = hadTimer
+      ? (this.watcherActivityGenerations.get(path) ?? 1)
+      : (this.watcherActivityGenerations.get(path) ?? 0) + 1;
+    this.watcherActivityGenerations.set(path, generation);
+    const timer = setTimeout(() => {
+      this.watcherActivityTimers.delete(path);
+      this.endWatcherActivity(path);
+    }, this.watcherActivityTtlMs);
+    timer.unref?.();
+    this.watcherActivityTimers.set(path, timer);
+    return generation;
+  }
+
+  /** Cancel pending watcher activity and any deferred stop for one path. */
+  private clearWatcherActivity(path: string, queueStop = false): void {
+    this.clearWatcherActivityTimer(path);
+    this.pendingWatcherStops.delete(path);
+    if (queueStop) {
+      if (this.enqueueWatcherStop(path)) {
+        this.sendWatcherStop(path);
+      }
+    }
+  }
+
+  private clearWatcherActivityTimer(path: string): void {
+    const timer = this.watcherActivityTimers.get(path);
+    if (timer !== undefined) {
+      clearTimeout(timer);
+      this.watcherActivityTimers.delete(path);
+    }
+  }
+
+  /** Emit an end-of-editing only when an editor has not claimed the path. */
+  private endWatcherActivity(path: string): void {
+    if (this.openScopes.has(path)) {
+      return;
+    }
+    const connection = this.connection;
+    if (connection === undefined || !connection.isOnline()) {
+      this.pendingWatcherStops.add(path);
+      return;
+    }
+    this.pendingWatcherStops.delete(path);
+    if (this.enqueueWatcherStop(path)) {
+      this.sendWatcherStop(path);
+    }
+  }
+
+  /** A higher-sequence stopped state prevents a buffered saved/editing event. */
+  private enqueueWatcherStop(path: string): boolean {
+    const generation = this.watcherActivityGenerations.get(path);
+    if (generation === undefined) {
+      return false;
+    }
+    this.enqueueWatcherPresence(path, "stopped", generation);
+    return true;
+  }
+
+  /** Send the stop promptly while its coalesced copy guards a later flush. */
+  private sendWatcherStop(path: string): void {
+    const connection = this.connection;
+    if (connection !== undefined && connection.isOnline()) {
+      connection.send("presence.report", { path, state: "stopped" });
+    }
+  }
+
+  /** Send expired watcher stops only after the view has successfully synced. */
+  private flushPendingWatcherStops(): void {
+    for (const path of this.pendingWatcherStops) {
+      this.endWatcherActivity(path);
     }
   }
 
@@ -531,12 +725,97 @@ export class CoordinationAgent extends EventEmitter {
             state: "editing" as const,
             eventRevision: e.eventRevision,
           })),
-        intents: [],
+        intents: this.snapshotIntents(entries),
         highestRevision,
       });
     } catch {
       // Never let cache persistence failures affect coordination.
     }
+  }
+
+  /**
+   * Rebuild snapshot intents from path-level coordination entries. The cache
+   * stores one Declared_Intent per `(intentId, memberId, deviceId)`, preserving
+   * both modify and planned-creation roles for the team panel/MCP projection
+   * after a clean service restart. No source content is introduced here.
+   */
+  private snapshotIntents(
+    entries: readonly CoordinationUpdate[],
+  ): SessionStateSnapshot["intents"] {
+    interface IntentGroup {
+      intentId: string;
+      owner: MemberRef;
+      description: string;
+      modifyPaths: Set<string>;
+      createPaths: Set<string>;
+      eventRevision: number;
+    }
+
+    const groups = new Map<string, IntentGroup>();
+    for (const entry of entries) {
+      if (
+        (entry.entryType !== "intent" &&
+          entry.entryType !== "planned_file_creation") ||
+        entry.path === undefined
+      ) {
+        continue;
+      }
+
+      // Current hosts always provide intent metadata. Retain legacy entries as
+      // a one-path intent instead of silently losing active coordination state.
+      const activity = entry.intent;
+      const intentId =
+        activity?.intentId ??
+        `legacy-${entry.entryType}-${entry.eventRevision}-${entry.path}`;
+      const key = JSON.stringify([
+        intentId,
+        entry.member.memberId,
+        entry.member.deviceId,
+      ]);
+      let group = groups.get(key);
+      if (group === undefined) {
+        group = {
+          intentId,
+          owner: { ...entry.member },
+          description: activity?.description ?? "",
+          modifyPaths: new Set(),
+          createPaths: new Set(),
+          eventRevision: entry.eventRevision,
+        };
+        groups.set(key, group);
+      } else if (entry.eventRevision >= group.eventRevision) {
+        group.eventRevision = entry.eventRevision;
+        if (activity !== undefined) {
+          group.description = activity.description;
+        }
+      }
+
+      if (entry.entryType === "intent") {
+        group.modifyPaths.add(entry.path);
+      } else {
+        group.createPaths.add(entry.path);
+      }
+    }
+
+    return [...groups.values()]
+      .map((group) => ({
+        intentId: group.intentId,
+        owner: group.owner,
+        agentId: group.owner.deviceId,
+        modifyPaths: [...group.modifyPaths].sort((a, b) => a.localeCompare(b)),
+        createPaths: [...group.createPaths]
+          .sort((a, b) => a.localeCompare(b))
+          .map((path) => ({ path })),
+        scopeKind: "file" as const,
+        branch: this.config.session.branch,
+        description: group.description,
+        eventRevision: group.eventRevision,
+      }))
+      .sort((a, b) => {
+        const aKey = `${a.intentId}\u0000${a.owner.memberId}\u0000${a.owner.deviceId}`;
+        const bKey = `${b.intentId}\u0000${b.owner.memberId}\u0000${b.owner.deviceId}`;
+        return aKey.localeCompare(bKey);
+      });
   }
 
   /** Stop the agent and release all resources. */
@@ -545,9 +824,21 @@ export class CoordinationAgent extends EventEmitter {
       clearInterval(this.flushTimer);
       this.flushTimer = undefined;
     }
+    for (const timer of this.watcherActivityTimers.values()) {
+      clearTimeout(timer);
+    }
+    this.watcherActivityTimers.clear();
+    this.watcherActivityGenerations.clear();
+    this.pendingWatcherStops.clear();
     this.watcher?.stop();
-    await this.localApi?.stop();
-    this.connection?.close();
-    this.persistCache();
+    try {
+      await this.localApi?.stop();
+    } finally {
+      // The Local_API normally removes each per-connection subscription first.
+      // This is the final safety net if its transport shutdown itself faults.
+      this.port?.dispose();
+      this.connection?.close();
+      this.persistCache();
+    }
   }
 }

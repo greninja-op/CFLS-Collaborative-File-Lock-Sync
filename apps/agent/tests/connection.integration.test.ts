@@ -41,7 +41,12 @@ function selfOf(device: TestDevice): MemberRef {
 
 async function startAgent(
   device: TestDevice,
-  overrides: { autoReconnect?: boolean } = {},
+  overrides: {
+    autoReconnect?: boolean;
+    cacheDir?: string;
+    watcherActivityTtlMs?: number;
+    onCreated?: (agent: CoordinationAgent) => void;
+  } = {},
 ): Promise<CoordinationAgent> {
   const agent = new CoordinationAgent({
     session,
@@ -49,17 +54,21 @@ async function startAgent(
     hostUrl: `wss://127.0.0.1:${host.port}`,
     invitation: invitationFor(session, admin.key, device),
     rules: ALL_SOFT_CONFIG,
-    cacheDir,
+    cacheDir: overrides.cacheDir ?? cacheDir,
     deviceKey: device.key,
     insecureTls: true,
     localApiPort: 0,
     enableNamedPipe: false,
+    ...(overrides.watcherActivityTtlMs !== undefined
+      ? { watcherActivityTtlMs: overrides.watcherActivityTtlMs }
+      : {}),
     connection: {
       heartbeatIntervalMs: 0,
       autoReconnect: overrides.autoReconnect ?? true,
       backoff: { baseMs: 100, maxMs: 300 },
     },
   });
+  overrides.onCreated?.(agent);
   agents.push(agent);
   await agent.start();
   return agent;
@@ -99,6 +108,64 @@ describe("connect + acquire (Req 6.1, 8.1)", () => {
     const locks = host.authority.snapshot(session).locks.map((l) => l.scope);
     expect(locks).toContain("src/api.ts");
   });
+
+  it("returns the real winner for an accepted but contended lock claim", async () => {
+    const alice = await startAgent(admin, {
+      cacheDir: join(cacheDir, "alice"),
+    });
+    const bobDevice = makeDevice("bob");
+    const bob = await startAgent(bobDevice, {
+      cacheDir: join(cacheDir, "bob"),
+    });
+    await waitUntil(
+      () =>
+        alice.hostConnection().isOnline() && bob.hostConnection().isOnline(),
+    );
+
+    const winner = await alice.agentPort().acquireLock({
+      session,
+      scope: "src/contended.ts",
+      scopeKind: "file",
+    });
+    expect(winner).toMatchObject({ ok: true, data: { granted: true } });
+
+    const loser = await bob.agentPort().acquireLock({
+      session,
+      scope: "src/contended.ts",
+      scopeKind: "file",
+    });
+    expect(loser).toEqual({
+      ok: true,
+      data: {
+        eventRevision: 2,
+        granted: false,
+        concurrentClaim: true,
+        winner: { memberId: "admin", eventRevision: 1 },
+      },
+    });
+
+    // The losing claim remains available to the host for future promotion, but
+    // neither client's cache is polluted with it as an active winner.
+    await waitUntil(() =>
+      bob.view
+        .entries(session)
+        .some(
+          (entry) =>
+            entry.entryType === "soft_lock" &&
+            entry.path === "src/contended.ts" &&
+            entry.member.memberId === "admin",
+        ),
+    );
+    expect(
+      bob.view
+        .entries(session)
+        .filter(
+          (entry) =>
+            entry.entryType === "soft_lock" &&
+            entry.path === "src/contended.ts",
+        ),
+    ).toHaveLength(1);
+  });
 });
 
 describe("Offline_State (Req 6.4, 33.1)", () => {
@@ -126,6 +193,173 @@ describe("Offline_State (Req 6.4, 33.1)", () => {
     const risk = agent.agentPort().getRiskMap({ session });
     expect(risk.ok).toBe(true);
     expect(agent.agentPort().getStaleness().stale).toBe(true);
+  });
+
+  it("stays stale when an online reconnect cannot complete synchronization", async () => {
+    let initiallySynced = false;
+    const agent = await startAgent(admin, {
+      autoReconnect: true,
+      onCreated: (created) => {
+        created.on("synced", () => {
+          initiallySynced = true;
+        });
+      },
+    });
+    await waitUntil(() => initiallySynced);
+
+    const connection = agent.hostConnection();
+    connection.requestSync = async () => {
+      throw new Error("test sync failure");
+    };
+    let syncFailed = false;
+    agent.on("sync-failed", () => {
+      syncFailed = true;
+    });
+    connection.simulateDrop();
+
+    await waitUntil(() => syncFailed, 6000);
+    expect(connection.isOnline()).toBe(true);
+    expect(agent.view.isStale()).toBe(true);
+    expect(agent.agentPort().getStaleness().stale).toBe(true);
+  });
+
+  it("rejects absolute and escaping Local_API editor paths before host coordination", async () => {
+    const agent = await startAgent(admin, { autoReconnect: false });
+    await waitUntil(() => agent.hostConnection().isOnline());
+    const internal = agent as unknown as {
+      handleEditorEvent(event: unknown): void;
+    };
+
+    internal.handleEditorEvent({ kind: "file_opened", path: "../outside.ts" });
+    internal.handleEditorEvent({
+      kind: "file_opened",
+      path: "/tmp/outside.ts",
+    });
+    internal.handleEditorEvent({
+      kind: "file_opened",
+      path: "C:\\outside.ts",
+    });
+    internal.handleEditorEvent({ kind: "file_opened", path: ".env.local" });
+    internal.handleEditorEvent({
+      kind: "file_opened",
+      path: ".coordination/local-api.json",
+    });
+    internal.handleEditorEvent({
+      kind: "file_opened",
+      path: "certs/demo.pem",
+    });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(host.authority.snapshot(session).locks).toHaveLength(0);
+
+    internal.handleEditorEvent({
+      kind: "file_opened",
+      path: "./src/inside.ts",
+    });
+    await waitUntil(() =>
+      host.authority
+        .snapshot(session)
+        .locks.some((lock) => lock.scope === "src/inside.ts"),
+    );
+  });
+
+  it("ends watcher-confirmed editing after its bounded activity TTL", async () => {
+    const agent = await startAgent(admin, {
+      autoReconnect: false,
+      watcherActivityTtlMs: 150,
+    });
+    await waitUntil(() => agent.hostConnection().isOnline());
+    const internal = agent as unknown as {
+      onFileChange(event: { kind: "saved"; path: string }): void;
+      flushOutbound(): void;
+    };
+
+    internal.onFileChange({ kind: "saved", path: "src/idle.ts" });
+    // Drive the normal coalescer immediately; the later TTL must send stopped.
+    internal.flushOutbound();
+    await waitUntil(
+      () =>
+        host.authority
+          .snapshot(session)
+          .presence.some(
+            (entry) =>
+              entry.path === "src/idle.ts" && entry.state === "editing",
+          ),
+      1000,
+    );
+    await waitUntil(
+      () =>
+        host.authority
+          .snapshot(session)
+          .presence.some(
+            (entry) =>
+              entry.path === "src/idle.ts" && entry.state === "stopped",
+          ),
+      1000,
+    );
+    await waitUntil(
+      () =>
+        !agent.view
+          .entries(session)
+          .some(
+            (entry) =>
+              entry.entryType === "presence" && entry.path === "src/idle.ts",
+          ),
+      1000,
+    );
+
+    // A new save after the stop is a new bounded activity window, not a
+    // coalescer duplicate of the earlier editing report.
+    internal.onFileChange({ kind: "saved", path: "src/idle.ts" });
+    internal.flushOutbound();
+    await waitUntil(
+      () =>
+        host.authority
+          .snapshot(session)
+          .presence.some(
+            (entry) =>
+              entry.path === "src/idle.ts" && entry.state === "editing",
+          ),
+      1000,
+    );
+  });
+
+  it("does not revive editing when a watcher save is deleted before coalescing flushes", async () => {
+    const agent = await startAgent(admin, { autoReconnect: false });
+    await waitUntil(() => agent.hostConnection().isOnline());
+    const internal = agent as unknown as {
+      onFileChange(event: { kind: "saved" | "deleted"; path: string }): void;
+      flushOutbound(): void;
+    };
+
+    internal.onFileChange({ kind: "saved", path: "src/gone-before-flush.ts" });
+    internal.onFileChange({
+      kind: "deleted",
+      path: "src/gone-before-flush.ts",
+    });
+    // This represents the next coalescing window: stopped must replace the
+    // buffered editing event, never revive it after the deletion.
+    internal.flushOutbound();
+
+    await waitUntil(
+      () =>
+        host.authority
+          .snapshot(session)
+          .presence.some(
+            (entry) =>
+              entry.path === "src/gone-before-flush.ts" &&
+              entry.state === "stopped",
+          ),
+      1000,
+    );
+    expect(
+      host.authority
+        .snapshot(session)
+        .presence.some(
+          (entry) =>
+            entry.path === "src/gone-before-flush.ts" &&
+            entry.state === "editing",
+        ),
+    ).toBe(false);
   });
 });
 
@@ -166,5 +400,91 @@ describe("reconnect sync-from-revision convergence (Req 9.4, 6.6)", () => {
     expect(
       host.authority.snapshot(session).locks.map((l) => l.scope),
     ).toContain("src/api.ts");
+  });
+
+  it("retains active task metadata and resumes the device replay counter after a clean service restart", async () => {
+    const first = await startAgent(admin, { autoReconnect: false });
+    await waitUntil(() => first.hostConnection().isOnline());
+
+    const declared = await first.agentPort().declareIntent({
+      session,
+      modifyPaths: ["src/restart.ts"],
+      createPaths: ["src/restart.test.ts"],
+      description: "Keep restart coordination visible",
+    });
+    expect(declared.ok).toBe(true);
+    await waitUntil(() =>
+      first.view
+        .teamActivity(session)
+        .some((member) =>
+          member.tasks.some(
+            (task) => task.description === "Keep restart coordination visible",
+          ),
+        ),
+    );
+    const cachedRevision = first.view.highestApplied(session);
+
+    // A normal service stop writes the encrypted snapshot and device counter.
+    await first.stop();
+    agents = agents.filter((agent) => agent !== first);
+
+    // Advance the host while the service is down. The restarted agent must ask
+    // for this suffix, rather than being forced through a snapshot fallback.
+    const peer = makeDevice("peer");
+    const peerAgent = await startAgent(peer, {
+      autoReconnect: false,
+      cacheDir: join(cacheDir, "peer-device"),
+    });
+    await waitUntil(() => peerAgent.hostConnection().isOnline());
+    const peerLock = await peerAgent.agentPort().acquireLock({
+      session,
+      scope: "src/peer.ts",
+      scopeKind: "file",
+    });
+    expect(peerLock.ok).toBe(true);
+    await waitUntil(
+      () => host.authority.snapshot(session).highestRevision > cachedRevision,
+    );
+
+    const syncKinds: string[] = [];
+    const restarted = await startAgent(admin, {
+      autoReconnect: false,
+      onCreated: (agent) => {
+        agent.on("synced", (kind: string) => syncKinds.push(kind));
+      },
+    });
+    await waitUntil(() => syncKinds.includes("events"));
+
+    // The unchanged intent was reconstructed from the encrypted snapshot before
+    // the incremental suffix arrived, retaining its description and path roles
+    // for the team panel/MCP status view.
+    const status = restarted.agentPort().getTeamStatus({ session });
+    expect(status.ok).toBe(true);
+    if (status.ok) {
+      const own = status.data.members.find(
+        (member) => member.memberId === admin.memberId,
+      );
+      expect(own?.tasks).toContainEqual({
+        intentId: declared.ok ? declared.data.intentId : expect.any(String),
+        description: "Keep restart coordination visible",
+        modifyPaths: ["src/restart.ts"],
+        createPaths: ["src/restart.test.ts"],
+      });
+    }
+
+    // `sync.request` itself consumes a counter. A succeeding later mutation
+    // proves the restarted process advanced beyond the host's persisted
+    // per-device replay counter instead of replaying from zero.
+    const resumedLock = await restarted.agentPort().acquireLock({
+      session,
+      scope: "src/resumed.ts",
+      scopeKind: "file",
+    });
+    expect(resumedLock.ok).toBe(true);
+    await waitUntil(() =>
+      host.authority
+        .snapshot(session)
+        .locks.some((lock) => lock.scope === "src/resumed.ts"),
+    );
   });
 });

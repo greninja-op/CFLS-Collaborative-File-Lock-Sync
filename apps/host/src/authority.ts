@@ -27,6 +27,7 @@ import {
   sessionKey,
   validateOverride,
   type ExpiryConfigInput,
+  type IngestResult,
   type SessionRegistries,
   type SyncResponse,
 } from "@cfls/core-state";
@@ -39,10 +40,12 @@ import {
   type DepDeltaPayload,
   type DepSnapshotPayload,
   type ErrorCode,
+  type EventAppliedLockConflict,
   type FileCreatedPayload,
   type IntentDeclarePayload,
   type IntentUpdatePayload,
   type IntentWithdrawPayload,
+  type Lock,
   type LockAcquirePayload,
   type LockOverridePayload,
   type LockReleasePayload,
@@ -52,6 +55,7 @@ import {
   type PathRenamedPayload,
   type PresenceReportPayload,
   type SessionId,
+  type SessionStateSnapshot,
   type SignedEvent,
   type TypedEventEnvelope,
 } from "@cfls/protocol";
@@ -69,7 +73,7 @@ import {
 } from "@cfls/security";
 
 import { generateChallenge, verifyChallenge } from "./challenge";
-import type { Store } from "./store";
+import type { PersistedMutation, Store } from "./store";
 
 /** An authenticated connection principal produced by a successful handshake. */
 export interface AuthPrincipal {
@@ -93,10 +97,17 @@ export interface IngestOutcome {
   accepted: boolean;
   eventRevision?: number;
   duplicateOf?: number;
+  /** Present when an accepted lock acquisition was recorded as a loser. */
+  lockConflict?: EventAppliedLockConflict;
   error?: ErrorCode;
   reason?: string;
   /** Coordination updates to broadcast to the session's subscribers (Req 25). */
   broadcasts: CoordinationUpdate[];
+}
+
+/** Effects that must be committed with the event rather than during apply. */
+interface MutationEffects {
+  dependencyGraph?: DependencyGraph;
 }
 
 /** Options for constructing a {@link CoordinationAuthority}. */
@@ -133,6 +144,13 @@ export class CoordinationAuthority {
   private readonly knownSessions = new Map<string, SessionId>();
   /** `session_key` → the latest metadata-only Dependency_Graph (Req 19, 20). */
   private readonly dependencyGraphs = new Map<string, DependencyGraph>();
+  /**
+   * A failed durable commit leaves the gate/replay/revision internals advanced
+   * in this process. Do not let that poisoned in-memory state acknowledge a
+   * retry as a duplicate: reject every later mutation until process recovery
+   * reconstructs those internals from the last atomic durable commit.
+   */
+  private storageFaulted = false;
 
   constructor(
     private readonly store: Store,
@@ -144,6 +162,7 @@ export class CoordinationAuthority {
       this.intents,
       this.revisions,
       options.expiry,
+      this.presence,
     );
     this.registries = {
       locks: this.locks,
@@ -441,95 +460,169 @@ export class CoordinationAuthority {
       };
     }
 
+    // A failed durable commit advances the gate's replay/idempotency metadata
+    // before we can observe the failure. Fail closed until restart rather than
+    // letting a retry receive a false `event.applied` duplicate acknowledgement.
+    if (this.storageFaulted) {
+      return this.storageFailureOutcome();
+    }
+
     const member: MemberRef = {
       memberId: principal.memberId,
       deviceId: principal.deviceId,
     };
+    const stateBefore = this.snapshot(envelope.session);
+    const hadCachedDependencyGraph = this.dependencyGraphs.has(key);
+    const cachedDependencyGraph = this.dependencyGraphs.get(key);
     const broadcasts: CoordinationUpdate[] = [];
     const audits: AuditRecord[] = [];
-    let applyError: { code: ErrorCode; reason: string } | undefined;
+    const effects: MutationEffects = {};
+    const acknowledgement: {
+      lockConflict?: EventAppliedLockConflict;
+    } = {};
 
-    const result = this.gate.ingest(
-      input,
-      (env: TypedEventEnvelope, eventRevision: number) => {
-        const applied = this.apply(
-          env,
-          eventRevision,
-          member,
-          broadcasts,
-          audits,
-        );
-        if (applied !== undefined) {
-          applyError = applied;
-        }
-      },
-    );
+    let result: IngestResult;
+    try {
+      result = this.gate.ingest(
+        input,
+        (env: TypedEventEnvelope, eventRevision: number) =>
+          this.apply(
+            env,
+            eventRevision,
+            member,
+            broadcasts,
+            audits,
+            acknowledgement,
+            effects,
+          ),
+      );
+    } catch {
+      return this.failClosedAfterPersistenceFailure(
+        stateBefore,
+        key,
+        hadCachedDependencyGraph,
+        cachedDependencyGraph,
+      );
+    }
 
     if (!result.accepted) {
+      // A domain-rule rejection is a valid signed event: retain its replay
+      // counter and consumed revision durably, but omit its Event_ID from the
+      // applied index. A lost error response can therefore never turn into an
+      // `event.applied` success on retry or after restart.
+      if (result.eventRevision !== undefined) {
+        try {
+          this.store.commitMutation({
+            event: {
+              session: envelope.session,
+              eventRevision: result.eventRevision,
+              eventId: envelope.eventId,
+              type: envelope.type,
+              deviceId: envelope.deviceId,
+              payloadJson: JSON.stringify(envelope.payload),
+              replayCounter: envelope.replay.counter,
+              createdAt: new Date().toISOString(),
+            },
+            audits: [],
+            snapshot: this.snapshot(envelope.session),
+            recordApplied: false,
+          });
+        } catch {
+          return this.failClosedAfterPersistenceFailure(
+            stateBefore,
+            key,
+            hadCachedDependencyGraph,
+            cachedDependencyGraph,
+          );
+        }
+      }
       return {
         accepted: false,
         ...(result.error !== undefined ? { error: result.error } : {}),
         ...(result.reason !== undefined ? { reason: result.reason } : {}),
+        ...(result.eventRevision !== undefined
+          ? { eventRevision: result.eventRevision }
+          : {}),
         broadcasts: [],
       };
     }
 
     // Idempotent duplicate: nothing re-applied, return the original revision.
     if (result.duplicateOf !== undefined) {
+      const lockConflict = this.currentLockConflict(
+        envelope as TypedEventEnvelope,
+        member,
+      );
       return {
         accepted: true,
         ...(result.eventRevision !== undefined
           ? { eventRevision: result.eventRevision }
           : {}),
         duplicateOf: result.duplicateOf,
+        ...(lockConflict !== undefined ? { lockConflict } : {}),
         broadcasts: [],
       };
     }
 
     const eventRevision = result.eventRevision as number;
-
-    // Persist the event and applied-id index for durability/idempotency (Req 1.5, 7.4).
-    this.store.appendEvent({
-      session: envelope.session,
-      eventRevision,
-      eventId: envelope.eventId,
-      type: envelope.type,
-      deviceId: envelope.deviceId,
-      payloadJson: JSON.stringify(envelope.payload),
-      replayCounter: envelope.replay.counter,
-      createdAt: new Date().toISOString(),
-    });
-    this.store.recordApplied(envelope.session, envelope.eventId, eventRevision);
-
-    // A business-rule rejection surfaced from the applier (e.g. NOT_LOCK_HOLDER):
-    // the revision is consumed (idempotent) but no state changed — return error.
-    if (applyError !== undefined) {
-      return {
-        accepted: false,
-        error: applyError.code,
-        reason: applyError.reason,
+    const snapshot = this.snapshot(envelope.session);
+    const mutation: PersistedMutation = {
+      event: {
+        session: envelope.session,
         eventRevision,
-        broadcasts: [],
-      };
+        eventId: envelope.eventId,
+        type: envelope.type,
+        deviceId: envelope.deviceId,
+        payloadJson: JSON.stringify(envelope.payload),
+        replayCounter: envelope.replay.counter,
+        createdAt: new Date().toISOString(),
+      },
+      audits: audits.map((audit) => ({ ...audit, session: envelope.session })),
+      snapshot,
+      ...(effects.dependencyGraph !== undefined
+        ? { dependencyGraph: effects.dependencyGraph }
+        : {}),
+    };
+
+    // Event, idempotency index, audit, snapshot, and graph are one durable
+    // unit. Do not publish or acknowledge before this transaction succeeds.
+    try {
+      this.store.commitMutation(mutation);
+    } catch {
+      return this.failClosedAfterPersistenceFailure(
+        stateBefore,
+        key,
+        hadCachedDependencyGraph,
+        cachedDependencyGraph,
+      );
     }
 
-    // Log broadcasts for sync, persist audits + snapshot for restart recovery.
+    if (effects.dependencyGraph !== undefined) {
+      this.dependencyGraphs.set(key, effects.dependencyGraph);
+    }
+
+    // The durable commit succeeded, so these in-memory sync entries can now be
+    // safely exposed to peers.
     for (const update of broadcasts) {
       this.eventLog.append(envelope.session, update);
     }
-    for (const audit of audits) {
-      this.store.appendAudit({ ...audit, session: envelope.session });
-    }
-    this.persistSnapshot(envelope.session);
 
-    return { accepted: true, eventRevision, broadcasts };
+    return {
+      accepted: true,
+      eventRevision,
+      ...(acknowledgement.lockConflict !== undefined
+        ? { lockConflict: acknowledgement.lockConflict }
+        : {}),
+      broadcasts,
+    };
   }
 
   /**
    * Apply a validated, accepted event to authoritative state, collecting the
    * broadcasts and audit records it produces. Returns an error descriptor when
    * the event is rejected by a business rule (holder/owner checks, override
-   * reason, intent validation); otherwise `undefined`.
+   * reason, intent validation) before it mutates any registry; otherwise
+   * `undefined`.
    */
   private apply(
     envelope: TypedEventEnvelope,
@@ -537,6 +630,8 @@ export class CoordinationAuthority {
     member: MemberRef,
     broadcasts: CoordinationUpdate[],
     audits: AuditRecord[],
+    acknowledgement: { lockConflict?: EventAppliedLockConflict },
+    effects: MutationEffects,
   ): { code: ErrorCode; reason: string } | undefined {
     const session = envelope.session;
     const now = new Date().toISOString();
@@ -563,6 +658,12 @@ export class CoordinationAuthority {
 
       case "lock.acquire": {
         const payload = envelope.payload as LockAcquirePayload;
+        const previousWinner = this.locks.winningLock(
+          session,
+          payload.scope,
+          payload.scopeKind,
+          session.branch,
+        );
         const outcome = this.locks.acquire({
           session,
           lockId: envelope.eventId,
@@ -574,21 +675,18 @@ export class CoordinationAuthority {
           eventRevision,
           acquiredAt: now,
         });
-        // Broadcast the CURRENT WINNER of the scope, not merely the acquiring
-        // member: a contended (losing) acquisition must inform every agent —
-        // and the losing acquirer itself — that the earlier-revision holder
-        // still owns the lock (Req 8.2, 8.4, 12.4). The event's own (monotonic)
-        // Event_Revision is used so the coordination event log stays strictly
-        // ordered while the winner's identity converges everywhere. For an
-        // uncontended acquisition the winner is the acquirer, so this is a
-        // no-op change.
-        broadcasts.push({
-          entryType: "soft_lock",
-          op: "added",
-          path: outcome.winner.scope,
-          member: outcome.winner.holder,
-          eventRevision,
-        });
+        this.captureLockConflict(
+          payload.scope,
+          outcome.winner,
+          outcome.contended,
+          acknowledgement,
+        );
+        this.emitWinningLockTransition(
+          previousWinner,
+          outcome.winner,
+          this.revisionAllocator(session, eventRevision),
+          broadcasts,
+        );
         return undefined;
       }
 
@@ -609,7 +707,13 @@ export class CoordinationAuthority {
               "Coordination-required override requires an Override_Reason.",
           };
         }
-        this.locks.acquire({
+        const previousWinner = this.locks.winningLock(
+          session,
+          payload.scope,
+          payload.scopeKind,
+          session.branch,
+        );
+        const outcome = this.locks.acquire({
           session,
           lockId: envelope.eventId,
           scope: payload.scope,
@@ -620,14 +724,19 @@ export class CoordinationAuthority {
           eventRevision,
           acquiredAt: now,
         });
+        this.captureLockConflict(
+          payload.scope,
+          outcome.winner,
+          outcome.contended,
+          acknowledgement,
+        );
         audits.push(validated.audit);
-        broadcasts.push({
-          entryType: "soft_lock",
-          op: "added",
-          path: payload.scope,
-          member,
-          eventRevision,
-        });
+        this.emitWinningLockTransition(
+          previousWinner,
+          outcome.winner,
+          this.revisionAllocator(session, eventRevision),
+          broadcasts,
+        );
         return undefined;
       }
 
@@ -649,26 +758,14 @@ export class CoordinationAuthority {
                 : "No active lock to release.",
           };
         }
-        // Each coordination change gets its own strictly-increasing revision so
-        // the event log and every agent cache apply both the release and any
-        // promotion (a shared revision would drop the second — Req 8.1, 9.3).
-        const allocate = this.revisionAllocator(session, eventRevision);
-        broadcasts.push({
-          entryType: "soft_lock",
-          op: "removed",
-          path: release.released.scope,
-          member: release.released.holder,
-          eventRevision: allocate(),
-        });
-        if (release.promoted !== undefined) {
-          broadcasts.push({
-            entryType: "soft_lock",
-            op: "added",
-            path: release.promoted.scope,
-            member: release.promoted.holder,
-            eventRevision: allocate(),
-          });
-        }
+        // The registry only permits release of the current winner, so the
+        // released lock is the definitive previous client-facing projection.
+        this.emitWinningLockTransition(
+          release.released,
+          release.promoted,
+          this.revisionAllocator(session, eventRevision),
+          broadcasts,
+        );
         return undefined;
       }
 
@@ -714,6 +811,13 @@ export class CoordinationAuthority {
 
       case "intent.update": {
         const payload = envelope.payload as IntentUpdatePayload;
+        // Keep the old projection long enough to retire every cached path
+        // before publishing the replacement. Without those removals, an agent
+        // that receives an intent update could keep showing paths that are no
+        // longer part of the task until it next receives a full snapshot.
+        const previous = this.intents
+          .allIntents(session)
+          .find((intent) => intent.intentId === payload.intentId);
         const updated = this.intents.update({
           session,
           intentId: payload.intentId,
@@ -729,10 +833,14 @@ export class CoordinationAuthority {
             reason: updated.errors?.join("; ") ?? "Intent update rejected.",
           };
         }
+        const allocate = this.revisionAllocator(session, eventRevision);
+        if (previous !== undefined) {
+          this.emitIntentBroadcasts(previous, "removed", allocate, broadcasts);
+        }
         this.emitIntentBroadcasts(
           updated.intent,
           "added",
-          this.revisionAllocator(session, eventRevision),
+          allocate,
           broadcasts,
         );
         audits.push({
@@ -818,6 +926,10 @@ export class CoordinationAuthority {
             path: payload.path,
             member: intent.owner,
             eventRevision: allocate(),
+            intent: {
+              intentId: intent.intentId,
+              description: intent.description,
+            },
           });
         }
         return undefined;
@@ -835,17 +947,15 @@ export class CoordinationAuthority {
 
       case "dep.snapshot": {
         const payload = envelope.payload as DepSnapshotPayload;
-        // Persist the metadata-only Dependency_Graph so the host holds it for the
-        // session identity (Req 19.3, 20.1). Distribution to other agents is
-        // handled by the server layer via the returned graph.
-        this.store.upsertDependencyGraph(session, payload.graph);
-        this.dependencyGraphs.set(sessionKey(session), payload.graph);
+        // Defer this cache/store update until it can commit with the Event_ID
+        // and authoritative snapshot as one transaction.
+        effects.dependencyGraph = payload.graph;
         return undefined;
       }
 
       case "dep.delta": {
         const payload = envelope.payload as DepDeltaPayload;
-        this.applyDependencyDelta(session, payload);
+        effects.dependencyGraph = this.mergeDependencyDelta(session, payload);
         return undefined;
       }
 
@@ -877,6 +987,18 @@ export class CoordinationAuthority {
     // the rewrite, so removals carry the correct entry type.
     const before = this.intents.allIntents(session);
     const fromKey = normalizePath(payload.fromPath);
+    const sourceWinner = this.locks.winningLock(
+      session,
+      payload.fromPath,
+      "file",
+      session.branch,
+    );
+    const destinationWinner = this.locks.winningLock(
+      session,
+      payload.toPath,
+      "file",
+      session.branch,
+    );
 
     const moved = this.locks.transferPath({
       session,
@@ -888,20 +1010,23 @@ export class CoordinationAuthority {
       eventRevision,
     });
     if (moved !== undefined) {
-      broadcasts.push({
-        entryType: "soft_lock",
-        op: "removed",
-        path: payload.fromPath,
-        member: moved.holder,
-        eventRevision: allocate(),
-      });
-      broadcasts.push({
-        entryType: "soft_lock",
-        op: "added",
-        path: payload.toPath,
-        member: moved.holder,
-        eventRevision: allocate(),
-      });
+      this.emitWinningLockTransition(
+        sourceWinner,
+        this.locks.winningLock(
+          session,
+          payload.fromPath,
+          "file",
+          session.branch,
+        ),
+        allocate,
+        broadcasts,
+      );
+      this.emitWinningLockTransition(
+        destinationWinner,
+        this.locks.winningLock(session, payload.toPath, "file", session.branch),
+        allocate,
+        broadcasts,
+      );
     }
 
     const updated = this.intents.renamePath(
@@ -914,21 +1039,42 @@ export class CoordinationAuthority {
       const wasModify =
         priorForOwner?.modifyPaths.some((p) => normalizePath(p) === fromKey) ??
         false;
-      const entryType = wasModify ? "intent" : "planned_file_creation";
-      broadcasts.push({
-        entryType,
-        op: "removed",
-        path: payload.fromPath,
-        member: intent.owner,
-        eventRevision: allocate(),
-      });
-      broadcasts.push({
-        entryType,
-        op: "added",
-        path: payload.toPath,
-        member: intent.owner,
-        eventRevision: allocate(),
-      });
+      const wasCreate =
+        priorForOwner?.createPaths.some(
+          (creation) => normalizePath(creation.path) === fromKey,
+        ) ?? false;
+      const emitMove = (
+        entryType: "intent" | "planned_file_creation",
+      ): void => {
+        broadcasts.push({
+          entryType,
+          op: "removed",
+          path: payload.fromPath,
+          member: intent.owner,
+          eventRevision: allocate(),
+          intent: {
+            intentId: intent.intentId,
+            description: intent.description,
+          },
+        });
+        broadcasts.push({
+          entryType,
+          op: "added",
+          path: payload.toPath,
+          member: intent.owner,
+          eventRevision: allocate(),
+          intent: {
+            intentId: intent.intentId,
+            description: intent.description,
+          },
+        });
+      };
+      if (wasModify) {
+        emitMove("intent");
+      }
+      if (wasCreate) {
+        emitMove("planned_file_creation");
+      }
     }
 
     audits.push({
@@ -960,11 +1106,11 @@ export class CoordinationAuthority {
     const owned = this.intents
       .allIntents(session)
       .filter((i) => i.owner.memberId === member.memberId);
-    const wasModify = owned.some((i) =>
-      i.modifyPaths.some((p) => normalizePath(p) === key),
-    );
-    const wasCreate = owned.some((i) =>
-      i.createPaths.some((c) => normalizePath(c.path) === key),
+    const previousWinner = this.locks.winningLock(
+      session,
+      payload.path,
+      "file",
+      session.branch,
     );
 
     const released = this.locks.releaseOnDelete(
@@ -975,13 +1121,12 @@ export class CoordinationAuthority {
       member,
     );
     if (released !== undefined) {
-      broadcasts.push({
-        entryType: "soft_lock",
-        op: "removed",
-        path: payload.path,
-        member: released.holder,
-        eventRevision: allocate(),
-      });
+      this.emitWinningLockTransition(
+        previousWinner,
+        this.locks.winningLock(session, payload.path, "file", session.branch),
+        allocate,
+        broadcasts,
+      );
     }
 
     const updated = this.intents.deletePathForMember(
@@ -990,23 +1135,43 @@ export class CoordinationAuthority {
       member,
     );
     if (updated.length > 0) {
-      if (wasModify) {
-        broadcasts.push({
-          entryType: "intent",
-          op: "removed",
-          path: payload.path,
-          member,
-          eventRevision: allocate(),
-        });
-      }
-      if (wasCreate) {
-        broadcasts.push({
-          entryType: "planned_file_creation",
-          op: "removed",
-          path: payload.path,
-          member,
-          eventRevision: allocate(),
-        });
+      const updatedIds = new Set(updated.map((intent) => intent.intentId));
+      for (const intent of owned) {
+        if (!updatedIds.has(intent.intentId)) {
+          continue;
+        }
+        const intentWasModify = intent.modifyPaths.some(
+          (path) => normalizePath(path) === key,
+        );
+        const intentWasCreate = intent.createPaths.some(
+          (creation) => normalizePath(creation.path) === key,
+        );
+        if (intentWasModify) {
+          broadcasts.push({
+            entryType: "intent",
+            op: "removed",
+            path: payload.path,
+            member: intent.owner,
+            eventRevision: allocate(),
+            intent: {
+              intentId: intent.intentId,
+              description: intent.description,
+            },
+          });
+        }
+        if (intentWasCreate) {
+          broadcasts.push({
+            entryType: "planned_file_creation",
+            op: "removed",
+            path: payload.path,
+            member: intent.owner,
+            eventRevision: allocate(),
+            intent: {
+              intentId: intent.intentId,
+              description: intent.description,
+            },
+          });
+        }
       }
     }
 
@@ -1020,14 +1185,14 @@ export class CoordinationAuthority {
   }
 
   /**
-   * Apply an incremental Dependency_Graph delta (Req 19.4) on top of the stored
-   * graph for the session, persisting the merged result. When no graph is stored
-   * yet the delta is applied to an empty graph for this session's identity.
+   * Merge an incremental Dependency_Graph delta (Req 19.4) on top of the
+   * current graph. Persistence is deliberately deferred to the event commit so
+   * a graph cannot get ahead of its corresponding event/snapshot.
    */
-  private applyDependencyDelta(
+  private mergeDependencyDelta(
     session: SessionId,
     delta: DepDeltaPayload,
-  ): void {
+  ): DependencyGraph {
     const key = sessionKey(session);
     const current =
       this.dependencyGraphs.get(key) ??
@@ -1092,8 +1257,7 @@ export class CoordinationAuthority {
       modules: modules.filter((m) => m.edges.length > 0),
       contracts: [...contracts.values()],
     };
-    this.store.upsertDependencyGraph(session, merged);
-    this.dependencyGraphs.set(key, merged);
+    return merged;
   }
 
   /** An empty Dependency_Graph for a session (delta baseline). */
@@ -1131,8 +1295,100 @@ export class CoordinationAuthority {
     };
   }
 
+  /**
+   * Project only a lock group's current winner into the agent cache. The host
+   * retains concurrent claims internally for deterministic promotion, but a
+   * client must never see a losing claim as an active lock. Emitting the state
+   * transition here keeps incremental broadcasts identical to snapshot
+   * projection across acquisition, release, rename, and deletion.
+   */
+  private emitWinningLockTransition(
+    previous: Lock | undefined,
+    next: Lock | undefined,
+    allocate: () => number,
+    broadcasts: CoordinationUpdate[],
+  ): void {
+    if (previous?.lockId === next?.lockId) {
+      return;
+    }
+    if (previous !== undefined) {
+      broadcasts.push({
+        entryType: "soft_lock",
+        op: "removed",
+        path: previous.scope,
+        member: previous.holder,
+        eventRevision: allocate(),
+      });
+    }
+    if (next !== undefined) {
+      broadcasts.push({
+        entryType: "soft_lock",
+        op: "added",
+        path: next.scope,
+        member: next.holder,
+        eventRevision: allocate(),
+      });
+    }
+  }
+
+  /** Record the winner only for an accepted lock claim that lost contention. */
+  private captureLockConflict(
+    scope: string,
+    winner: Lock,
+    contended: boolean,
+    acknowledgement: { lockConflict?: EventAppliedLockConflict },
+  ): void {
+    if (!contended) {
+      return;
+    }
+    acknowledgement.lockConflict = {
+      scope,
+      winner: {
+        memberId: winner.holder.memberId,
+        eventRevision: winner.eventRevision,
+      },
+    };
+  }
+
+  /**
+   * Recover lock-loss metadata for a duplicate Event_ID without reapplying it.
+   * The acknowledgement reports the current authoritative winner, which is the
+   * only safe result to surface after intervening promotions or releases.
+   */
+  private currentLockConflict(
+    envelope: TypedEventEnvelope,
+    member: MemberRef,
+  ): EventAppliedLockConflict | undefined {
+    let payload: LockAcquirePayload | LockOverridePayload;
+    if (envelope.type === "lock.acquire") {
+      payload = envelope.payload as LockAcquirePayload;
+    } else if (envelope.type === "lock.override") {
+      payload = envelope.payload as LockOverridePayload;
+    } else {
+      return undefined;
+    }
+    const winner = this.locks.winningLock(
+      envelope.session,
+      payload.scope,
+      payload.scopeKind,
+      envelope.session.branch,
+    );
+    if (winner === undefined || winner.holder.memberId === member.memberId) {
+      return undefined;
+    }
+    return {
+      scope: payload.scope,
+      winner: {
+        memberId: winner.holder.memberId,
+        eventRevision: winner.eventRevision,
+      },
+    };
+  }
+
   private emitIntentBroadcasts(
     intent: {
+      intentId: string;
+      description: string;
       modifyPaths: readonly string[];
       createPaths: readonly { path: string }[];
       owner: MemberRef;
@@ -1148,6 +1404,10 @@ export class CoordinationAuthority {
         path,
         member: intent.owner,
         eventRevision: allocate(),
+        intent: {
+          intentId: intent.intentId,
+          description: intent.description,
+        },
       });
     }
     for (const creation of intent.createPaths) {
@@ -1157,6 +1417,10 @@ export class CoordinationAuthority {
         path: creation.path,
         member: intent.owner,
         eventRevision: allocate(),
+        intent: {
+          intentId: intent.intentId,
+          description: intent.description,
+        },
       });
     }
   }
@@ -1238,33 +1502,66 @@ export class CoordinationAuthority {
   }
 
   /**
-   * Run the stale lock/intent expiry sweep and the soft-lock max-age sweep for a
-   * session (Req 26.3–26.5), logging and persisting the resulting removals.
+   * Run the stale lock/intent/presence expiry sweep and the soft-lock max-age
+   * sweep for a session (Req 26.3–26.5), logging and persisting removals.
    * Returns the removal updates to broadcast.
    */
   sweepExpiry(
     session: SessionId,
     nowMs: number = Date.now(),
   ): CoordinationUpdate[] {
-    const removals = [
-      ...this.expiry.sweep(session, nowMs).removals,
-      ...this.expiry.expireStaleSoftLocks(session, nowMs).removals,
-    ];
-    if (removals.length === 0) {
+    // Once a mutation commit fails, no background maintenance may advance the
+    // same registries/revisions before a restart reconstructs them from disk.
+    if (this.storageFaulted) {
       return [];
     }
+    const stateBefore = this.snapshot(session);
+    const dependencyGraphKey = sessionKey(session);
+    const hadCachedDependencyGraph =
+      this.dependencyGraphs.has(dependencyGraphKey);
+    const cachedDependencyGraph = this.dependencyGraphs.get(dependencyGraphKey);
+
+    let removals: CoordinationUpdate[];
+    try {
+      const heartbeatExpiry = this.expiry.sweep(session, nowMs);
+      const softLockExpiry = this.expiry.expireStaleSoftLocks(session, nowMs);
+      removals = [
+        ...heartbeatExpiry.removals,
+        ...heartbeatExpiry.promotions,
+        ...softLockExpiry.removals,
+        ...softLockExpiry.promotions,
+      ];
+      if (removals.length === 0) {
+        return [];
+      }
+      const at = new Date().toISOString();
+      this.store.commitExpiry({
+        session,
+        audits: removals.map((update) => ({
+          session,
+          member: update.member,
+          action: "expire" as const,
+          targetScope: update.path ?? "",
+          eventRevision: update.eventRevision,
+          time: at,
+        })),
+        snapshot: this.snapshot(session),
+      });
+    } catch {
+      this.failClosedAfterPersistenceFailure(
+        stateBefore,
+        dependencyGraphKey,
+        hadCachedDependencyGraph,
+        cachedDependencyGraph,
+      );
+      return [];
+    }
+
+    // Publish only after the complete expiry result is durable. A restart can
+    // then never resurrect work that connected peers were told had expired.
     for (const update of removals) {
       this.eventLog.append(session, update);
-      this.store.appendAudit({
-        session,
-        member: update.member,
-        action: "expire",
-        targetScope: update.path ?? "",
-        eventRevision: update.eventRevision,
-        time: new Date().toISOString(),
-      });
     }
-    this.persistSnapshot(session);
     return removals;
   }
 
@@ -1281,9 +1578,54 @@ export class CoordinationAuthority {
   // Internals
   // -------------------------------------------------------------------------
 
-  /** Persist the authoritative snapshot for restart recovery (Req 1.5, 1.6). */
-  private persistSnapshot(session: SessionId): void {
-    this.store.saveSnapshot(serializeSessionState(session, this.registries));
+  /** A uniform safe response once this process can no longer trust its gate. */
+  private storageFailureOutcome(): IngestOutcome {
+    return {
+      accepted: false,
+      error: "STORAGE_ERROR",
+      reason:
+        "Host persistence is unavailable; restart the host before submitting more coordination changes.",
+      broadcasts: [],
+    };
+  }
+
+  /**
+   * Revert the externally visible registries after a failed atomic commit and
+   * fence this authority until restart. `IngestGate` deliberately advances
+   * replay/idempotency metadata before invoking its applier; that metadata
+   * cannot be safely rewound while preserving its public invariants. The
+   * revision counter does have an explicit synchronous checkpoint rollback, so
+   * snapshots do not expose a phantom revision. The fail-closed fence prevents
+   * the remaining transient gate state from ever being acknowledged. Restart
+   * rebuilds it exclusively from the last successful durable transaction.
+   */
+  private failClosedAfterPersistenceFailure(
+    stateBefore: SessionStateSnapshot,
+    dependencyGraphKey: string,
+    hadCachedDependencyGraph: boolean,
+    cachedDependencyGraph: DependencyGraph | undefined,
+  ): IngestOutcome {
+    this.storageFaulted = true;
+    try {
+      restoreSessionState(stateBefore, this.registries);
+      // `restoreSessionState` deliberately only raises revision counters for
+      // normal restart safety. This is a synchronous rollback before any
+      // mutation was published, so restore the exact pre-transaction checkpoint
+      // to avoid exposing a phantom revision in snapshots or sync responses.
+      this.revisions.restoreCheckpoint(
+        stateBefore.session,
+        stateBefore.highestRevision,
+      );
+      if (hadCachedDependencyGraph && cachedDependencyGraph !== undefined) {
+        this.dependencyGraphs.set(dependencyGraphKey, cachedDependencyGraph);
+      } else {
+        this.dependencyGraphs.delete(dependencyGraphKey);
+      }
+    } catch {
+      // The authority remains fenced even if an unexpected in-memory restore
+      // failure occurs; do not expose a possibly inconsistent acknowledgement.
+    }
+    return this.storageFailureOutcome();
   }
 
   /** Restore authoritative state and revision counters on startup (Req 1.5, 1.6). */
@@ -1297,10 +1639,49 @@ export class CoordinationAuthority {
       const snapshot = this.store.loadSnapshot(session);
       if (snapshot !== null) {
         restoreSessionState(snapshot, this.registries);
+        // Heartbeats are deliberately memory-only. A recovered lock/intent
+        // owner therefore gets one bounded liveness grace period from restart;
+        // a live agent refreshes it at auth/heartbeat, while a dead agent's
+        // restored work still expires instead of persisting forever.
+        this.seedRecoveryLiveness(snapshot, Date.now());
       }
+      const highestAppliedRevision = this.store
+        .appliedEvents(session)
+        .reduce((highest, event) => Math.max(highest, event.eventRevision), 0);
+      const recoveredRevision = Math.max(
+        highestRevision,
+        snapshot?.highestRevision ?? 0,
+        highestAppliedRevision,
+      );
+      // Broadcast updates are intentionally memory-only. After a restart the
+      // in-memory event log is empty even though the restored snapshot may be
+      // newer than a reconnecting client's cursor. Mark the durable revision
+      // boundary as compacted so every older cursor receives a replacement
+      // snapshot rather than a misleading empty incremental suffix.
+      this.eventLog.compact(session, recoveredRevision);
       // Resume the counter above the persisted highest revision (Req 1.6). The
       // applied-Event_ID index was reseeded into the gate at construction.
-      this.revisions.resume(session, highestRevision);
+      this.revisions.resume(session, recoveredRevision);
+    }
+  }
+
+  /** Seed a bounded expiry baseline for every device represented in a snapshot. */
+  private seedRecoveryLiveness(
+    snapshot: SessionStateSnapshot,
+    atMs: number,
+  ): void {
+    const devices = new Set<string>();
+    for (const lock of snapshot.locks) {
+      devices.add(lock.holder.deviceId);
+    }
+    for (const intent of snapshot.intents) {
+      devices.add(intent.owner.deviceId);
+    }
+    for (const presence of snapshot.presence) {
+      devices.add(presence.member.deviceId);
+    }
+    for (const deviceId of devices) {
+      this.expiry.recordHeartbeat(snapshot.session, deviceId, atMs);
     }
   }
 

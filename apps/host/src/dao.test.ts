@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 
 import { afterEach, describe, expect, it } from "vitest";
 
-import type { SessionId } from "@cfls/protocol";
+import type { SessionId, SessionStateSnapshot } from "@cfls/protocol";
 
 import { SqliteStore, StoreError, type PersistedEvent } from "./store";
 
@@ -96,6 +96,28 @@ describe("SqliteStore.hasAppliedEventId (Req 7.4)", () => {
     store.recordApplied(sessionA, "evt-1", 7);
     expect(store.hasAppliedEventId(sessionB, "evt-1")).toBeNull();
   });
+
+  it("persists replay data for a rejected event without marking it applied", () => {
+    store = new SqliteStore(":memory:");
+    store.commitMutation({
+      event: makeEvent(),
+      audits: [],
+      snapshot: {
+        session: sessionA,
+        locks: [],
+        presence: [],
+        intents: [],
+        highestRevision: 1,
+      },
+      recordApplied: false,
+    });
+
+    expect(store.eventsSince(sessionA, 0)).toHaveLength(1);
+    expect(store.hasAppliedEventId(sessionA, "evt-1")).toBeNull();
+    expect(store.deviceCounters()).toEqual([
+      { deviceId: "dev-1", highestCounter: 1 },
+    ]);
+  });
 });
 
 describe("SqliteStore typed errors (STORAGE_ERROR)", () => {
@@ -142,6 +164,63 @@ describe("SqliteStore typed errors (STORAGE_ERROR)", () => {
       expect(error).toBeInstanceOf(StoreError);
       expect((error as StoreError).code).toBe("STORAGE_ERROR");
     }
+  });
+
+  it("rolls back event and applied-id writes when a later mutation effect fails", () => {
+    store = new SqliteStore(":memory:");
+    const snapshot: SessionStateSnapshot & { self?: unknown } = {
+      session: sessionA,
+      locks: [],
+      presence: [],
+      intents: [],
+      highestRevision: 1,
+    };
+    // Force `saveSnapshot` to fail after the event and applied-id insertions.
+    // The transaction must leave neither partial row durable.
+    snapshot.self = snapshot;
+
+    expect(() =>
+      store!.commitMutation({
+        event: makeEvent(),
+        audits: [],
+        snapshot,
+      }),
+    ).toThrow(StoreError);
+    expect(store.eventsSince(sessionA, 0)).toEqual([]);
+    expect(store.hasAppliedEventId(sessionA, "evt-1")).toBeNull();
+    expect(store.loadSnapshot(sessionA)).toBeNull();
+  });
+
+  it("rolls back expiry audits when its replacement snapshot cannot be saved", () => {
+    store = new SqliteStore(":memory:");
+    const snapshot: SessionStateSnapshot & { self?: unknown } = {
+      session: sessionA,
+      locks: [],
+      presence: [],
+      intents: [],
+      highestRevision: 7,
+    };
+    snapshot.self = snapshot;
+
+    expect(() =>
+      store!.commitExpiry({
+        session: sessionA,
+        audits: [
+          {
+            session: sessionA,
+            member: { memberId: "alice", deviceId: "dev-1" },
+            action: "expire",
+            targetScope: "src/expired.ts",
+            eventRevision: 7,
+            time: new Date().toISOString(),
+          },
+        ],
+        snapshot,
+      }),
+    ).toThrow(StoreError);
+    expect(store.auditRecords(sessionA)).toEqual([]);
+    expect(store.loadSnapshot(sessionA)).toBeNull();
+    expect(store.currentRevision(sessionA)).toBe(0);
   });
 });
 

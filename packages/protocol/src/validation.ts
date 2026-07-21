@@ -419,6 +419,27 @@ const coordinationUpdateSchema: ObjectSchema = {
     path: { spec: { kind: "string" }, optional: true },
     member: { spec: { kind: "object", schema: memberRefSchema } },
     eventRevision: { spec: { kind: "number" } },
+    intent: {
+      spec: {
+        kind: "object",
+        schema: {
+          name: "IntentActivity",
+          fields: {
+            intentId: { spec: { kind: "string" } },
+            description: { spec: { kind: "string" } },
+          },
+        },
+      },
+      optional: true,
+    },
+  },
+};
+
+const eventAppliedLockConflictSchema: ObjectSchema = {
+  name: "EventAppliedLockConflict",
+  fields: {
+    scope: { spec: { kind: "string" } },
+    winner: { spec: { kind: "object", schema: winnerSchema } },
   },
 };
 
@@ -692,6 +713,20 @@ export const PAYLOAD_SCHEMAS: Record<MessageTypeName, ObjectSchema> = {
 
   // ---- Broadcast (Req 25) ----
   "coordination.update": coordinationUpdateSchema,
+
+  // ---- Per-event mutation acknowledgement ----
+  "event.applied": {
+    name: "EventAppliedPayload",
+    fields: {
+      eventId: { spec: { kind: "string" } },
+      eventRevision: { spec: { kind: "number" } },
+      duplicateOf: { spec: { kind: "number" }, optional: true },
+      lockConflict: {
+        spec: { kind: "object", schema: eventAppliedLockConflictSchema },
+        optional: true,
+      },
+    },
+  },
 
   // ---- Error (§11.1) ----
   error: {

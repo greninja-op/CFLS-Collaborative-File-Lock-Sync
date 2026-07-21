@@ -1,12 +1,12 @@
 {
   "name": "cfls-coordination",
   "displayName": "CFLS Collaborative File Lock Sync",
-  "description": "Talks only to the local CoordinationAgent: shows teammate presence, locks, declared intents, and warnings.",
+  "description": "Talks only to the local CoordinationAgent: shows a metadata-only team status panel, presence, locks, declared intents, and warnings.",
   "version": "0.1.0",
   "publisher": "greninja-op",
   "repository": {
     "type": "git",
-    "url": "https://github.com/greninja-op/multi-agentic-workflow.git"
+    "url": "https://github.com/greninja-op/CFLS-Collaborative-File-Lock-Sync.git"
   },
   "engines": {
     "vscode": "^1.85.0"

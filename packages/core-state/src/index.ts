@@ -31,6 +31,7 @@ export type {
   PermissionCheck,
   PermissionDecision,
   Applier,
+  ApplierRejection,
   PersistedAppliedEvent,
 } from "./ingest";
 

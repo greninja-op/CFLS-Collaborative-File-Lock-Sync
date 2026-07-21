@@ -27,6 +27,7 @@ import {
 } from "@cfls/core-state";
 import type {
   CoordinationUpdate,
+  EventAppliedLockConflict,
   IntentDeclarePayload,
   IntentUpdatePayload,
   IntentWithdrawPayload,
@@ -57,8 +58,10 @@ export type TransmitResult =
       ok: true;
       eventId: string;
       eventRevision: number;
-      /** The primary resulting broadcast, when the host reported one. */
+      /** The primary resulting broadcast, used by the in-process gateway. */
       update?: CoordinationUpdate;
+      /** Present when an accepted lock acquisition lost to the named winner. */
+      lockConflict?: EventAppliedLockConflict;
     }
   | { ok: false; error: EnvelopeError };
 
@@ -89,8 +92,9 @@ function offlineError(type: string): TransmitResult {
 
 /**
  * A {@link HostGateway} backed by the live {@link HostConnection}. Forwards
- * mutations as Signed_Events and correlates the host's `coordination.update`
- * broadcast (for the assigned Event_Revision) or `error`.
+ * mutations as Signed_Events and waits for the host's direct, Event_ID-
+ * correlated `event.applied` acknowledgement (or a correlated error). It never
+ * infers its result from arbitrary session broadcasts.
  */
 export class RealHostGateway extends EventEmitter implements HostGateway {
   constructor(private readonly connection: HostConnection) {
@@ -120,45 +124,20 @@ export class RealHostGateway extends EventEmitter implements HostGateway {
     if (!this.connection.isOnline()) {
       return offlineError(event.type);
     }
-    // Register the correlation waiter BEFORE sending to avoid a race.
-    const waiter = this.connection.waitFor(
-      (m) => m?.type === "coordination.update" || m?.type === "error",
-      4000,
+    const result = await this.connection.sendMutation(
+      event.type,
+      event.payload,
     );
-    const sent = this.connection.send(event.type, event.payload);
-    if (!sent.ok) {
-      return offlineError(event.type);
+    if (!result.ok) {
+      return { ok: false, error: result.error };
     }
-    let message: { type: string; payload: Record<string, unknown> };
-    try {
-      message = await waiter;
-    } catch {
-      // Transmitted but no correlated broadcast within the window: report best
-      // effort with the last known revision (the view converges via "update").
-      return {
-        ok: true,
-        eventId: sent.eventId,
-        eventRevision: this.connection.currentHighestRevision(),
-      };
-    }
-    if (message.type === "error") {
-      return {
-        ok: false,
-        error: {
-          code:
-            (message.payload.code as EnvelopeError["code"]) ?? "STORAGE_ERROR",
-          message: String(
-            message.payload.message ?? "Host rejected the event.",
-          ),
-        },
-      };
-    }
-    const update = message.payload as unknown as CoordinationUpdate;
     return {
       ok: true,
-      eventId: sent.eventId,
-      eventRevision: update.eventRevision,
-      update,
+      eventId: result.eventId,
+      eventRevision: result.acknowledgement.eventRevision,
+      ...(result.acknowledgement.lockConflict !== undefined
+        ? { lockConflict: result.acknowledgement.lockConflict }
+        : {}),
     };
   }
 }
@@ -171,6 +150,12 @@ export interface LocalHostGatewayOptions {
   online?: boolean;
   hostUrl?: string;
   now?: () => number;
+}
+
+/** The in-process equivalent of a host mutation acknowledgement plus updates. */
+interface LocalAppliedMutation {
+  updates: CoordinationUpdate[];
+  lockConflict?: EventAppliedLockConflict;
 }
 
 /**
@@ -193,8 +178,6 @@ export class LocalHostGateway extends EventEmitter implements HostGateway {
   private readonly locks = new LockRegistry();
   private readonly intents = new IntentRegistry();
   private readonly revisions = new RevisionCounter();
-  private lockSeq = 0;
-  private intentSeq = 0;
 
   constructor(options: LocalHostGatewayOptions) {
     super();
@@ -249,28 +232,40 @@ export class LocalHostGateway extends EventEmitter implements HostGateway {
       return offlineError(event.type);
     }
     const revision = this.revisions.next(this.session);
-    const update = this.apply(event, revision);
-    if (update !== undefined) {
+    const eventId = `local-${revision}`;
+    const applied = this.apply(event, revision, eventId);
+    for (const update of applied.updates) {
       this.emit("update", update);
     }
     return Promise.resolve({
       ok: true,
-      eventId: `local-${revision}`,
+      eventId,
       eventRevision: revision,
-      ...(update !== undefined ? { update } : {}),
+      ...(applied.updates[0] !== undefined
+        ? { update: applied.updates[0] }
+        : {}),
+      ...(applied.lockConflict !== undefined
+        ? { lockConflict: applied.lockConflict }
+        : {}),
     });
   }
 
   private apply(
     event: MutationEvent,
     revision: number,
-  ): CoordinationUpdate | undefined {
+    eventId: string,
+  ): LocalAppliedMutation {
     switch (event.type) {
       case "lock.acquire": {
-        const lockId = `lk-${(this.lockSeq += 1)}`;
-        this.locks.acquire({
+        const previousWinner = this.locks.winningLock(
+          this.session,
+          event.payload.scope,
+          event.payload.scopeKind,
+          this.session.branch,
+        );
+        const outcome = this.locks.acquire({
           session: this.session,
-          lockId,
+          lockId: eventId,
           scope: event.payload.scope,
           scopeKind: event.payload.scopeKind,
           mode: resolveMode(event.payload.scope, this.rules),
@@ -279,26 +274,77 @@ export class LocalHostGateway extends EventEmitter implements HostGateway {
           eventRevision: revision,
           acquiredAt: new Date(this.now()).toISOString(),
         });
+        const updates: CoordinationUpdate[] = [];
+        if (previousWinner?.lockId !== outcome.winner.lockId) {
+          if (previousWinner !== undefined) {
+            updates.push({
+              entryType: "soft_lock",
+              op: "removed",
+              path: previousWinner.scope,
+              member: previousWinner.holder,
+              eventRevision: revision,
+            });
+          }
+          updates.push({
+            entryType: "soft_lock",
+            op: "added",
+            path: outcome.winner.scope,
+            member: outcome.winner.holder,
+            eventRevision: revision,
+          });
+        }
         return {
-          entryType: "soft_lock",
-          op: "added",
-          path: event.payload.scope,
-          member: this.self,
-          eventRevision: revision,
+          updates,
+          ...(outcome.contended
+            ? {
+                lockConflict: {
+                  scope: event.payload.scope,
+                  winner: {
+                    memberId: outcome.winner.holder.memberId,
+                    eventRevision: outcome.winner.eventRevision,
+                  },
+                },
+              }
+            : {}),
         };
       }
       case "lock.release": {
-        const scope = event.payload.scope ?? "";
-        return {
-          entryType: "soft_lock",
-          op: "removed",
-          path: scope,
-          member: this.self,
-          eventRevision: revision,
-        };
+        const release = this.locks.release({
+          session: this.session,
+          requester: this.self,
+          branch: this.session.branch,
+          ...(event.payload.lockId !== undefined
+            ? { lockId: event.payload.lockId }
+            : {}),
+          ...(event.payload.scope !== undefined
+            ? { scope: event.payload.scope }
+            : {}),
+        });
+        if (!release.ok) {
+          return { updates: [] };
+        }
+        const updates: CoordinationUpdate[] = [
+          {
+            entryType: "soft_lock",
+            op: "removed",
+            path: release.released.scope,
+            member: release.released.holder,
+            eventRevision: revision,
+          },
+        ];
+        if (release.promoted !== undefined) {
+          updates.push({
+            entryType: "soft_lock",
+            op: "added",
+            path: release.promoted.scope,
+            member: release.promoted.holder,
+            eventRevision: revision,
+          });
+        }
+        return { updates };
       }
       case "intent.declare": {
-        const intentId = `int-${(this.intentSeq += 1)}`;
+        const intentId = eventId;
         this.intents.declare({
           session: this.session,
           intentId,
@@ -318,17 +364,25 @@ export class LocalHostGateway extends EventEmitter implements HostGateway {
             ? "intent"
             : "planned_file_creation";
         return {
-          entryType,
-          op: "added",
-          path,
-          member: this.self,
-          eventRevision: revision,
+          updates: [
+            {
+              entryType,
+              op: "added",
+              path,
+              member: this.self,
+              eventRevision: revision,
+              intent: {
+                intentId,
+                description: event.payload.description,
+              },
+            },
+          ],
         };
       }
       case "intent.update":
-        return undefined;
+        return { updates: [] };
       case "intent.withdraw":
-        return undefined;
+        return { updates: [] };
     }
   }
 }

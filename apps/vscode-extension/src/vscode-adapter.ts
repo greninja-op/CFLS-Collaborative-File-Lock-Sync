@@ -38,6 +38,7 @@ import {
   decorateForPath,
   fileBadgeForPath,
 } from "./presence-ui";
+import { buildTeamPanelHtml } from "./team-panel";
 import type { CoordinationViewModel } from "./view-model";
 
 export type { LocalApiSettings } from "./local-api-settings";
@@ -134,9 +135,36 @@ export function readLocalApiSettings(): LocalApiSettings {
   return resolveLocalApiSettings(raw, workspaceFolder);
 }
 
-/** Convert an absolute editor URI to a repository-relative path (Req 10.3). */
-export function toRepoRelativePath(uri: vscode.Uri): string {
-  return vscode.workspace.asRelativePath(uri, false);
+/**
+ * Convert a URI inside the configured repository root to a repository-relative
+ * path. External/untitled/other-workspace documents deliberately return
+ * `undefined`: their paths must never become collaboration metadata.
+ */
+export function toRepoRelativePath(uri: vscode.Uri): string | undefined {
+  const root = vscode.workspace.workspaceFolders?.[0];
+  const containingFolder = vscode.workspace.getWorkspaceFolder(uri);
+  if (
+    root === undefined ||
+    containingFolder === undefined ||
+    containingFolder.uri.toString() !== root.uri.toString()
+  ) {
+    return undefined;
+  }
+  const relativePath = vscode.workspace.asRelativePath(uri, false);
+  // `asRelativePath` returns an absolute path for a URI outside the workspace;
+  // keep an explicit belt-and-suspenders check in case a VS Code host provides
+  // a nonstandard workspace-folder implementation.
+  if (
+    relativePath === "" ||
+    relativePath === "." ||
+    relativePath === ".." ||
+    relativePath.startsWith("../") ||
+    relativePath.startsWith("..\\") ||
+    /^(?:[A-Za-z]:[\\/]|[\\/])/u.test(relativePath)
+  ) {
+    return undefined;
+  }
+  return relativePath;
 }
 
 /** The small, VS Code-independent shape used by extension notification calls. */
@@ -150,7 +178,10 @@ export function onWillSaveTextDocument(
   listener: (path: string) => void,
 ): vscode.Disposable {
   return vscode.workspace.onWillSaveTextDocument((event) => {
-    listener(toRepoRelativePath(event.document.uri));
+    const path = toRepoRelativePath(event.document.uri);
+    if (path !== undefined) {
+      listener(path);
+    }
   });
 }
 
@@ -206,11 +237,23 @@ export class VsCodeEditorHost implements EditorHost {
     uri?: vscode.Uri,
     oldUri?: vscode.Uri,
   ): void {
+    const path = uri === undefined ? undefined : toRepoRelativePath(uri);
+    const oldPath =
+      oldUri === undefined ? undefined : toRepoRelativePath(oldUri);
+    // A rename is valid only when both sides belong to this exact workspace;
+    // for every other path-bearing event, omit it rather than leaking an
+    // external filesystem path to the local agent/host.
+    if (
+      (uri !== undefined && path === undefined) ||
+      (oldUri !== undefined && oldPath === undefined)
+    ) {
+      return;
+    }
     const event: EditorEvent = {
       kind,
       at: Date.now(),
-      ...(uri !== undefined ? { path: toRepoRelativePath(uri) } : {}),
-      ...(oldUri !== undefined ? { oldPath: toRepoRelativePath(oldUri) } : {}),
+      ...(path !== undefined ? { path } : {}),
+      ...(oldPath !== undefined ? { oldPath } : {}),
     };
     this.emitter.emit(event);
   }
@@ -301,7 +344,9 @@ export class StatusBarRenderer {
     const summary = hasActiveCoordination
       ? `${coordinatedPaths.length} file(s) in play`
       : vm.statusText;
-    this.item.text = `${hasActiveCoordination ? "$(warning)" : icon} CFLS: ${summary}`;
+    const team = (vm.teamId ?? "Team").trim() || "Team";
+    const teamLabel = team.length > 20 ? `${team.slice(0, 19)}…` : team;
+    this.item.text = `$(organization) ${hasActiveCoordination ? "$(warning)" : icon} CFLS · ${teamLabel}: ${summary}`;
     this.item.backgroundColor = hasActiveCoordination
       ? new vscode.ThemeColor("statusBarItem.warningBackground")
       : undefined;
@@ -356,7 +401,7 @@ class CoordinationFileDecorationProvider
     }
     const cue = fileBadgeForPath(
       this.viewModel,
-      toRepoRelativePath(uri),
+      toRepoRelativePath(uri) ?? "",
       this.selfMemberId,
     );
     if (cue === null) {
@@ -394,6 +439,8 @@ export class CoordinationUiController implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   private viewModel: CoordinationViewModel | undefined;
   private decoratedEditor: vscode.TextEditor | undefined;
+  private teamPanel: vscode.WebviewPanel | undefined;
+  private teamName = "CFLS Team";
   private registered = false;
   private disposed = false;
   private addedToSubscriptions = false;
@@ -457,6 +504,7 @@ export class CoordinationUiController implements vscode.Disposable {
     this.statusBar.render(viewModel);
     this.fileDecorationProvider.setViewModel(viewModel);
     this.applyActiveEditorDecoration();
+    this.postTeamPanelState(viewModel);
   }
 
   /** Alias for integrations that describe a refresh as a view-model update. */
@@ -476,6 +524,48 @@ export class CoordinationUiController implements vscode.Disposable {
       this.statusBar.render(this.viewModel);
       this.applyActiveEditorDecoration();
     }
+  }
+
+  /** Open or focus the branded, live team coordination panel. */
+  showTeamPanel(viewModel: CoordinationViewModel, teamName: string): void {
+    if (this.disposed) {
+      return;
+    }
+    this.teamName = teamName;
+    if (this.teamPanel === undefined) {
+      const panel = vscode.window.createWebviewPanel(
+        "cfls.teamCoordination",
+        `CFLS · ${teamName}`,
+        vscode.ViewColumn.Beside,
+        {
+          enableScripts: true,
+          retainContextWhenHidden: true,
+        },
+      );
+      this.teamPanel = panel;
+      panel.webview.html = buildTeamPanelHtml(viewModel, teamName);
+      this.disposables.push(
+        panel.onDidDispose(() => {
+          if (this.teamPanel === panel) {
+            this.teamPanel = undefined;
+          }
+        }),
+      );
+      return;
+    }
+    this.teamPanel.title = `CFLS · ${teamName}`;
+    this.teamPanel.reveal(vscode.ViewColumn.Beside, true);
+    this.postTeamPanelState(viewModel);
+  }
+
+  private postTeamPanelState(viewModel: CoordinationViewModel): void {
+    if (this.teamPanel === undefined) {
+      return;
+    }
+    void this.teamPanel.webview.postMessage({
+      type: "team-state",
+      state: { viewModel, teamName: this.teamName },
+    });
   }
 
   private createDecorationType(
@@ -503,7 +593,7 @@ export class CoordinationUiController implements vscode.Disposable {
     }
     const markdown = buildHoverMarkdown(
       this.viewModel,
-      toRepoRelativePath(document.uri),
+      toRepoRelativePath(document.uri) ?? "",
       this.selfMemberId,
     );
     if (markdown === null) {
@@ -536,7 +626,7 @@ export class CoordinationUiController implements vscode.Disposable {
 
     const cue = decorateForPath(
       this.viewModel,
-      toRepoRelativePath(editor.document.uri),
+      toRepoRelativePath(editor.document.uri) ?? "",
       this.selfMemberId,
     );
     if (cue === null) {
@@ -577,7 +667,7 @@ export class CoordinationUiController implements vscode.Disposable {
     }
     const markdown = buildHoverMarkdown(
       this.viewModel,
-      toRepoRelativePath(uri),
+      toRepoRelativePath(uri) ?? "",
       this.selfMemberId,
     );
     if (markdown === null) {
@@ -599,6 +689,8 @@ export class CoordinationUiController implements vscode.Disposable {
     }
     this.disposables.length = 0;
     this.fileDecorationProvider.dispose();
+    this.teamPanel?.dispose();
+    this.teamPanel = undefined;
     for (const decorationType of Object.values(this.decorationTypes)) {
       decorationType.dispose();
     }

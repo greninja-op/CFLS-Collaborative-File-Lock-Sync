@@ -30,17 +30,26 @@ export interface CreateMcpServerOptions {
 }
 
 /**
- * Create the Local_MCP_Server with all 12 tools registered against `port`.
+ * Create the Local_MCP_Server with all 13 tools registered against `port`.
+ * It advertises MCP logging so a coordination subscription can relay updates
+ * through standard `notifications/message` events with structured data.
  * The returned server must be `connect()`ed to a transport by the caller.
  */
 export function createMcpServer(
   port: AgentPort,
   options: CreateMcpServerOptions = {},
 ): McpServer {
-  const server = new McpServer({
-    name: options.name ?? MCP_SERVER_INFO.name,
-    version: options.version ?? MCP_SERVER_INFO.version,
-  });
+  const server = new McpServer(
+    {
+      name: options.name ?? MCP_SERVER_INFO.name,
+      version: options.version ?? MCP_SERVER_INFO.version,
+    },
+    {
+      capabilities: {
+        logging: {},
+      },
+    },
+  );
   registerTools(server, port);
   return server;
 }

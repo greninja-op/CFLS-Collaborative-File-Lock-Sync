@@ -126,29 +126,33 @@ and told the winning member + revision. Raw client timestamps are never the sole
 
 // coordination.update (host->client)
 { "entryType": "soft_lock|presence|intent|planned_file_creation|dependency_risk",
-  "op": "added|removed", "path": "…", "memberId": "…", "eventRevision": 421 }
+  "op": "added|removed", "path": "…",
+  "member": { "memberId": "…", "deviceId": "…" }, "eventRevision": 421,
+  "intent": { "intentId": "int-9", "description": "refactor auth" } // present for intent-derived entries
+}
 ```
 
 ## MCP Tool Surface
 
-The Local_MCP_Server exposes exactly **12 tools** over stdio/local transport. Every response
+The Local_MCP_Server exposes exactly **13 tools** over stdio/local transport. Every response
 wraps its data in the `McpEnvelope`, carrying `connection` and `staleness` on every response
-(see [architecture.md](./architecture.md#local_mcp_server-packagesmcp-server)).
+(see [architecture.md](./architecture.md)).
 
-| #   | Tool                                | Purpose                                                                                                                  |
-| --- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| 1   | `get_risk_map`                      | Per-path Risk_Map with contributors, explanation paths, planned file creations, highest revision. Own activity excluded. |
-| 2   | `get_dependency_impact`             | Direct + reverse dependencies, shared contracts, risk level, explanation paths for given paths.                          |
-| 3   | `get_dependencies`                  | `{ path } → { dependsOn[], presentInGraph }`.                                                                            |
-| 4   | `get_dependents`                    | `{ path } → { dependedOnBy[], presentInGraph }`.                                                                         |
-| 5   | `declare_intent`                    | Declare modify/create paths + description; returns intentId, eventRevision, reclassifications.                           |
-| 6   | `update_intent`                     | Owner-only update of an intent's paths/description.                                                                      |
-| 7   | `withdraw_intent`                   | Owner-only withdrawal of an intent.                                                                                      |
-| 8   | `acquire_lock`                      | Acquire a soft/coordination-required/hard lock on a file/folder/glob scope.                                              |
-| 9   | `release_lock`                      | Release by lockId or scope; holder-only.                                                                                 |
-| 10  | `subscribe_to_coordination_updates` | Stream `CoordinationUpdate`s for a session.                                                                              |
-| 11  | `get_connection_status`             | Online/offline + connected/offline participants + manual-coordination flag.                                              |
-| 12  | `get_project_session_status`        | Current session identity + authorization status.                                                                         |
+| #   | Tool                                | Purpose                                                                                                                          |
+| --- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `get_risk_map`                      | Per-path Risk_Map with contributors, explanation paths, planned file creations, highest revision. Own activity excluded.         |
+| 2   | `get_team_status`                   | Active members with device IDs, declared task descriptions, repository-relative files, and activity roles; never source content. |
+| 3   | `get_dependency_impact`             | Direct + reverse dependencies, shared contracts, risk level, explanation paths for given paths.                                  |
+| 4   | `get_dependencies`                  | `{ path } → { dependsOn[], presentInGraph }`.                                                                                    |
+| 5   | `get_dependents`                    | `{ path } → { dependedOnBy[], presentInGraph }`.                                                                                 |
+| 6   | `declare_intent`                    | Declare modify/create paths + description; returns intentId, eventRevision, reclassifications.                                   |
+| 7   | `update_intent`                     | Owner-only update of an intent's paths/description.                                                                              |
+| 8   | `withdraw_intent`                   | Owner-only withdrawal of an intent.                                                                                              |
+| 9   | `acquire_lock`                      | Acquire a soft/coordination-required/hard lock on a file/folder/glob scope.                                                      |
+| 10  | `release_lock`                      | Release by lockId or scope; holder-only.                                                                                         |
+| 11  | `subscribe_to_coordination_updates` | Stream `CoordinationUpdate`s for a session.                                                                                      |
+| 12  | `get_connection_status`             | Online/offline + connected/offline participants + manual-coordination flag.                                                      |
+| 13  | `get_project_session_status`        | Current session identity + authorization status.                                                                                 |
 
 ### Example tool schemas
 
@@ -169,14 +173,30 @@ wraps its data in the `McpEnvelope`, carrying `connection` and `staleness` on ev
 }
 // errors: NOT_AUTHORIZED, SESSION_NOT_FOUND, OFFLINE (stale served)
 
-// 5. declare_intent — request
+// 2. get_team_status — request
+{ "session": {…} }
+// get_team_status — response.data
+{
+  "teamId": "my-team",
+  "members": [{
+    "memberId": "u-2",
+    "deviceIds": ["dev-bob"],
+    "files": [{ "path": "src/api.ts", "roles": ["editing", "soft-lock"] }],
+    "tasks": [{ "intentId": "int-9", "description": "refactor auth", "modifyPaths": ["src/api.ts"], "createPaths": [] }],
+    "lastEventRevision": 421
+  }],
+  "highestRevision": 421
+}
+// This is coordination metadata; source files, patches, and diffs are never returned.
+
+// 6. declare_intent — request
 { "session": {…}, "modifyPaths": ["src/a.ts"], "createPaths": ["src/new.ts"], "description": "refactor auth" }
 // declare_intent — response.data
 { "intentId": "int-9", "eventRevision": 422,
   "reclassified": [{ "path": "src/new.ts", "as": "modify", "reason": "path_exists" }] }
 // errors: NOT_AUTHORIZED, FORMAT_ERROR (path>4096 or empty sets), OFFLINE_QUEUED
 
-// 8. acquire_lock — request
+// 9. acquire_lock — request
 { "session": {…}, "scope": "src/api.ts", "scopeKind": "file|folder|glob" }
 // acquire_lock — response.data (granted)
 { "lockId": "lk-3", "eventRevision": 425, "granted": true }

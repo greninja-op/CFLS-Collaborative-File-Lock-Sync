@@ -44,6 +44,10 @@ export const EXCLUDED_DIRECTORIES: ReadonlySet<string> = new Set([
   ".git",
   ".hg",
   ".svn",
+  // CFLS local control-plane files can include loopback discovery credentials
+  // and encrypted state; they are never source/analyzer inputs or activity.
+  ".coordination",
+  ".cfls-cache",
   // Virtual environments.
   "venv",
   ".venv",

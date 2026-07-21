@@ -108,13 +108,13 @@ collaborative-file-lock-sync/
 ├─ apps/
 │  ├─ host/                 # CoordinationHost server (WSS, ingest, authority)
 │  ├─ agent/                # CoordinationAgent (WSS client, Local_API, watcher, cache)
-│  ├─ cli/                  # `cfls` CLI (admin-init/host/id/invite/join/connect/agent; sync/clone git-sync)
+│  ├─ cli/                  # `cfls` CLI (onboarding, agent, MCP bridge, service, sync/clone)
 │  └─ vscode-extension/     # VS Code Editor_Extension
 ├─ packages/
 │  ├─ protocol/             # envelope, message catalog, DTOs, error codes, JSON schemas, version
 │  ├─ core-state/           # locks/presence/intents/risk state machine (pure, PBT target)
 │  ├─ dependency-analyzer/  # metadata-only analyzers (TS/JS first, pluggable)
-│  ├─ mcp-server/           # Local_MCP_Server (@modelcontextprotocol/sdk), 12 tools
+│  ├─ mcp-server/           # Local_MCP_Server (@modelcontextprotocol/sdk), 13 tools
 │  └─ security/             # Ed25519 keys, signing, invitations, replay, credential store
 ├─ docs/
 │  ├─ architecture.md  ├─ protocol.md  ├─ threat-model.md  ├─ deployment.md  ├─ testing.md
@@ -125,9 +125,40 @@ collaborative-file-lock-sync/
 
 ## Agent Packaging & Startup
 
-- The agent is built into a **Windows executable via Node SEA** (fallback `pkg`).
-- Per-user login startup is registered via the **HKCU Run registry key / Startup folder** —
-  **no administrator privileges required**.
+The agent can be run directly with `cfls agent`, or installed as a per-user background service
+for a particular workspace. The service invokes the same Agent and remains scoped to the
+authorized folder; its watcher supplies coordination metadata rather than source content.
+
+```bash
+# Linux: write and enable ~/.config/systemd/user/cfls-agent.service
+cfls service install --workspace /absolute/repo/path
+
+# Windows: create a per-user Task Scheduler task
+cfls service install --workspace C:\path\to\repo --windows-user 'DOMAIN\User-or-SID'
+
+# Inspect or remove the installed service
+cfls service status --workspace /absolute/repo/path
+cfls service uninstall --workspace /absolute/repo/path
+```
+
+- Linux uses a `systemd --user` unit and `systemctl --user`; the account may need user
+  lingering enabled if the service should continue after logout.
+- Windows uses a Task Scheduler task under the supplied user principal. `--windows-user` is
+  required on Windows so installation does not guess a privileged or unintended account.
+- The CLI can be packaged as a Windows executable via Node SEA (with `pkg` as a fallback), but
+  service management uses the installed CLI entry point on either platform.
 - The agent stores its Ed25519 private key in the OS credential store (with an encrypted-file
   fallback) and fails closed if secure storage is unavailable. See
   [threat-model.md](./threat-model.md) for identity and key-custody details.
+
+## Coding-agent MCP bridge
+
+Run the local Agent before starting the bridge. A coding-agent client should launch:
+
+```bash
+cfls mcp --workspace /absolute/repo/path
+```
+
+The stdio bridge authenticates only to that workspace's running local Agent over its loopback
+Local_API. It exposes the 13-tool surface, including `get_team_status` for active member task
+and file metadata. It does not send source files, patches, or diffs through MCP or the Host.

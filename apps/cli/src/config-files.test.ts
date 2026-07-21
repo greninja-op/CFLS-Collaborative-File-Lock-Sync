@@ -4,13 +4,19 @@
  * partial agent-config updates must merge rather than clobber.
  */
 
-import { mkdtempSync, rmSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-
-import { writeFileSync } from "node:fs";
 
 import {
   appendAdminPublicKey,
@@ -22,6 +28,7 @@ import {
   readTeamConfig,
   updateAgentConfig,
   writeLocalApiConfig,
+  type LocalApiFileSecurity,
 } from "./config-files";
 
 describe("config files round-trip", () => {
@@ -65,15 +72,113 @@ describe("config files round-trip", () => {
     });
   });
 
-  it("local-api.json: writes and reads the discovery record", () => {
+  it("local-api.json: writes atomically with owner-only permissions", () => {
     const path = join(dir, "local-api.json");
     expect(readLocalApiConfig(path)).toBeNull();
 
     writeLocalApiConfig(path, { url: "ws://127.0.0.1:8750", token: "tok-123" });
+    if (process.platform !== "win32") {
+      expect(statSync(path).mode & 0o077).toBe(0);
+    }
+    expect(
+      readdirSync(dir).filter((entry) => entry.includes("local-api.json")),
+    ).toEqual(["local-api.json"]);
     expect(readLocalApiConfig(path)).toEqual({
       url: "ws://127.0.0.1:8750",
       token: "tok-123",
     });
+  });
+
+  it.skipIf(process.platform === "win32")(
+    "local-api.json: rejects a record readable by another local account",
+    () => {
+      const path = join(dir, "local-api.json");
+      writeLocalApiConfig(path, {
+        url: "ws://127.0.0.1:8750",
+        token: "tok-123",
+      });
+      chmodSync(path, 0o644);
+
+      expect(readLocalApiConfig(path)).toBeNull();
+    },
+  );
+
+  it("local-api.json: establishes and verifies a private ACL on mocked Windows", () => {
+    const path = join(dir, "local-api.json");
+    const secured: string[] = [];
+    const verified: string[] = [];
+    const security: LocalApiFileSecurity = {
+      platform: "win32",
+      secureWindowsFile: (file) => {
+        secured.push(file);
+      },
+      verifyWindowsFile: (file) => {
+        verified.push(file);
+        return true;
+      },
+    };
+
+    writeLocalApiConfig(
+      path,
+      { url: "ws://127.0.0.1:8750", token: "tok-123" },
+      security,
+    );
+
+    // The private DACL is applied before the temporary record is published,
+    // then checked again on the final target.
+    expect(secured).toHaveLength(1);
+    expect(secured[0]).toMatch(/^.*local-api\.json\..+\.tmp$/u);
+    expect(verified).toContain(path);
+    expect(readLocalApiConfig(path, security)).toEqual({
+      url: "ws://127.0.0.1:8750",
+      token: "tok-123",
+    });
+    expect(
+      verified.filter((file) => file === path).length,
+    ).toBeGreaterThanOrEqual(3);
+  });
+
+  it("local-api.json: fails closed when mocked Windows ACL setup fails", () => {
+    const path = join(dir, "local-api.json");
+    const security: LocalApiFileSecurity = {
+      platform: "win32",
+      secureWindowsFile: () => {
+        throw new Error("ACL setup unavailable");
+      },
+      verifyWindowsFile: () => true,
+    };
+
+    expect(() =>
+      writeLocalApiConfig(
+        path,
+        { url: "ws://127.0.0.1:8750", token: "tok-123" },
+        security,
+      ),
+    ).toThrow("ACL setup unavailable");
+    expect(existsSync(path)).toBe(false);
+    expect(
+      readdirSync(dir).filter((entry) => entry.includes("local-api.json")),
+    ).toEqual([]);
+  });
+
+  it("local-api.json: rejects an unverifiable record on mocked Windows", () => {
+    const path = join(dir, "local-api.json");
+    writeFileSync(
+      path,
+      JSON.stringify({ url: "ws://127.0.0.1:8750", token: "tok-123" }),
+    );
+    let checks = 0;
+    const security: LocalApiFileSecurity = {
+      platform: "win32",
+      secureWindowsFile: () => undefined,
+      verifyWindowsFile: () => {
+        checks += 1;
+        return false;
+      },
+    };
+
+    expect(readLocalApiConfig(path, security)).toBeNull();
+    expect(checks).toBe(1);
   });
 });
 

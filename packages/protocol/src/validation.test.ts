@@ -105,6 +105,18 @@ describe("validatePayload — accepted payloads", () => {
     expect(result.ok).toBe(true);
   });
 
+  it("accepts a correlated event.applied acknowledgement with lock conflict metadata", () => {
+    const result = validatePayload("event.applied", {
+      eventId: "evt-lock-bob",
+      eventRevision: 12,
+      lockConflict: {
+        scope: "src/shared.ts",
+        winner: { memberId: "alice", eventRevision: 11 },
+      },
+    });
+    expect(result.ok).toBe(true);
+  });
+
   it("permits unknown extra keys (forward-compatibility)", () => {
     const result = validatePayload(MessageType.REQUEST, {
       fromRevision: 42,

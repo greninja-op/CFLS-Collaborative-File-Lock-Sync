@@ -19,8 +19,12 @@ import { randomUUID, randomBytes } from "node:crypto";
 
 import {
   buildEnvelope,
+  ErrorMessageType,
+  EventMessageType,
   MESSAGE_FORMAT_VERSION,
   type CoordinationUpdate,
+  type ErrorPayload,
+  type EventAppliedPayload,
   type MessagePayloadMap,
   type MessageTypeName,
   type SessionId,
@@ -66,6 +70,13 @@ export interface HostConnectionOptions {
   backoff?: BackoffOptions;
   /** Whether to auto-reconnect on loss (default true). */
   autoReconnect?: boolean;
+  /** Durable per-device replay counter restored before this process starts. */
+  initialReplayCounter?: number;
+  /**
+   * Synchronously persist a newly allocated replay counter before its signed
+   * event is written to the socket. Throwing prevents that event from sending.
+   */
+  onReplayCounter?: (counter: number) => void;
   /** Injectable clock for deterministic staleness. */
   now?: () => number;
   /** Injectable WebSocket implementation (tests). */
@@ -76,10 +87,23 @@ export interface HostConnectionOptions {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type WireMessage = any;
 
+/** One pending inbound response waiter. */
+interface MessageWaiter {
+  predicate: (message: WireMessage) => boolean;
+  resolve: (message: WireMessage) => void;
+  reject: (error: Error) => void;
+  timer: NodeJS.Timeout;
+}
+
 /** Outcome of transmitting a Signed_Event to the host. */
 export type SendResult =
   | { ok: true; eventId: string }
   | { ok: false; code: "OFFLINE_QUEUED"; message: string };
+
+/** A direct host response for one transmitted state mutation. */
+export type MutationAcknowledgementResult =
+  | { ok: true; eventId: string; acknowledgement: EventAppliedPayload }
+  | { ok: false; eventId?: string; error: ErrorPayload };
 
 /**
  * A single outbound WSS connection to the CoordinationHost. Emits:
@@ -108,7 +132,8 @@ export class HostConnection extends EventEmitter {
 
   private ws: WebSocket | undefined;
   private state: ConnectionState = "offline";
-  private replayCounter = 0;
+  private replayCounter: number;
+  private readonly onReplayCounter: ((counter: number) => void) | undefined;
   private lastSyncAt: string | null = null;
   private highestRevision = 0;
   private heartbeatTimer: NodeJS.Timeout | undefined;
@@ -116,15 +141,19 @@ export class HostConnection extends EventEmitter {
   private closedByUser = false;
 
   /** One-shot message waiters (like a request/response correlator). */
-  private waiters: Array<{
-    predicate: (m: WireMessage) => boolean;
-    resolve: (m: WireMessage) => void;
-    reject: (e: Error) => void;
-    timer: NodeJS.Timeout;
-  }> = [];
+  private waiters: MessageWaiter[] = [];
 
   constructor(options: HostConnectionOptions) {
     super();
+    const initialReplayCounter = options.initialReplayCounter ?? 0;
+    if (
+      !Number.isSafeInteger(initialReplayCounter) ||
+      initialReplayCounter < 0
+    ) {
+      throw new RangeError(
+        "initialReplayCounter must be a non-negative safe integer.",
+      );
+    }
     this.options = {
       hostUrl: options.hostUrl,
       session: options.session,
@@ -137,6 +166,8 @@ export class HostConnection extends EventEmitter {
     this.backoff = new ExponentialBackoff(options.backoff ?? {});
     this.WebSocketImpl = options.webSocketImpl ?? WebSocket;
     this.now = options.now ?? Date.now;
+    this.replayCounter = initialReplayCounter;
+    this.onReplayCounter = options.onReplayCounter;
   }
 
   /** Current connectivity state. */
@@ -284,7 +315,22 @@ export class HostConnection extends EventEmitter {
       return;
     }
 
-    // Resolve any correlated waiters first.
+    if (message?.type === "coordination.update") {
+      const update = message.payload as CoordinationUpdate;
+      if (update.eventRevision > this.highestRevision) {
+        this.highestRevision = update.eventRevision;
+      }
+    } else if (message?.type === EventMessageType.EVENT_APPLIED) {
+      const eventRevision = message.payload?.eventRevision;
+      if (
+        typeof eventRevision === "number" &&
+        eventRevision > this.highestRevision
+      ) {
+        this.highestRevision = eventRevision;
+      }
+    }
+
+    // Resolve any correlated waiters after updating local revision metadata.
     this.waiters = this.waiters.filter((w) => {
       if (w.predicate(message)) {
         clearTimeout(w.timer);
@@ -296,9 +342,6 @@ export class HostConnection extends EventEmitter {
 
     if (message?.type === "coordination.update") {
       const update = message.payload as CoordinationUpdate;
-      if (update.eventRevision > this.highestRevision) {
-        this.highestRevision = update.eventRevision;
-      }
       this.emit("update", update);
       return;
     }
@@ -311,8 +354,13 @@ export class HostConnection extends EventEmitter {
       }
       return;
     }
-    if (message?.type === "error") {
-      this.emit("error", message.payload);
+    if (message?.type === ErrorMessageType.ERROR) {
+      // EventEmitter treats an unhandled "error" as a thrown exception. A
+      // correlated mutation caller already receives this error through its
+      // waiter, so only emit the diagnostic event when a consumer opted in.
+      if (this.listenerCount("error") > 0) {
+        this.emit("error", message.payload);
+      }
       return;
     }
   }
@@ -401,6 +449,7 @@ export class HostConnection extends EventEmitter {
   send<T extends MessageTypeName>(
     type: T,
     payload: MessagePayloadMap[T],
+    eventId = randomUUID(),
   ): SendResult {
     if (this.state !== "online" || this.ws === undefined) {
       return {
@@ -409,22 +458,124 @@ export class HostConnection extends EventEmitter {
         message: `Agent offline; '${type}' not transmitted to the host.`,
       };
     }
-    const eventId = randomUUID();
-    this.replayCounter += 1;
+    const nextReplayCounter = this.replayCounter + 1;
+    if (!Number.isSafeInteger(nextReplayCounter)) {
+      return {
+        ok: false,
+        code: "OFFLINE_QUEUED",
+        message: `Agent replay counter exhausted; '${type}' not transmitted to the host.`,
+      };
+    }
+    try {
+      // Persist before send: after a process restart, every future event must
+      // exceed the host's per-device persisted replay counter (Req 7.5).
+      this.onReplayCounter?.(nextReplayCounter);
+    } catch {
+      return {
+        ok: false,
+        code: "OFFLINE_QUEUED",
+        message:
+          `Local replay state is unavailable; '${type}' was not transmitted ` +
+          "to the host.",
+      };
+    }
+    this.replayCounter = nextReplayCounter;
     const envelope = buildEnvelope({
       type,
       eventId,
       session: this.options.session,
       deviceId: deriveDeviceId(this.options.deviceKey.publicKey),
       replay: {
-        counter: this.replayCounter,
+        counter: nextReplayCounter,
         nonce: randomBytes(12).toString("base64"),
       },
       payload,
     });
     const signed = signEnvelope(envelope, this.options.deviceKey.privateKey);
-    this.ws.send(JSON.stringify(signed));
+    try {
+      this.ws.send(JSON.stringify(signed));
+    } catch {
+      return {
+        ok: false,
+        code: "OFFLINE_QUEUED",
+        message: `Agent offline; '${type}' not transmitted to the host.`,
+      };
+    }
     return { ok: true, eventId };
+  }
+
+  /**
+   * Send one state mutation and wait only for its own direct acknowledgement
+   * (or an error that explicitly references the same Event_ID). The waiter is
+   * registered before the frame is written, so a fast host reply cannot race
+   * past it; unrelated coordination broadcasts are intentionally ignored.
+   */
+  async sendMutation<T extends MessageTypeName>(
+    type: T,
+    payload: MessagePayloadMap[T],
+    timeoutMs = 4000,
+  ): Promise<MutationAcknowledgementResult> {
+    if (this.state !== "online" || this.ws === undefined) {
+      return {
+        ok: false,
+        error: {
+          code: "OFFLINE_QUEUED",
+          message: `Agent offline; '${type}' not transmitted to the host.`,
+        },
+      };
+    }
+
+    const eventId = randomUUID();
+    const waiter = this.createWaiter(
+      (message) =>
+        (message?.type === EventMessageType.EVENT_APPLIED &&
+          message.payload?.eventId === eventId) ||
+        (message?.type === ErrorMessageType.ERROR &&
+          message.payload?.refEventId === eventId),
+      timeoutMs,
+    );
+    const sent = this.send(type, payload, eventId);
+    if (!sent.ok) {
+      waiter.cancel();
+      return {
+        ok: false,
+        error: { code: sent.code, message: sent.message },
+      };
+    }
+
+    try {
+      const response = await waiter.promise;
+      if (response.type === EventMessageType.EVENT_APPLIED) {
+        const acknowledgement = response.payload as EventAppliedPayload;
+        if (typeof acknowledgement.eventRevision !== "number") {
+          return {
+            ok: false,
+            eventId,
+            error: {
+              code: "FORMAT_ERROR",
+              message: "Host sent a malformed event acknowledgement.",
+            },
+          };
+        }
+        return { ok: true, eventId, acknowledgement };
+      }
+      return {
+        ok: false,
+        eventId,
+        error: response.payload as ErrorPayload,
+      };
+    } catch {
+      return {
+        ok: false,
+        eventId,
+        error: {
+          code: "STORAGE_ERROR",
+          message:
+            `The CoordinationHost did not acknowledge '${type}' for event ` +
+            `${eventId}; host acceptance is unknown. Retry with coordination.`,
+        },
+      };
+    }
   }
 
   /**
@@ -467,20 +618,49 @@ export class HostConnection extends EventEmitter {
   /**
    * Wait for the next inbound message matching `predicate` (or a broadcast that
    * already matched is not buffered — waiters are forward-looking). Used to
-   * correlate a mutation with its resulting `coordination.update` or `error`.
+   * await a protocol response. Mutation acknowledgement uses the stricter
+   * {@link sendMutation} correlation path above.
    */
   waitFor(
     predicate: (m: WireMessage) => boolean,
     timeoutMs = 4000,
   ): Promise<WireMessage> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.waiters = this.waiters.filter((w) => w.timer !== timer);
-        reject(new Error("Timed out waiting for host message."));
-      }, timeoutMs);
-      timer.unref?.();
-      this.waiters.push({ predicate, resolve, reject, timer });
+    return this.createWaiter(predicate, timeoutMs).promise;
+  }
+
+  /** Register a one-shot inbound waiter and expose cancellation for send races. */
+  private createWaiter(
+    predicate: (m: WireMessage) => boolean,
+    timeoutMs: number,
+  ): { promise: Promise<WireMessage>; cancel: () => void } {
+    let resolveWaiter!: (message: WireMessage) => void;
+    let rejectWaiter!: (error: Error) => void;
+    const promise = new Promise<WireMessage>((resolve, reject) => {
+      resolveWaiter = resolve;
+      rejectWaiter = reject;
     });
+    const timer = setTimeout(() => {
+      this.waiters = this.waiters.filter((w) => w !== waiter);
+      rejectWaiter(new Error("Timed out waiting for host message."));
+    }, timeoutMs);
+    timer.unref?.();
+    const waiter: MessageWaiter = {
+      predicate,
+      resolve: resolveWaiter,
+      reject: rejectWaiter,
+      timer,
+    };
+    this.waiters.push(waiter);
+    return {
+      promise,
+      cancel: () => {
+        const index = this.waiters.indexOf(waiter);
+        if (index !== -1) {
+          this.waiters.splice(index, 1);
+          clearTimeout(timer);
+        }
+      },
+    };
   }
 
   private raw(message: unknown): void {

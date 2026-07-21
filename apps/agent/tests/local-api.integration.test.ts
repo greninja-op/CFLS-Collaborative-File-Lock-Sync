@@ -21,10 +21,19 @@ import {
 
 const TOKEN = "test-local-auth-token";
 
+let subscribeCalls = 0;
+let unsubscribedIds: string[] = [];
+
 function handlers(): LocalApiHandlers {
   return {
     request: async (method) => ({ ok: true, method }),
-    subscribe: async () => ({ ok: true, subscriptionId: "sub-1" }),
+    subscribe: async () => {
+      subscribeCalls += 1;
+      return { ok: true, subscriptionId: `sub-${subscribeCalls}` };
+    },
+    unsubscribe: async (subscriptionId) => {
+      unsubscribedIds.push(subscriptionId);
+    },
   };
 }
 
@@ -32,6 +41,8 @@ let server: LocalApiServer;
 let wsUrl: string;
 
 beforeEach(async () => {
+  subscribeCalls = 0;
+  unsubscribedIds = [];
   server = new LocalApiServer({
     token: TOKEN,
     handlers: handlers(),
@@ -159,6 +170,46 @@ describe("Local_API token authentication (Req 2.5)", () => {
     const response = await next((m) => m.type === "response");
     expect(response.body).toEqual({ ok: true, subscriptionId: "sub-1" });
     ws.close();
+  });
+
+  it("deduplicates subscriptions per connection and disposes on close", async () => {
+    const { ws, next } = await open();
+    ws.send(JSON.stringify({ type: "auth", token: TOKEN }));
+    await next((m) => m.type === "auth_ok");
+
+    ws.send(
+      JSON.stringify({ type: "subscribe", id: 3, params: { session: {} } }),
+    );
+    const first = await next((m) => m.type === "response" && m.id === 3);
+    ws.send(
+      JSON.stringify({ type: "subscribe", id: 4, params: { session: {} } }),
+    );
+    const duplicate = await next((m) => m.type === "response" && m.id === 4);
+
+    expect(first.body).toEqual({ ok: true, subscriptionId: "sub-1" });
+    expect(duplicate.body).toEqual(first.body);
+    expect(subscribeCalls).toBe(1);
+
+    const closed = new Promise<void>((resolve) =>
+      ws.once("close", () => resolve()),
+    );
+    ws.close();
+    await closed;
+    expect(unsubscribedIds).toEqual(["sub-1"]);
+  });
+
+  it("disposes active subscriptions when the Local_API stops", async () => {
+    const { ws, next } = await open();
+    ws.send(JSON.stringify({ type: "auth", token: TOKEN }));
+    await next((m) => m.type === "auth_ok");
+    ws.send(
+      JSON.stringify({ type: "subscribe", id: 3, params: { session: {} } }),
+    );
+    await next((m) => m.type === "response" && m.id === 3);
+
+    await server.stop();
+    expect(unsubscribedIds).toEqual(["sub-1"]);
+    ws.terminate();
   });
 });
 

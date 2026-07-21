@@ -21,7 +21,14 @@ import {
   randomBytes,
   scryptSync,
 } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { join } from "node:path";
 
 import { findMinimizationViolations } from "@cfls/core-state";
@@ -33,6 +40,7 @@ const KEY_LEN = 32;
 const IV_LEN = 12;
 const SALT_LEN = 16;
 const MAGIC = "cfls-cache-v1";
+const REPLAY_MAGIC = "cfls-device-replay-v1";
 
 /** The on-disk encrypted envelope (all binary fields base64). */
 interface CacheRecord {
@@ -41,6 +49,11 @@ interface CacheRecord {
   iv: string;
   authTag: string;
   ciphertext: string;
+}
+
+/** The only device-wide metadata retained beside per-session snapshots. */
+interface ReplayCounterRecord {
+  replayCounter: number;
 }
 
 /** Options for {@link EncryptedCache}. */
@@ -75,6 +88,73 @@ export class EncryptedCache {
   }
 
   /**
+   * A Device_Key's signed-event counter spans sessions on the host, so it must
+   * not be stored in an individual session file. It remains encrypted with the
+   * same Device_Private_Key-derived key as the state snapshots.
+   */
+  private replayFile(): string {
+    return join(this.dir, "device-replay.cache");
+  }
+
+  /** Encrypt and atomically replace one local metadata record. */
+  private writeEncrypted(path: string, magic: string, value: unknown): void {
+    mkdirSync(this.dir, { recursive: true, mode: 0o700 });
+    const salt = randomBytes(SALT_LEN);
+    const key = scryptSync(this.passphrase, salt, KEY_LEN);
+    const iv = randomBytes(IV_LEN);
+    const cipher = createCipheriv(ALGORITHM, key, iv);
+    const plaintext = Buffer.from(JSON.stringify(value), "utf8");
+    const ciphertext = Buffer.concat([
+      cipher.update(plaintext),
+      cipher.final(),
+    ]);
+    const record: CacheRecord = {
+      magic,
+      salt: salt.toString("base64"),
+      iv: iv.toString("base64"),
+      authTag: cipher.getAuthTag().toString("base64"),
+      ciphertext: ciphertext.toString("base64"),
+    };
+
+    // A counter must be durable *before* its matching event can be sent. A
+    // same-directory rename prevents a process interruption from replacing a
+    // previous valid record with a partial write.
+    const temporary = `${path}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+    try {
+      writeFileSync(temporary, JSON.stringify(record), {
+        encoding: "utf8",
+        mode: 0o600,
+        flag: "wx",
+      });
+      renameSync(temporary, path);
+    } finally {
+      if (existsSync(temporary)) {
+        unlinkSync(temporary);
+      }
+    }
+  }
+
+  /** Decrypt one typed cache record, throwing for a malformed/corrupt record. */
+  private readEncrypted(path: string, expectedMagic: string): unknown {
+    const record = JSON.parse(readFileSync(path, "utf8")) as CacheRecord;
+    if (record.magic !== expectedMagic) {
+      throw new Error("Unexpected encrypted cache record type.");
+    }
+    const salt = Buffer.from(record.salt, "base64");
+    const iv = Buffer.from(record.iv, "base64");
+    const authTag = Buffer.from(record.authTag, "base64");
+    const ciphertext = Buffer.from(record.ciphertext, "base64");
+    const key = scryptSync(this.passphrase, salt, KEY_LEN);
+    const decipher = createDecipheriv(ALGORITHM, key, iv);
+    decipher.setAuthTag(authTag);
+    const plaintext = Buffer.concat([
+      decipher.update(ciphertext),
+      decipher.final(),
+    ]);
+    return JSON.parse(plaintext.toString("utf8")) as unknown;
+  }
+
+  /**
    * Persist a session's authoritative snapshot, encrypted (Req 35.1). Rejects a
    * snapshot that would carry source content or secrets, enforcing the
    * metadata-only guarantee before anything touches disk (Req 35.3).
@@ -87,27 +167,7 @@ export class EncryptedCache {
           violations.map((v) => v.kind).join(", "),
       );
     }
-    mkdirSync(this.dir, { recursive: true });
-    const salt = randomBytes(SALT_LEN);
-    const key = scryptSync(this.passphrase, salt, KEY_LEN);
-    const iv = randomBytes(IV_LEN);
-    const cipher = createCipheriv(ALGORITHM, key, iv);
-    const plaintext = Buffer.from(JSON.stringify(snapshot), "utf8");
-    const ciphertext = Buffer.concat([
-      cipher.update(plaintext),
-      cipher.final(),
-    ]);
-    const record: CacheRecord = {
-      magic: MAGIC,
-      salt: salt.toString("base64"),
-      iv: iv.toString("base64"),
-      authTag: cipher.getAuthTag().toString("base64"),
-      ciphertext: ciphertext.toString("base64"),
-    };
-    writeFileSync(this.fileFor(session), JSON.stringify(record), {
-      encoding: "utf8",
-      mode: 0o600,
-    });
+    this.writeEncrypted(this.fileFor(session), MAGIC, snapshot);
   }
 
   /**
@@ -121,24 +181,56 @@ export class EncryptedCache {
       return null;
     }
     try {
-      const record = JSON.parse(readFileSync(path, "utf8")) as CacheRecord;
-      if (record.magic !== MAGIC) {
-        return null;
-      }
-      const salt = Buffer.from(record.salt, "base64");
-      const iv = Buffer.from(record.iv, "base64");
-      const authTag = Buffer.from(record.authTag, "base64");
-      const ciphertext = Buffer.from(record.ciphertext, "base64");
-      const key = scryptSync(this.passphrase, salt, KEY_LEN);
-      const decipher = createDecipheriv(ALGORITHM, key, iv);
-      decipher.setAuthTag(authTag);
-      const plaintext = Buffer.concat([
-        decipher.update(ciphertext),
-        decipher.final(),
-      ]);
-      return JSON.parse(plaintext.toString("utf8")) as SessionStateSnapshot;
+      return this.readEncrypted(path, MAGIC) as SessionStateSnapshot;
     } catch {
       return null;
     }
+  }
+
+  /**
+   * Return the durable, Device_Key-wide replay counter. A missing record is a
+   * brand-new device state (`0`); a present but unreadable record is unsafe to
+   * reset because doing so could replay an already accepted signed event.
+   */
+  loadReplayCounter(): number {
+    const path = this.replayFile();
+    if (!existsSync(path)) {
+      return 0;
+    }
+    try {
+      const parsed = this.readEncrypted(
+        path,
+        REPLAY_MAGIC,
+      ) as ReplayCounterRecord;
+      if (
+        !Number.isSafeInteger(parsed.replayCounter) ||
+        parsed.replayCounter < 0
+      ) {
+        throw new Error("Invalid replay counter.");
+      }
+      return parsed.replayCounter;
+    } catch {
+      throw new Error(
+        "Cannot safely restore the encrypted device replay counter; refusing to reset it.",
+      );
+    }
+  }
+
+  /**
+   * Durably advance (never decrease) the Device_Key-wide replay counter before
+   * the associated signed event is transmitted.
+   */
+  saveReplayCounter(counter: number): void {
+    if (!Number.isSafeInteger(counter) || counter < 0) {
+      throw new RangeError(
+        "Replay counter must be a non-negative safe integer.",
+      );
+    }
+    if (counter <= this.loadReplayCounter()) {
+      return;
+    }
+    this.writeEncrypted(this.replayFile(), REPLAY_MAGIC, {
+      replayCounter: counter,
+    } satisfies ReplayCounterRecord);
   }
 }

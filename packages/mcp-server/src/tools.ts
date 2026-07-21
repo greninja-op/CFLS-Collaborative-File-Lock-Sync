@@ -1,5 +1,5 @@
 /**
- * The 12 Local_MCP_Server tools (design §3.4; Req 4.2), wired to the
+ * The 13 Local_MCP_Server tools (design §3.4; Req 4.2), wired to the
  * CoordinationAgent exclusively through the {@link AgentPort}.
  *
  * Each tool: validates its arguments with a zod schema (mirroring the §3.4
@@ -13,6 +13,7 @@
 
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
+import type { CoordinationUpdate } from "@cfls/protocol";
 import { z } from "zod";
 
 import type { AgentResult, McpEnvelope } from "./envelope";
@@ -21,11 +22,14 @@ import type {
   AgentPort,
   DeclareIntentRequest,
   ReleaseLockRequest,
+  SessionRef,
+  SubscribeData,
 } from "./port";
 
 /** The exact set of tool names the Local_MCP_Server exposes (design §3.4; Req 4.2). */
 export const TOOL_NAMES = [
   "get_risk_map",
+  "get_team_status",
   "get_dependency_impact",
   "get_dependencies",
   "get_dependents",
@@ -40,6 +44,23 @@ export const TOOL_NAMES = [
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
+
+/**
+ * The stable marker carried in MCP `notifications/message` data for a live
+ * coordination update. MCP clients can register a standard logging-message
+ * handler and narrow on this marker without parsing a human-readable string.
+ */
+export const COORDINATION_UPDATE_NOTIFICATION_TYPE =
+  "cfls.coordination_update" as const;
+
+/** The MCP logging channel used for live coordination-update notifications. */
+export const COORDINATION_UPDATE_LOGGER = "cfls.coordination";
+
+/** Structured payload emitted in a standard MCP `notifications/message` event. */
+export interface CoordinationUpdateNotificationData {
+  type: typeof COORDINATION_UPDATE_NOTIFICATION_TYPE;
+  update: CoordinationUpdate;
+}
 
 // ---- Shared zod fragments -----------------------------------------------------
 
@@ -75,10 +96,62 @@ async function respond<T>(
 }
 
 /**
- * Register all 12 coordination tools on `server`, delegating to `port`.
+ * Register all 13 coordination tools on `server`, delegating to `port`.
  * Returns the same server for chaining.
  */
 export function registerTools(server: McpServer, port: AgentPort): McpServer {
+  // Keep one stable callback and one agent subscription per Repository_Session.
+  // A caller may repeat the MCP tool call after reconnecting or retrying; that
+  // must not multiply Local_API subscriptions or repeat every update.
+  const subscriptions = new Map<string, Promise<AgentResult<SubscribeData>>>();
+  const notifyCoordinationUpdate = (update: CoordinationUpdate): void => {
+    const data: CoordinationUpdateNotificationData = {
+      type: COORDINATION_UPDATE_NOTIFICATION_TYPE,
+      update,
+    };
+    // `sendLoggingMessage` is the SDK's documented standard MCP
+    // `notifications/message` path. A disconnected client must not be able to
+    // disrupt the agent's update stream, so notification delivery is best effort.
+    void server
+      .sendLoggingMessage({
+        level: "info",
+        logger: COORDINATION_UPDATE_LOGGER,
+        data,
+      })
+      .catch(() => undefined);
+  };
+  const subscribeOnce = (
+    session: SessionRef,
+  ): Promise<AgentResult<SubscribeData>> => {
+    const key = subscriptionKey(session);
+    const existing = subscriptions.get(key);
+    if (existing !== undefined) {
+      return existing;
+    }
+
+    const subscription = Promise.resolve(
+      port.subscribeToCoordinationUpdates(
+        { session },
+        notifyCoordinationUpdate,
+      ),
+    );
+    subscriptions.set(key, subscription);
+    void subscription.then(
+      (result) => {
+        // A failed registration is not durable: a later tool call may retry it.
+        if (!result.ok && subscriptions.get(key) === subscription) {
+          subscriptions.delete(key);
+        }
+      },
+      () => {
+        if (subscriptions.get(key) === subscription) {
+          subscriptions.delete(key);
+        }
+      },
+    );
+    return subscription;
+  };
+
   // 1. get_risk_map — Req 4.3, 24, 21, 22, 31.5
   server.registerTool(
     "get_risk_map",
@@ -89,6 +162,18 @@ export function registerTools(server: McpServer, port: AgentPort): McpServer {
       inputSchema: { session: sessionSchema },
     },
     (args) => respond(port, port.getRiskMap({ session: args.session })),
+  );
+
+  // 1b. get_team_status — a metadata-only member/activity projection.
+  server.registerTool(
+    "get_team_status",
+    {
+      description:
+        "Return active team members, their declared tasks, files, locks, and " +
+        "editing signals for a Repository_Session. This is coordination metadata, never source content.",
+      inputSchema: { session: sessionSchema },
+    },
+    (args) => respond(port, port.getTeamStatus({ session: args.session })),
   );
 
   // 2. get_dependency_impact — Req 23.1, 23.4, 23.5
@@ -240,14 +325,12 @@ export function registerTools(server: McpServer, port: AgentPort): McpServer {
     {
       description:
         "Subscribe to Coordination_Updates for a Repository_Session. Returns a " +
-        "subscription id; updates stream through the local agent.",
+        "subscription id. Each later update is sent as a standard MCP " +
+        "notifications/message event with logger 'cfls.coordination' and " +
+        "structured data { type: 'cfls.coordination_update', update }.",
       inputSchema: { session: sessionSchema },
     },
-    (args) =>
-      respond(
-        port,
-        port.subscribeToCoordinationUpdates({ session: args.session }),
-      ),
+    (args) => respond(port, subscribeOnce(args.session)),
   );
 
   // 11. get_connection_status — Req 4.6, 6.5, 27.4
@@ -273,4 +356,14 @@ export function registerTools(server: McpServer, port: AgentPort): McpServer {
   );
 
   return server;
+}
+
+/** A lossless, stable key for deduplicating one subscription per session. */
+function subscriptionKey(session: SessionRef): string {
+  return JSON.stringify([
+    session.repoId,
+    session.teamId,
+    session.branch,
+    session.baseRevision,
+  ]);
 }

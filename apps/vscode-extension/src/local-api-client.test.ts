@@ -7,7 +7,12 @@
 import { describe, expect, it } from "vitest";
 
 import { HEARTBEAT_METHOD, EDITOR_EVENT_METHOD } from "./frames";
-import { LocalApiClient, type Scheduler } from "./local-api-client";
+import {
+  LocalApiClient,
+  LocalApiReconnectController,
+  type ReconnectableLocalApiClient,
+  type Scheduler,
+} from "./local-api-client";
 import { isLoopbackUrl } from "./transport";
 import type { FrameTransport } from "./transport";
 
@@ -225,6 +230,157 @@ describe("LocalApiClient editor-event forwarding (Req 3.2)", () => {
     }[];
     expect(frames).toHaveLength(1);
     expect(frames[0]?.params.kind).toBe("file_saved");
+  });
+});
+
+/** A controllable client used to exercise lifecycle recovery without sockets. */
+class RecoverableClient implements ReconnectableLocalApiClient {
+  authCalls = 0;
+  closeCalls = 0;
+  private closed = false;
+  private readonly closeListeners = new Set<() => void>();
+
+  constructor(private readonly authSucceeds = true) {}
+
+  async authenticate(): Promise<void> {
+    this.authCalls += 1;
+    if (!this.authSucceeds) {
+      throw new Error("rotated Local_API token was rejected");
+    }
+  }
+
+  onClosed(listener: () => void): () => void {
+    this.closeListeners.add(listener);
+    return () => this.closeListeners.delete(listener);
+  }
+
+  close(): void {
+    this.closeCalls += 1;
+    this.disconnect();
+  }
+
+  /** Simulate a service stop / WebSocket loss. Idempotent like a real socket. */
+  disconnect(): void {
+    if (this.closed) {
+      return;
+    }
+    this.closed = true;
+    for (const listener of [...this.closeListeners]) {
+      listener();
+    }
+  }
+}
+
+async function waitUntil(
+  predicate: () => boolean,
+  message: string,
+): Promise<void> {
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    if (predicate()) {
+      return;
+    }
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error(message);
+}
+
+describe("LocalApiReconnectController", () => {
+  it("rebuilds from fresh discovery settings after a service restart without duplicating initialization", async () => {
+    const first = new RecoverableClient();
+    const second = new RecoverableClient();
+    const candidates = [first, second];
+    let discoveryReads = 0;
+    const initialized: RecoverableClient[] = [];
+    const connected: RecoverableClient[] = [];
+    let unavailableCount = 0;
+    const controller = new LocalApiReconnectController({
+      // In production this factory reads local-api.json. Counting it proves a
+      // restart uses a fresh record rather than the first endpoint/token.
+      createClient: () => {
+        const candidate = candidates[discoveryReads];
+        discoveryReads += 1;
+        if (candidate === undefined) {
+          throw new Error("unexpected extra Local_API client");
+        }
+        return candidate;
+      },
+      initialize: async (client) => {
+        initialized.push(client);
+      },
+      onConnected: (client) => {
+        connected.push(client);
+      },
+      onUnavailable: () => {
+        unavailableCount += 1;
+      },
+      delay: async () => undefined,
+    });
+
+    await expect(controller.connect()).resolves.toBe(first);
+    expect(controller.current()).toBe(first);
+    expect(initialized).toEqual([first]);
+
+    first.disconnect();
+    await waitUntil(
+      () => controller.current() === second,
+      "the replacement Local_API client did not become active",
+    );
+
+    expect(discoveryReads).toBe(2);
+    expect(first.authCalls).toBe(1);
+    expect(second.authCalls).toBe(1);
+    expect(initialized).toEqual([first, second]);
+    expect(connected).toEqual([first, second]);
+    expect(unavailableCount).toBe(1);
+
+    // A real WebSocket can report error then close. The terminal client fires
+    // only one lifecycle signal, so this must not create a third subscription.
+    first.disconnect();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    expect(discoveryReads).toBe(2);
+    expect(initialized).toEqual([first, second]);
+
+    await controller.close();
+    expect(second.closeCalls).toBe(1);
+  });
+
+  it("bounds a failed recovery batch while recreating each candidate", async () => {
+    const failedCandidates = [
+      new RecoverableClient(false),
+      new RecoverableClient(false),
+      new RecoverableClient(false),
+    ];
+    let created = 0;
+    const delays: number[] = [];
+    const controller = new LocalApiReconnectController({
+      createClient: () => {
+        const candidate = failedCandidates[created];
+        created += 1;
+        if (candidate === undefined) {
+          throw new Error("recovery exceeded its configured bound");
+        }
+        return candidate;
+      },
+      initialize: async () => undefined,
+      onConnected: () => {
+        throw new Error("a rejected candidate must never become active");
+      },
+      onUnavailable: () => undefined,
+      maxAttempts: 3,
+      initialDelayMs: 25,
+      maxDelayMs: 40,
+      delay: async (delayMs) => {
+        delays.push(delayMs);
+      },
+    });
+
+    await expect(controller.connect()).resolves.toBeUndefined();
+    expect(created).toBe(3);
+    expect(delays).toEqual([25, 40]);
+    expect(controller.current()).toBeUndefined();
+    expect(failedCandidates.map((client) => client.closeCalls)).toEqual([
+      1, 1, 1,
+    ]);
   });
 });
 

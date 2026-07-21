@@ -1,11 +1,11 @@
 /**
  * @cfls/mcp-server — the strictly-local Local_MCP_Server built on
- * `@modelcontextprotocol/sdk`, exposing the 12 coordination tools wired to the
+ * `@modelcontextprotocol/sdk`, exposing the 13 coordination tools wired to the
  * core-state engine through the CoordinationAgent (design §3.4; Req 4.1–4.8).
  *
  * Public surface:
  *   - {@link createMcpServer} / {@link registerTools} — build the server and
- *     register the 12 tools against an {@link AgentPort}.
+ *     register the 13 tools against an {@link AgentPort}.
  *   - {@link McpEnvelope} and helpers — the common connection/staleness response
  *     envelope carried by every tool response (Req 4.7, 33.2).
  *   - {@link AgentPort} and its request/response DTOs — the clean port the
@@ -22,7 +22,14 @@ export {
   MCP_SERVER_INFO,
   type CreateMcpServerOptions,
 } from "./server";
-export { registerTools, TOOL_NAMES, type ToolName } from "./tools";
+export {
+  COORDINATION_UPDATE_LOGGER,
+  COORDINATION_UPDATE_NOTIFICATION_TYPE,
+  registerTools,
+  TOOL_NAMES,
+  type CoordinationUpdateNotificationData,
+  type ToolName,
+} from "./tools";
 
 // ---- Common response envelope + error mapping (task 7.1; Req 4.7, 33.2) ----
 export {
@@ -56,6 +63,8 @@ export type {
   GetDependentsRequest,
   GetRiskMapData,
   GetRiskMapRequest,
+  GetTeamStatusData,
+  GetTeamStatusRequest,
   MaybePromise,
   ProjectSessionStatusData,
   ReleaseLockData,
@@ -71,6 +80,9 @@ export type {
   UpdateIntentRequest,
   WithdrawIntentData,
   WithdrawIntentRequest,
+  TeamActivityFile,
+  TeamActivityTask,
+  TeamMemberActivity,
 } from "./port";
 
 // ---- Reference in-memory port backed by core-state (tests) ----

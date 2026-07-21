@@ -36,6 +36,7 @@ export type {
   RiskMapEntry,
   AuditRecord,
   MembershipRegistryEntry,
+  IntentActivity,
   CoordinationUpdate,
 } from "./models";
 
@@ -69,6 +70,7 @@ export {
   HeartbeatMessageType,
   SyncMessageType,
   BroadcastMessageType,
+  EventMessageType,
   ErrorMessageType,
   MessageType,
   MESSAGE_TYPES,
@@ -112,6 +114,8 @@ export type {
   SessionStateSnapshot,
   SyncSnapshotPayload,
   CoordinationUpdatePayload,
+  EventAppliedLockConflict,
+  EventAppliedPayload,
   ErrorPayload,
 } from "./messages";
 

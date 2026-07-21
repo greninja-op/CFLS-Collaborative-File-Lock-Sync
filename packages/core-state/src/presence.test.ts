@@ -116,6 +116,59 @@ describe("PresenceRegistry stopped lifecycle (Req 11.2)", () => {
     expect(entry?.eventRevision).toBe(2);
     expect(registry.all(session)).toHaveLength(1);
   });
+
+  it("stops every active entry for an expired device without touching other devices", () => {
+    const registry = new PresenceRegistry("case-sensitive");
+    registry.report({
+      session,
+      member: alice,
+      path: "src/a.ts",
+      state: "editing",
+      eventRevision: 1,
+    });
+    registry.report({
+      session,
+      member: alice,
+      path: "src/b.ts",
+      state: "started",
+      eventRevision: 2,
+    });
+    registry.report({
+      session,
+      member: bob,
+      path: "src/a.ts",
+      state: "editing",
+      eventRevision: 3,
+    });
+
+    let nextRevision = 10;
+    const stopped = registry.stopActiveForDevice(
+      session,
+      alice.deviceId,
+      () => nextRevision++,
+    );
+
+    expect(stopped).toEqual([
+      expect.objectContaining({
+        member: alice,
+        path: "src/a.ts",
+        state: "stopped",
+        eventRevision: 10,
+      }),
+      expect.objectContaining({
+        member: alice,
+        path: "src/b.ts",
+        state: "stopped",
+        eventRevision: 11,
+      }),
+    ]);
+    expect(registry.active(session)).toEqual([
+      expect.objectContaining({ member: bob, path: "src/a.ts" }),
+    ]);
+    expect(
+      registry.stopActiveForDevice(session, alice.deviceId, () => 99),
+    ).toEqual([]);
+  });
 });
 
 describe("PresenceRegistry keying and isolation", () => {

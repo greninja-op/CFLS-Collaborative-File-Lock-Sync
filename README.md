@@ -103,8 +103,8 @@ The local Agent is the boundary between a person's tools and the network. The ed
 | ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Coordination Host**              | Validates identity and events, assigns monotonic revisions, resolves contested claims, persists metadata, and broadcasts updates.             |
 | **Local CFLS Agent**               | Watches the authorized repository, normalizes/coalesces metadata, signs events, maintains an encrypted cache, and exposes local integrations. |
-| **VS Code / Kiro extension**       | Turns editor activity into local events and presents coordination status to the developer.                                                    |
-| **Local MCP server**               | Gives a coding agent a machine-readable Risk Map and a way to declare intent or acquire/release coordination locks.                           |
+| **VS Code / Kiro extension**       | Turns editor activity into local events and presents coordination status through a clickable CFLS team status item and panel.                 |
+| **Local MCP bridge**               | Gives a coding agent a machine-readable Risk Map, active-team status, and a way to declare intent or acquire/release coordination locks.      |
 | **Shared protocol and core state** | Own the versioned messages, validation, lock/intent rules, risk calculation, and replay/idempotency behavior.                                 |
 
 ## What happens when someone edits
@@ -160,15 +160,17 @@ Hard mode is coordination policy, not a filesystem permission system. A non-CFLS
 
 ## Current MVP scope
 
-CFLS is a host-based MVP, not a peer-to-peer or serverless system. The table below distinguishes the working foundation from areas still being hardened.
+CFLS is a host-based MVP, not a peer-to-peer or serverless system. The table below distinguishes the working demo path from areas that remain product work.
 
-| Available in the MVP                                                                      | In architecture / active hardening                                                 |
-| ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Host and local Agent over WSS/TLS                                                         | Dependency-aware impact as a polished end-user workflow                            |
-| Per-device identity, signed invitations, revocation, and rotation                         | MCP-connected coding-agent workflow as a supported install path                    |
-| Editor activity, live presence, soft coordination signals, and a read-only Host dashboard | Stronger protected-path and hard-stop workflows                                    |
-| VS Code / Kiro extension packaging                                                        | A packaged always-on background Windows service                                    |
-| Offline cached state with clear staleness                                                 | Production deployment guidance beyond a properly configured Host, TLS, and backups |
+| Available in the MVP                                                                             | In architecture / active product work                                              |
+| ------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------- |
+| Host and local Agent over WSS/TLS                                                                | Dependency-aware impact as a polished end-user workflow                            |
+| Per-device identity, signed invitations, revocation, and rotation                                | Broader protected-path and hard-stop workflows                                     |
+| Editor activity, live presence, soft coordination signals, and a read-only Host dashboard        | Production deployment guidance beyond a properly configured Host, TLS, and backups |
+| Clickable VS Code / Kiro CFLS status item with active team tasks and file metadata               | Additional editor integrations and presentation refinements                        |
+| MCP stdio bridge (`cfls mcp`) with the 13-tool coordination surface, including `get_team_status` | Further coding-agent client integrations                                           |
+| Per-user Agent service install on Linux (`systemd --user`) and Windows (Task Scheduler)          | Distribution and fleet-management refinements                                      |
+| Offline cached state with clear staleness                                                        |                                                                                    |
 
 Optional Git synchronization exists as a separate, opt-in layer; it is disabled by default and does not change the fact that Git owns source content and real conflict resolution.
 
@@ -248,6 +250,28 @@ pnpm --filter @cfls/cli exec cfls agent --insecure-tls
 
 Every teammate must coordinate the same Git remote, branch, and base revision. For production, use a reachable DNS name or stable address, a real certificate via `cfls host --cert <pem> --key <pem>`, durable storage, and omit `--insecure-tls`.
 
+### Optional: keep the local Agent running in the background
+
+The service command starts the same local Agent for this workspace. It does not grant it access
+to source content beyond the authorized folder watcher, and it shares only coordination metadata.
+
+```bash
+# Linux: installs and starts a per-user systemd unit
+pnpm --filter @cfls/cli exec cfls service install --workspace /absolute/repo/path
+
+# Windows: creates a per-user Task Scheduler task; identify the task principal explicitly
+pnpm --filter @cfls/cli exec cfls service install --workspace C:\path\to\repo \
+  --windows-user 'DOMAIN\User-or-SID'
+
+# Either platform
+pnpm --filter @cfls/cli exec cfls service status --workspace /absolute/repo/path
+pnpm --filter @cfls/cli exec cfls service uninstall --workspace /absolute/repo/path
+```
+
+For a development Host using a self-signed certificate, add `--insecure-tls` to the install
+command. Linux users who need the Agent to survive logout may also need to enable lingering for
+their account with their system administrator's policy.
+
 ### Install the editor extension
 
 The packaged extension can be installed in VS Code or Kiro:
@@ -257,20 +281,39 @@ code --install-extension release/cfls-coordination.vsix --force
 kiro --install-extension release/cfls-coordination.vsix --force
 ```
 
-It speaks only to the local Agent through an authenticated loopback connection; it never dials the team Host directly.
+It speaks only to the local Agent through an authenticated loopback connection; it never dials the team Host directly. The bottom status-bar item shows the CFLS mark and current team. Click it (or run **CFLS: Show Coordination Status**) to open the active-team panel.
 
 ## Editors, coding agents, and MCP
 
-The CFLS extension surfaces coordination status in VS Code/Kiro. The local MCP server exposes a machine-readable protocol surface for coding-agent integrations without granting them direct network access to the Host.
+The CFLS extension surfaces coordination status in VS Code/Kiro. A local MCP bridge exposes the
+same machine-readable coordination state to coding agents without granting them direct network
+access to the Host. Start `cfls agent` first; `cfls mcp` then connects only to that running
+Agent's authenticated loopback API.
 
 | Group                       | Local MCP tools                                                                            |
 | --------------------------- | ------------------------------------------------------------------------------------------ |
 | Risk and dependency context | `get_risk_map`, `get_dependency_impact`, `get_dependencies`, `get_dependents`              |
+| Team activity               | `get_team_status`                                                                          |
 | Intent                      | `declare_intent`, `update_intent`, `withdraw_intent`                                       |
 | Locks                       | `acquire_lock`, `release_lock`                                                             |
 | Live project state          | `subscribe_to_coordination_updates`, `get_connection_status`, `get_project_session_status` |
 
-Every MCP result carries connection and staleness information. A member's own active work is excluded from that member's Risk Map so the result focuses on possible conflicts with others. See the [protocol's MCP tool surface](./docs/protocol.md#mcp-tool-surface) for schemas and responses.
+Configure the MCP client to launch the bridge from the repository being coordinated. The exact
+outer configuration key varies by client; the process definition is:
+
+```json
+{
+  "command": "cfls",
+  "args": ["mcp", "--workspace", "/absolute/repo/path"]
+}
+```
+
+Every MCP result carries connection and staleness information. `get_team_status` returns active
+members, their declared task descriptions, and repository-relative file/activity metadata. The
+VS Code/Kiro status item opens the same kind of active-team view: select a member to inspect the
+tasks and files currently attributed to them. Neither surface transmits source text, file
+patches, or diffs. A member's own active work is excluded from that member's Risk Map so the
+result focuses on possible conflicts with others. See the [protocol's MCP tool surface](./docs/protocol.md#mcp-tool-surface) for schemas and responses.
 
 ## Security, privacy, and offline behavior
 
@@ -344,9 +387,9 @@ The VSIX is written to `apps/vscode-extension/vsix-pkg/cfls-coordination.vsix`. 
 ```text
 apps/
   host/                 Coordination Host: WSS, authority, persistence, dashboard
-  agent/                Local Agent: watcher, cache, Local API, local MCP boundary
-  cli/                  cfls onboarding, Host, Agent, invitation, and sync commands
-  vscode-extension/     VS Code / Kiro integration
+  agent/                Local Agent: watcher, cache, and authenticated Local API
+  cli/                  cfls onboarding, Host, Agent, MCP bridge, service, invitation, and sync commands
+  vscode-extension/     VS Code / Kiro integration and clickable team status panel
 packages/
   protocol/             Versioned messages, DTOs, schemas, error codes
   core-state/           Locks, presence, intent, risk, and conflict rules

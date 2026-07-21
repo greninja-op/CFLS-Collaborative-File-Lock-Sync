@@ -114,6 +114,10 @@ describe("findMinimizationViolations — inbound inspection (Req 29.1, 29.2)", (
     expect(
       findMinimizationViolations({ path: "certs/server.pem" })[0]!.kind,
     ).toBe("excluded-path");
+    expect(
+      findMinimizationViolations({ path: ".coordination/local-api.json" })[0]!
+        .kind,
+    ).toBe("excluded-path");
   });
 
   it("does not misread a base64 signature/nonce starting with '/' as a path", () => {

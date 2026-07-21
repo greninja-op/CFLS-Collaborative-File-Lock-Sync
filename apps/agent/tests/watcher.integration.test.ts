@@ -11,6 +11,8 @@ import {
   mkdtempSync,
   renameSync,
   rmSync,
+  statSync,
+  utimesSync,
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
@@ -56,18 +58,71 @@ describe("watcher-driven reconciliation (Req 30.1)", () => {
 
   it("reconciles a rename/move into a path.renamed event (Req 30.1)", () => {
     writeFileSync(join(dir, "old.ts"), "same-size-content");
+    const originalIno = Number(statSync(join(dir, "old.ts")).ino);
     watcher = new FolderWatcher({ folder: dir });
     watcher.prime();
     renameSync(join(dir, "old.ts"), join(dir, "new.ts"));
     const events = watcher.scanOnce();
-    expect(events).toEqual([
-      { kind: "renamed", path: "new.ts", fromPath: "old.ts" },
-    ]);
-    expect(reconcileFileChange(events[0]!)).toEqual([
-      {
-        type: "path.renamed",
-        payload: { fromPath: "old.ts", toPath: "new.ts" },
-      },
+    const renamedIno = Number(statSync(join(dir, "new.ts")).ino);
+    if (
+      Number.isSafeInteger(originalIno) &&
+      originalIno > 0 &&
+      originalIno === renamedIno
+    ) {
+      expect(events).toEqual([
+        { kind: "renamed", path: "new.ts", fromPath: "old.ts" },
+      ]);
+      expect(reconcileFileChange(events[0]!)).toEqual([
+        {
+          type: "path.renamed",
+          payload: { fromPath: "old.ts", toPath: "new.ts" },
+        },
+      ]);
+    } else {
+      // Filesystems without stable inode identity favor correctness over a
+      // speculative rename; no coordination state is migrated by guesswork.
+      expect(events).toEqual([
+        { kind: "created", path: "new.ts" },
+        { kind: "deleted", path: "old.ts" },
+      ]);
+    }
+  });
+
+  it("does not infer a rename from matching metadata without stable identity", () => {
+    writeFileSync(join(dir, "old.ts"), "same-size-content");
+    utimesSync(join(dir, "old.ts"), new Date(0), new Date(0));
+    watcher = new FolderWatcher({ folder: dir });
+    watcher.prime();
+
+    rmSync(join(dir, "old.ts"));
+    writeFileSync(join(dir, "new.ts"), "same-size-content");
+    // Make every non-identity field equal. This simulates a coarse-mtime or
+    // inode-less filesystem, where using size/mtime as a rename fallback would
+    // wrongly transfer locks and intents to an unrelated file.
+    utimesSync(join(dir, "new.ts"), new Date(0), new Date(0));
+
+    const internal = watcher as unknown as {
+      known: Map<string, { ino: number; size: number; mtimeMs: number }>;
+      scanTree: () => Map<
+        string,
+        { ino: number; size: number; mtimeMs: number }
+      >;
+    };
+    for (const meta of internal.known.values()) {
+      meta.ino = 0;
+    }
+    const realScanTree = internal.scanTree.bind(watcher);
+    internal.scanTree = () => {
+      const current = realScanTree();
+      for (const meta of current.values()) {
+        meta.ino = 0;
+      }
+      return current;
+    };
+
+    expect(watcher.scanOnce()).toEqual([
+      { kind: "created", path: "new.ts" },
+      { kind: "deleted", path: "old.ts" },
     ]);
   });
 
@@ -85,7 +140,9 @@ describe("watcher-driven reconciliation (Req 30.1)", () => {
 
   it("never scans excluded directories", () => {
     mkdirSync(join(dir, "node_modules", "pkg"), { recursive: true });
+    mkdirSync(join(dir, ".coordination"), { recursive: true });
     writeFileSync(join(dir, "node_modules", "pkg", "index.js"), "ignored");
+    writeFileSync(join(dir, ".coordination", "local-api.json"), "secret");
     writeFileSync(join(dir, "real.ts"), "tracked");
     watcher = new FolderWatcher({ folder: dir });
     watcher.prime();
@@ -94,9 +151,22 @@ describe("watcher-driven reconciliation (Req 30.1)", () => {
       join(dir, "node_modules", "pkg", "extra.js"),
       "still ignored",
     );
+    writeFileSync(join(dir, ".coordination", "local-api.json"), "rotated");
     writeFileSync(join(dir, "tracked2.ts"), "yes");
     const events = watcher.scanOnce();
     expect(events).toEqual([{ kind: "created", path: "tracked2.ts" }]);
+  });
+
+  it("never reports secret or binary files as collaboration activity", () => {
+    watcher = new FolderWatcher({ folder: dir });
+    watcher.prime();
+
+    writeFileSync(join(dir, ".env.local"), "API_KEY=not-shared");
+    writeFileSync(join(dir, "secrets.pem"), "not-shared");
+    writeFileSync(join(dir, "screenshot.png"), "not-shared");
+    writeFileSync(join(dir, "src.ts"), "export const tracked = true;");
+
+    expect(watcher.scanOnce()).toEqual([{ kind: "created", path: "src.ts" }]);
   });
 
   it("normalizes nested paths to repo-relative form", () => {

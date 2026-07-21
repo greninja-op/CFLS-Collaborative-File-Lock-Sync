@@ -13,9 +13,10 @@ import {
 } from "@cfls/mcp-server";
 import type { ScopeKind, SessionId } from "@cfls/protocol";
 
-/** The set of dispatchable Local_API method names (mirrors the 12 MCP tools). */
+/** The set of dispatchable Local_API method names (mirrors the 13 MCP tools). */
 export const LOCAL_API_METHODS = [
   "get_risk_map",
+  "get_team_status",
   "get_dependency_impact",
   "get_dependencies",
   "get_dependents",
@@ -52,6 +53,8 @@ export async function dispatchLocalRequest(
   switch (method) {
     case "get_risk_map":
       return wrap(port.getRiskMap({ session: p.session as SessionId }));
+    case "get_team_status":
+      return wrap(port.getTeamStatus({ session: p.session as SessionId }));
     case "get_dependency_impact":
       return wrap(
         port.getDependencyImpact({ paths: (p.paths as string[]) ?? [] }),

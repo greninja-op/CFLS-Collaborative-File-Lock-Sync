@@ -126,6 +126,12 @@ export const BroadcastMessageType = {
   UPDATE: "coordination.update",
 } as const;
 
+/** Per-event mutation acknowledgement message types. */
+export const EventMessageType = {
+  /** H→C: direct acknowledgement for one accepted signed mutation event. */
+  EVENT_APPLIED: "event.applied",
+} as const;
+
 /** Error message type (§11.1, §11.2). */
 export const ErrorMessageType = {
   /** H→C: typed error carrying an ErrorCode. */
@@ -146,6 +152,7 @@ export const MessageType = {
   ...HeartbeatMessageType,
   ...SyncMessageType,
   ...BroadcastMessageType,
+  ...EventMessageType,
   ...ErrorMessageType,
 } as const;
 
@@ -160,6 +167,7 @@ export type MessageTypeName =
   | (typeof HeartbeatMessageType)[keyof typeof HeartbeatMessageType]
   | (typeof SyncMessageType)[keyof typeof SyncMessageType]
   | (typeof BroadcastMessageType)[keyof typeof BroadcastMessageType]
+  | (typeof EventMessageType)[keyof typeof EventMessageType]
   | (typeof ErrorMessageType)[keyof typeof ErrorMessageType];
 
 /**
@@ -183,6 +191,7 @@ export const MESSAGE_TYPES: readonly MessageTypeName[] = [
   ...Object.values(HeartbeatMessageType),
   ...Object.values(SyncMessageType),
   ...Object.values(BroadcastMessageType),
+  ...Object.values(EventMessageType),
   ...Object.values(ErrorMessageType),
 ] as MessageTypeName[];
 
@@ -444,6 +453,35 @@ export interface SyncSnapshotPayload {
 export type CoordinationUpdatePayload = CoordinationUpdate;
 
 // ---------------------------------------------------------------------------
+// Mutation acknowledgement payloads
+// ---------------------------------------------------------------------------
+
+/** The winner reported to an accepted but losing lock claimant. */
+export interface EventAppliedLockConflict {
+  /** The scope the losing acquisition targeted. */
+  scope: string;
+  /** The currently winning member and the revision that established it. */
+  winner: { memberId: string; eventRevision: number };
+}
+
+/**
+ * `event.applied` (H→C) — direct acknowledgement for exactly one accepted
+ * signed mutation. It deliberately carries only coordination metadata, never
+ * source content. Clients correlate it by `eventId`, rather than inferring
+ * acceptance from an unrelated session broadcast.
+ */
+export interface EventAppliedPayload {
+  /** The accepted client Event_ID. */
+  eventId: string;
+  /** The authoritative Event_Revision assigned to that event. */
+  eventRevision: number;
+  /** Present when the Event_ID was an idempotent duplicate. */
+  duplicateOf?: number;
+  /** Present when an accepted lock acquisition was recorded as a loser. */
+  lockConflict?: EventAppliedLockConflict;
+}
+
+// ---------------------------------------------------------------------------
 // Error payload (§11.1)
 // ---------------------------------------------------------------------------
 
@@ -503,6 +541,8 @@ export interface MessagePayloadMap {
   [SyncMessageType.SNAPSHOT]: SyncSnapshotPayload;
 
   [BroadcastMessageType.UPDATE]: CoordinationUpdatePayload;
+
+  [EventMessageType.EVENT_APPLIED]: EventAppliedPayload;
 
   [ErrorMessageType.ERROR]: ErrorPayload;
 }

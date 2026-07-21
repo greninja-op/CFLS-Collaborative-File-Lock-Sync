@@ -19,6 +19,8 @@ describe("isExcludedPath — excluded directories (§7.6)", () => {
       "out/bundle.js",
       ".git/HEAD",
       ".cache/data",
+      ".coordination/local-api.json",
+      ".cfls-cache/session.cache",
       "coverage/lcov.info",
       "vendor/lib.go",
       "venv/lib/site.py",

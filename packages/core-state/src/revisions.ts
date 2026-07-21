@@ -99,4 +99,25 @@ export class RevisionCounter {
     const existing = this.counters.get(key) ?? 0;
     this.counters.set(key, Math.max(existing, maxPersistedRevision));
   }
+
+  /**
+   * Restore an exact synchronous-transaction checkpoint. Unlike {@link resume},
+   * this may lower the counter and is intentionally reserved for a caller that
+   * has rolled back every state effect created after the checkpoint before any
+   * of them became observable or durable. Normal restart recovery must use
+   * {@link resume}, which never rewinds.
+   */
+  restoreCheckpoint(session: SessionId, highestRevision: number): void {
+    if (!Number.isInteger(highestRevision) || highestRevision < 0) {
+      throw new RangeError(
+        `highestRevision must be a non-negative integer, got ${highestRevision}.`,
+      );
+    }
+    const key = sessionKey(session);
+    if (highestRevision === 0) {
+      this.counters.delete(key);
+    } else {
+      this.counters.set(key, highestRevision);
+    }
+  }
 }

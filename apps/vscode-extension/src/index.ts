@@ -10,6 +10,7 @@ import { ALL_SOFT_CONFIG, type RepositoryRulesConfig } from "@cfls/core-state";
 import type {
   ConnectionSnapshot,
   GetRiskMapData,
+  GetTeamStatusData,
   McpEnvelope,
   StalenessSnapshot,
 } from "@cfls/mcp-server";
@@ -17,8 +18,10 @@ import type { SessionId } from "@cfls/protocol";
 
 import { EditorEventForwarder } from "./editor-host";
 import { enforceHardStop } from "./hard-stop";
-import { LocalApiClient } from "./local-api-client";
-import { buildCoordinationStatusDetail } from "./presence-ui";
+import {
+  LocalApiClient,
+  LocalApiReconnectController,
+} from "./local-api-client";
 import { WebSocketFrameTransport } from "./transport";
 import {
   CoordinationUiController,
@@ -27,7 +30,6 @@ import {
   readRepositoryRules,
   registerCommand,
   showErrorMessage,
-  showInformationMessage,
   showWarningMessage,
   type VsCodeExtensionContext,
   VsCodeEditorHost,
@@ -42,17 +44,34 @@ export const APP_NAME = "@cfls/vscode-extension";
 
 /** Extension-scoped runtime state, torn down on deactivate. */
 interface Runtime {
-  client: LocalApiClient;
+  recovery: LocalApiReconnectController<LocalApiClient>;
   editorHost: VsCodeEditorHost;
   forwarder: EditorEventForwarder;
   ui: CoordinationUiController;
   refreshTimer: ReturnType<typeof setInterval>;
 }
 
+/** Exact risk data retained so an asynchronous team response cannot rederive it. */
+interface RiskSnapshot {
+  session: SessionId;
+  riskMap: GetRiskMapData;
+  connection: ConnectionSnapshot;
+  staleness: StalenessSnapshot;
+}
+
 let runtime: Runtime | undefined;
 let currentViewModel: CoordinationViewModel | undefined;
 let currentSession: SessionId | undefined;
 let rules: RepositoryRulesConfig = ALL_SOFT_CONFIG;
+let latestRiskSnapshot: RiskSnapshot | undefined;
+/** The last successful metadata-only team projection. */
+let cachedTeamStatus: GetTeamStatusData | undefined;
+/** One in-flight team request prevents the two-second poll from piling up. */
+let teamStatusRequest: Promise<void> | undefined;
+/** One in-flight risk request prevents out-of-order snapshots from overwriting newer UI. */
+let riskMapRequest: Promise<void> | undefined;
+/** Invalidates asynchronous refreshes after deactivate/reactivate. */
+let runtimeEpoch = 0;
 /**
  * This client's own Team_Member id, resolved from the agent's
  * `get_project_session_status`. Used so cooperative hard-stop never treats the
@@ -61,30 +80,154 @@ let rules: RepositoryRulesConfig = ALL_SOFT_CONFIG;
  */
 let selfMemberId = "self";
 
-/** Fetch the latest Risk_Map + connection snapshots and update every UI cue. */
-async function refresh(
-  client: LocalApiClient,
+/** True only while a callback still belongs to the live replacement client. */
+function isCurrentLocalApiClient(client: LocalApiClient): boolean {
+  return runtime?.recovery.current() === client;
+}
+
+/** Render a risk result immediately, using the most recent team metadata. */
+function renderRiskResponse(
   ui: CoordinationUiController,
-): Promise<void> {
-  if (currentSession === undefined) {
-    return;
-  }
-  const envelope = (await client.request("get_risk_map", {
-    session: currentSession,
-  })) as McpEnvelope<GetRiskMapData>;
+  session: SessionId,
+  envelope: McpEnvelope<GetRiskMapData>,
+): void {
   if (!envelope.ok || envelope.data === undefined) {
     return;
   }
-  currentViewModel = buildCoordinationViewModel({
+  latestRiskSnapshot = {
+    session,
     riskMap: envelope.data,
     connection: envelope.connection,
     staleness: envelope.staleness,
+  };
+  currentViewModel = buildCoordinationViewModel({
+    riskMap: latestRiskSnapshot.riskMap,
+    ...(cachedTeamStatus !== undefined ? { teamStatus: cachedTeamStatus } : {}),
+    teamId: session.teamId,
+    connection: latestRiskSnapshot.connection,
+    staleness: latestRiskSnapshot.staleness,
   });
   ui.render(currentViewModel);
 }
 
+/**
+ * Refresh the richer team panel independently of risk/decorations. A delayed
+ * team response can never freeze the editor UI, and only one request is active
+ * until the Local_API's normal request timeout settles it.
+ */
+function refreshTeamStatus(
+  client: LocalApiClient,
+  ui: CoordinationUiController,
+  session: SessionId,
+  epoch: number,
+): void {
+  if (!isCurrentLocalApiClient(client) || teamStatusRequest !== undefined) {
+    return;
+  }
+  const request = client
+    .request("get_team_status", { session })
+    .then((response) => {
+      if (
+        epoch !== runtimeEpoch ||
+        currentSession !== session ||
+        !isCurrentLocalApiClient(client)
+      ) {
+        return;
+      }
+      const envelope = response as McpEnvelope<GetTeamStatusData>;
+      if (!envelope.ok || envelope.data === undefined) {
+        return;
+      }
+      cachedTeamStatus = envelope.data;
+      // Preserve the exact latest Risk_Map rather than attempting to recreate
+      // it from display data. This lets the panel update immediately without
+      // changing risk/decorations or waiting for the next poll. If risk is
+      // temporarily unavailable, still render the live metadata-only team
+      // panel rather than making it depend on a separate query succeeding.
+      if (latestRiskSnapshot?.session === session) {
+        currentViewModel = buildCoordinationViewModel({
+          riskMap: latestRiskSnapshot.riskMap,
+          teamStatus: cachedTeamStatus,
+          teamId: session.teamId,
+          connection: latestRiskSnapshot.connection,
+          staleness: latestRiskSnapshot.staleness,
+        });
+        ui.render(currentViewModel);
+      } else {
+        const fallback = offlineSnapshot();
+        currentViewModel = buildCoordinationViewModel({
+          riskMap: {
+            paths: [],
+            plannedFileCreations: [],
+            highestRevision: envelope.data.highestRevision,
+          },
+          teamStatus: cachedTeamStatus,
+          teamId: session.teamId,
+          ...fallback,
+        });
+        ui.render(currentViewModel);
+      }
+    })
+    .catch(() => {
+      // Keep the previous team metadata; risk/decorations remain responsive.
+    })
+    .finally(() => {
+      if (teamStatusRequest === request) {
+        teamStatusRequest = undefined;
+      }
+    });
+  teamStatusRequest = request;
+}
+
+/**
+ * Fetch the risk map and the richer team metadata independently. A slow or
+ * failed risk query must never prevent the status-bar panel from refreshing.
+ */
+function refresh(
+  client: LocalApiClient,
+  ui: CoordinationUiController,
+): Promise<void> {
+  if (currentSession === undefined || !isCurrentLocalApiClient(client)) {
+    return Promise.resolve();
+  }
+  const session = currentSession;
+  const epoch = runtimeEpoch;
+  // Start this first, independently of the risk request. It is intentionally
+  // not awaited: its result can update the panel even while risk is timing out.
+  refreshTeamStatus(client, ui, session, epoch);
+  if (riskMapRequest !== undefined) {
+    return riskMapRequest;
+  }
+  const request = Promise.resolve()
+    .then(() => client.request("get_risk_map", { session }))
+    .then((riskResponse) => {
+      if (
+        epoch !== runtimeEpoch ||
+        currentSession !== session ||
+        !isCurrentLocalApiClient(client)
+      ) {
+        return;
+      }
+      renderRiskResponse(
+        ui,
+        session,
+        riskResponse as McpEnvelope<GetRiskMapData>,
+      );
+    })
+    .catch(() => {
+      // Preserve the last known risk/decorations; the team request remains live.
+    })
+    .finally(() => {
+      if (riskMapRequest === request) {
+        riskMapRequest = undefined;
+      }
+    });
+  riskMapRequest = request;
+  return request;
+}
+
 /** Resolve the Repository_Session from the local CoordinationAgent. */
-async function resolveSession(client: LocalApiClient): Promise<void> {
+async function resolveSession(client: LocalApiClient): Promise<SessionId> {
   const envelope = (await client.request(
     "get_project_session_status",
     {},
@@ -97,16 +240,18 @@ async function resolveSession(client: LocalApiClient): Promise<void> {
     };
     memberId?: string;
   }>;
-  if (envelope.ok && envelope.data !== undefined) {
-    const { repoId, teamId, branch, baseRevision } = envelope.data.session;
-    currentSession = { repoId, teamId, branch, baseRevision };
-    if (
-      typeof envelope.data.memberId === "string" &&
-      envelope.data.memberId !== ""
-    ) {
-      selfMemberId = envelope.data.memberId;
-    }
+  if (!envelope.ok || envelope.data === undefined) {
+    throw new Error("The local agent did not return a project session.");
   }
+  const { repoId, teamId, branch, baseRevision } = envelope.data.session;
+  currentSession = { repoId, teamId, branch, baseRevision };
+  if (
+    typeof envelope.data.memberId === "string" &&
+    envelope.data.memberId !== ""
+  ) {
+    selfMemberId = envelope.data.memberId;
+  }
+  return currentSession;
 }
 
 /** Blank offline snapshots used before the first successful fetch. */
@@ -120,23 +265,46 @@ function offlineSnapshot(): {
   };
 }
 
+/**
+ * Render a deliberately offline model after the local service disappears.
+ * Keep harmless last-known team metadata visible as stale context, but clear
+ * path risk so the cooperative hard-stop correctly falls back to the explicit
+ * offline/manual-coordination rule rather than presenting old locks as live.
+ */
+function renderLocalAgentUnavailable(ui: CoordinationUiController): void {
+  const highestRevision = Math.max(
+    latestRiskSnapshot?.riskMap.highestRevision ?? 0,
+    cachedTeamStatus?.highestRevision ?? 0,
+  );
+  currentViewModel = buildCoordinationViewModel({
+    riskMap: {
+      paths: [],
+      plannedFileCreations: [],
+      highestRevision,
+    },
+    ...(cachedTeamStatus !== undefined ? { teamStatus: cachedTeamStatus } : {}),
+    ...(currentSession !== undefined ? { teamId: currentSession.teamId } : {}),
+    ...offlineSnapshot(),
+  });
+  ui.render(currentViewModel);
+}
+
 /** VS Code entrypoint. All runtime VS Code calls are delegated to the adapter. */
 export async function activate(context: VsCodeExtensionContext): Promise<void> {
+  runtimeEpoch += 1;
+  currentSession = undefined;
+  currentViewModel = undefined;
+  selfMemberId = "self";
+  cachedTeamStatus = undefined;
+  teamStatusRequest = undefined;
+  riskMapRequest = undefined;
+  latestRiskSnapshot = undefined;
   // Load the team's committed rules so hard-stop resolves path modes as the
   // agent does (Req 15); fail-safe all-soft when absent/malformed (Req 15.5).
   rules = readRepositoryRules();
-  const settings = readLocalApiSettings();
-  const transport = new WebSocketFrameTransport(settings.url);
-  const client = new LocalApiClient({
-    transport,
-    token: settings.token,
-    heartbeatIntervalMs: settings.heartbeatIntervalMs,
-  });
+  const epoch = runtimeEpoch;
 
   const editorHost = new VsCodeEditorHost();
-  const forwarder = new EditorEventForwarder(editorHost, (event) =>
-    client.sendEditorEvent(event),
-  );
   const ui = new CoordinationUiController({ selfMemberId });
   ui.register(context.subscriptions);
 
@@ -148,21 +316,71 @@ export async function activate(context: VsCodeExtensionContext): Promise<void> {
   });
   ui.render(currentViewModel);
 
-  try {
-    await client.authenticate();
-    await resolveSession(client);
-    ui.setSelfMemberId(selfMemberId);
-    if (currentSession !== undefined) {
-      await client.subscribe({ session: currentSession }, () => {
-        void refresh(client, ui);
+  const recovery = new LocalApiReconnectController({
+    // This factory intentionally rereads the private discovery record on every
+    // fresh attempt. `cfls agent` rotates its loopback endpoint/token whenever
+    // the service restarts, so retaining the activation-time settings would
+    // make recovery authenticate against a dead credential forever.
+    createClient: () => {
+      const settings = readLocalApiSettings();
+      return new LocalApiClient({
+        transport: new WebSocketFrameTransport(settings.url),
+        token: settings.token,
+        heartbeatIntervalMs: settings.heartbeatIntervalMs,
       });
-    }
-    await refresh(client, ui);
-  } catch {
-    // Remain in the offline view until connectivity is restored.
-  }
+    },
+    initialize: async (client) => {
+      const session = await resolveSession(client);
+      if (epoch !== runtimeEpoch) {
+        throw new Error("The VS Code extension runtime changed.");
+      }
+      ui.setSelfMemberId(selfMemberId);
+      await client.subscribe({ session }, () => {
+        // A dead client's late update must not refresh the newly connected
+        // session. The new client gets its own single subscription below.
+        if (epoch === runtimeEpoch && recovery.current() === client) {
+          void refresh(client, ui);
+        }
+      });
+    },
+    onConnected: (client) => {
+      if (epoch !== runtimeEpoch) {
+        void recovery.close();
+        return;
+      }
+      // A connected client becomes visible only after auth, session resolution,
+      // and its one subscription all succeeded. No request from the dead client
+      // is replayed here; refresh issues a brand-new snapshot query instead.
+      void refresh(client, ui);
+    },
+    onUnavailable: () => {
+      if (epoch !== runtimeEpoch) {
+        return;
+      }
+      // Drop the old in-flight guards so a recovered client can immediately
+      // issue fresh reads rather than waiting for a dead socket's timeout.
+      teamStatusRequest = undefined;
+      riskMapRequest = undefined;
+      renderLocalAgentUnavailable(ui);
+    },
+  });
+
+  const forwarder = new EditorEventForwarder(editorHost, (event) => {
+    // Events occurring while offline are intentionally not buffered or replayed
+    // after recovery. They describe transient editor activity and must not be
+    // attributed to a later agent session.
+    recovery.current()?.sendEditorEvent(event);
+  });
 
   const refreshTimer = setInterval(() => {
+    const client = recovery.current();
+    if (client === undefined) {
+      // `connect` deduplicates an in-flight run. Invoking it from the poll keeps
+      // retry batches alive after the bounded backoff is exhausted while the
+      // service is still unavailable.
+      void recovery.connect();
+      return;
+    }
     void refresh(client, ui);
   }, 2_000);
   refreshTimer.unref?.();
@@ -188,36 +406,28 @@ export async function activate(context: VsCodeExtensionContext): Promise<void> {
     }),
     registerCommand("cfls.showCoordinationStatus", () => {
       const vm = currentViewModel;
-      if (vm === undefined || vm.offline) {
+      if (vm === undefined) {
         showWarningMessage(
-          "CFLS: Offline - the local coordination agent is not reachable. Is the host running?",
+          "CFLS: The local coordination agent has not supplied a status yet.",
         );
         return;
       }
-      if (vm.paths.length === 0 && vm.plannedFileCreations.length === 0) {
-        showInformationMessage(
-          "CFLS: Online. No teammates are currently editing tracked files.",
-        );
-        return;
-      }
-      showInformationMessage(
-        `CFLS coordination (${vm.paths.length} path(s)):`,
-        {
-          modal: true,
-          detail: buildCoordinationStatusDetail(vm, selfMemberId),
-        },
-      );
+      ui.showTeamPanel(vm, vm.teamId ?? currentSession?.teamId ?? "CFLS Team");
     }),
     registerCommand("cfls.reconnectLocalAgent", () => {
-      void refresh(client, ui);
+      void recovery.reconnect();
     }),
   );
 
-  runtime = { client, editorHost, forwarder, ui, refreshTimer };
+  runtime = { recovery, editorHost, forwarder, ui, refreshTimer };
+  // Return activation promptly with its offline-ready UI; connection/recovery
+  // occurs in the background and does not leave the status item unrendered.
+  void recovery.connect();
 }
 
 /** VS Code teardown. */
 export function deactivate(): void {
+  runtimeEpoch += 1;
   if (runtime === undefined) {
     return;
   }
@@ -225,6 +435,13 @@ export function deactivate(): void {
   runtime.forwarder.dispose();
   runtime.editorHost.dispose();
   runtime.ui.dispose();
-  runtime.client.close();
+  void runtime.recovery.close();
   runtime = undefined;
+  teamStatusRequest = undefined;
+  riskMapRequest = undefined;
+  cachedTeamStatus = undefined;
+  latestRiskSnapshot = undefined;
+  currentSession = undefined;
+  currentViewModel = undefined;
+  selfMemberId = "self";
 }

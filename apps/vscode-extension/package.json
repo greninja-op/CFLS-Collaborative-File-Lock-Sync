@@ -1,13 +1,13 @@
 {
   "name": "@cfls/vscode-extension",
   "displayName": "CFLS Collaborative File Lock Sync",
-  "description": "VS Code Editor_Extension that talks only to the local CoordinationAgent: emits editor events, renders coordination state, and enforces hard-stop for cooperating edits.",
+  "description": "VS Code Editor_Extension that talks only to the local CoordinationAgent: emits editor events, renders coordination state, and opens a metadata-only team status panel.",
   "version": "0.1.0",
   "private": true,
   "publisher": "greninja-op",
   "repository": {
     "type": "git",
-    "url": "https://github.com/greninja-op/multi-agentic-workflow.git"
+    "url": "https://github.com/greninja-op/CFLS-Collaborative-File-Lock-Sync.git"
   },
   "engines": {
     "vscode": "^1.85.0"

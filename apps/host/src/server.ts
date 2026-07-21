@@ -23,6 +23,7 @@ import {
   BroadcastMessageType,
   DependencyMessageType,
   ErrorMessageType,
+  EventMessageType,
   HeartbeatMessageType,
   SyncMessageType,
   type AuthHelloPayload,
@@ -352,6 +353,13 @@ export class CoordinationServer {
       conn.pendingHello = undefined;
       conn.pendingNonce = undefined;
       this.subscribe(conn, result.principal.session);
+      // Authentication itself proves the device is live. Record it immediately
+      // so work created before the first periodic agent heartbeat still has an
+      // expiry baseline if the process exits abruptly.
+      this.authority.recordHeartbeat(
+        result.principal.session,
+        result.principal.deviceId,
+      );
       this.send(conn, {
         type: AuthMessageType.OK,
         payload: { highestRevision: result.highestRevision },
@@ -376,16 +384,25 @@ export class CoordinationServer {
     message: unknown,
   ): void {
     // Post-auth messages are Signed_Events: { envelope, signature }.
+    const refEventId = eventIdFromMessage(message);
     if (!isRecord(message) || !isRecord(message.envelope)) {
-      this.sendError(conn, "FORMAT_ERROR", "Expected a Signed_Event.");
+      this.sendError(
+        conn,
+        "FORMAT_ERROR",
+        "Expected a Signed_Event.",
+        refEventId,
+      );
       return;
     }
     const envelope = message.envelope as {
       type?: unknown;
+      eventId?: unknown;
       session?: SessionId;
       payload?: unknown;
     };
     const type = envelope.type;
+    const eventId =
+      typeof envelope.eventId === "string" ? envelope.eventId : undefined;
 
     // Heartbeat and sync are serviced on the authenticated connection (Req 9, 26).
     if (type === HeartbeatMessageType.PING) {
@@ -424,6 +441,7 @@ export class CoordinationServer {
         conn,
         outcome.error ?? "FORMAT_ERROR",
         outcome.reason ?? "Event rejected.",
+        eventId,
       );
       return;
     }
@@ -438,6 +456,33 @@ export class CoordinationServer {
     ) {
       this.broadcastDependencyGraph(principal.session, conn);
     }
+
+    // A direct, Event_ID-correlated acknowledgement is deliberately separate
+    // from the session broadcast. A caller can never mistake another member's
+    // update for its own accepted mutation, including a losing lock claim that
+    // produces no winner-only cache broadcast.
+    if (eventId === undefined || outcome.eventRevision === undefined) {
+      this.sendError(
+        conn,
+        "STORAGE_ERROR",
+        "Accepted event is missing acknowledgement metadata.",
+        eventId,
+      );
+      return;
+    }
+    this.send(conn, {
+      type: EventMessageType.EVENT_APPLIED,
+      payload: {
+        eventId,
+        eventRevision: outcome.eventRevision,
+        ...(outcome.duplicateOf !== undefined
+          ? { duplicateOf: outcome.duplicateOf }
+          : {}),
+        ...(outcome.lockConflict !== undefined
+          ? { lockConflict: outcome.lockConflict }
+          : {}),
+      },
+    });
   }
 
   /** Send the session's current metadata-only Dependency_Graph to one connection. */
@@ -543,10 +588,19 @@ export class CoordinationServer {
     }
   }
 
-  private sendError(conn: Connection, code: string, message: string): void {
+  private sendError(
+    conn: Connection,
+    code: string,
+    message: string,
+    refEventId?: string,
+  ): void {
     this.send(conn, {
       type: ErrorMessageType.ERROR,
-      payload: { code, message },
+      payload: {
+        code,
+        message,
+        ...(refEventId !== undefined ? { refEventId } : {}),
+      },
     });
   }
 
@@ -561,4 +615,13 @@ export class CoordinationServer {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
+}
+
+/** Extract a client Event_ID from a malformed or valid Signed_Event wrapper. */
+function eventIdFromMessage(message: unknown): string | undefined {
+  if (!isRecord(message) || !isRecord(message.envelope)) {
+    return undefined;
+  }
+  const eventId = message.envelope.eventId;
+  return typeof eventId === "string" ? eventId : undefined;
 }

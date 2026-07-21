@@ -1,14 +1,16 @@
 /**
- * Heartbeat tracking and the stale lock/intent expiry sweep
+ * Heartbeat tracking and the stale lock/intent/presence expiry sweep
  * (Req 26.1–26.6; design §5.2, §13.4).
  *
  * The CoordinationHost records a per-device liveness signal — the
- * {@link Heartbeat} — and automatically releases the locks and Declared_Intents
- * of any device that stops confirming its liveness. {@link ExpiryEngine} is the
+ * {@link Heartbeat} — and automatically releases the locks and Declared_Intents,
+ * and ends active presence, for any device that stops confirming its liveness.
+ * {@link ExpiryEngine} is the
  * pure, in-memory realization of that authority for the `core-state` package: it
  * owns the last-seen heartbeat table (design §5.2 `heartbeats`) and drives the
- * expiry sweep against the shared {@link LockRegistry} and {@link IntentRegistry}
- * using the authoritative {@link RevisionCounter}.
+ * expiry sweep against the shared {@link LockRegistry}, {@link IntentRegistry},
+ * and optional {@link PresenceRegistry} using the authoritative
+ * {@link RevisionCounter}.
  *
  * ## Heartbeat tracking (Req 26.2)
  * {@link ExpiryEngine.recordHeartbeat} stores the receipt time as the *most
@@ -18,8 +20,8 @@
  * and dependency-free.
  *
  * ## Heartbeat expiry sweep (Req 26.3, 26.4)
- * {@link ExpiryEngine.sweep} releases **exactly** the locks and Declared_Intents
- * whose holder device's most recent heartbeat is older than the
+ * {@link ExpiryEngine.sweep} releases **exactly** the locks and Declared_Intents,
+ * and ends active presence, whose holder device's most recent heartbeat is older than the
  * `Lock_Expiry_Interval` (i.e. `now - lastSeen > lockExpiryIntervalMs`), and
  * leaves every other holder's state intact (Property 14). Each release is
  * assigned a fresh Event_Revision from the per-session counter and reported as a
@@ -41,10 +43,11 @@
  * bounds those layers must honor.
  */
 
-import type { CoordinationUpdate, SessionId } from "@cfls/protocol";
+import type { CoordinationUpdate, Lock, SessionId } from "@cfls/protocol";
 
 import type { IntentRegistry } from "./intents";
 import type { LockRegistry } from "./locks";
+import type { PresenceRegistry } from "./presence";
 import type { RevisionCounter } from "./revisions";
 import { sessionKey } from "./session";
 
@@ -86,6 +89,12 @@ export interface ExpirySweepResult {
    * expired.
    */
   removals: CoordinationUpdate[];
+  /**
+   * Winning locks promoted after an expired winner was removed. These are
+   * separate from removals so callers can preserve their strict revision order
+   * while projecting only active winners to connected agents.
+   */
+  promotions: CoordinationUpdate[];
   /**
    * The device identifiers whose heartbeats were stale and were therefore
    * swept. Empty for {@link ExpiryEngine.expireStaleSoftLocks}, which is not
@@ -148,8 +157,9 @@ export function resolveExpiryConfig(
  * The engine holds no clock: every method that needs "now" takes it as an
  * explicit epoch-millisecond argument, keeping expiry deterministic and directly
  * testable. It mutates the supplied {@link LockRegistry}/{@link IntentRegistry}
- * (via their `expireByDevice` primitives) and draws Event_Revisions from the
- * shared {@link RevisionCounter}.
+ * (via their `expireByDevice` primitives) and, when supplied, the optional
+ * {@link PresenceRegistry}, drawing Event_Revisions from the shared
+ * {@link RevisionCounter}.
  */
 export class ExpiryEngine {
   private readonly config: ExpiryConfig;
@@ -162,6 +172,7 @@ export class ExpiryEngine {
     private readonly intents: IntentRegistry,
     private readonly revisions: RevisionCounter,
     config: ExpiryConfigInput = {},
+    private readonly presence?: PresenceRegistry,
   ) {
     this.config = resolveExpiryConfig(config);
   }
@@ -207,6 +218,38 @@ export class ExpiryEngine {
     return this.heartbeats.get(sessionKey(session))?.get(deviceId);
   }
 
+  /** Build additions for winners promoted after a batch of lock removals. */
+  private promotedLockUpdates(
+    session: SessionId,
+    removed: readonly Lock[],
+  ): CoordinationUpdate[] {
+    const promotions: CoordinationUpdate[] = [];
+    const emitted = new Set<string>();
+    for (const lock of removed) {
+      if (lock.concurrent) {
+        continue;
+      }
+      const winner = this.locks.winningLock(
+        session,
+        lock.scope,
+        lock.scopeKind,
+        lock.branch,
+      );
+      if (winner === undefined || emitted.has(winner.lockId)) {
+        continue;
+      }
+      emitted.add(winner.lockId);
+      promotions.push({
+        entryType: "soft_lock",
+        op: "added",
+        path: winner.scope,
+        member: winner.holder,
+        eventRevision: this.revisions.next(session),
+      });
+    }
+    return promotions;
+  }
+
   /**
    * Forget a device's heartbeat record (e.g. on an explicit disconnect). Safe to
    * call for an unknown device.
@@ -239,19 +282,22 @@ export class ExpiryEngine {
    * Run the stale-heartbeat expiry sweep at `nowMs` (Req 26.3, 26.4).
    *
    * Releases every lock and removes every Declared_Intent held by a device whose
-   * most recent heartbeat is older than the Lock_Expiry_Interval, and leaves all
-   * other holders' state untouched (Property 14). Each release is assigned a
-   * fresh Event_Revision and reported as a `removed` {@link CoordinationUpdate}.
+   * most recent heartbeat is older than the Lock_Expiry_Interval, ends its active
+   * presence, and leaves all other holders' state untouched (Property 14). Each
+   * transition is assigned a fresh Event_Revision and reported as a `removed`
+   * {@link CoordinationUpdate}.
    * A swept device's heartbeat record is dropped so a subsequent sweep does not
    * reprocess it; the device re-registers on its next heartbeat.
    */
   sweep(session: SessionId, nowMs: number): ExpirySweepResult {
     const expiredDevices = this.staleDevices(session, nowMs);
     const removals: CoordinationUpdate[] = [];
+    const expiredLocks: Lock[] = [];
     const table = this.heartbeats.get(sessionKey(session));
 
     for (const deviceId of expiredDevices) {
       for (const lock of this.locks.expireByDevice(session, deviceId)) {
+        expiredLocks.push(lock);
         removals.push({
           entryType: "soft_lock",
           op: "removed",
@@ -261,17 +307,58 @@ export class ExpiryEngine {
         });
       }
       for (const intent of this.intents.expireByDevice(session, deviceId)) {
+        // The cache is keyed by active file-level coordination entries, so an
+        // expired intent must retire every modify/create path individually.
+        // Carry its task metadata too: this makes the removal unambiguous to
+        // local UI/MCP consumers and keeps a replay equivalent to a snapshot.
+        for (const path of intent.modifyPaths) {
+          removals.push({
+            entryType: "intent",
+            op: "removed",
+            path,
+            member: intent.owner,
+            eventRevision: this.revisions.next(session),
+            intent: {
+              intentId: intent.intentId,
+              description: intent.description,
+            },
+          });
+        }
+        for (const creation of intent.createPaths) {
+          removals.push({
+            entryType: "planned_file_creation",
+            op: "removed",
+            path: creation.path,
+            member: intent.owner,
+            eventRevision: this.revisions.next(session),
+            intent: {
+              intentId: intent.intentId,
+              description: intent.description,
+            },
+          });
+        }
+      }
+      for (const presence of this.presence?.stopActiveForDevice(
+        session,
+        deviceId,
+        () => this.revisions.next(session),
+      ) ?? []) {
         removals.push({
-          entryType: "intent",
+          entryType: "presence",
           op: "removed",
-          member: intent.owner,
-          eventRevision: this.revisions.next(session),
+          path: presence.path,
+          member: presence.member,
+          eventRevision: presence.eventRevision,
         });
       }
       table?.delete(deviceId);
     }
 
-    return { removals, expiredDevices };
+    return {
+      removals,
+      promotions: this.promotedLockUpdates(session, expiredLocks),
+      expiredDevices,
+    };
   }
 
   /**
@@ -285,10 +372,11 @@ export class ExpiryEngine {
   expireStaleSoftLocks(session: SessionId, nowMs: number): ExpirySweepResult {
     const cutoffMs = nowMs - this.config.softLockMaxAgeMs;
     const removals: CoordinationUpdate[] = [];
-    for (const lock of this.locks.expireSoftLocksAcquiredBefore(
+    const expiredLocks = this.locks.expireSoftLocksAcquiredBefore(
       session,
       cutoffMs,
-    )) {
+    );
+    for (const lock of expiredLocks) {
       removals.push({
         entryType: "soft_lock",
         op: "removed",
@@ -297,6 +385,10 @@ export class ExpiryEngine {
         eventRevision: this.revisions.next(session),
       });
     }
-    return { removals, expiredDevices: [] };
+    return {
+      removals,
+      promotions: this.promotedLockUpdates(session, expiredLocks),
+      expiredDevices: [],
+    };
   }
 }

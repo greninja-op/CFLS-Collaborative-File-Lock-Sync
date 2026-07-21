@@ -42,6 +42,29 @@ export interface PlannedCreation {
   memberId: string;
 }
 
+/** A live file-level signal shown in the local team activity projection. */
+export interface TeamActivityFile {
+  path: string;
+  roles: Array<"editing" | "soft-lock" | "intent" | "planned-create">;
+}
+
+/** A member-declared task reconstructed from intent coordination updates. */
+export interface TeamActivityTask {
+  intentId: string;
+  description: string;
+  modifyPaths: string[];
+  createPaths: string[];
+}
+
+/** The currently active, metadata-only coordination state for one member. */
+export interface TeamMemberActivity {
+  memberId: string;
+  deviceIds: string[];
+  files: TeamActivityFile[];
+  tasks: TeamActivityTask[];
+  lastEventRevision: number;
+}
+
 /**
  * The agent-side converged view of one or more Repository_Sessions. Thin wrapper
  * over {@link AgentSyncCache} that adds risk-map reconstruction and staleness.
@@ -132,27 +155,27 @@ export class AgentView {
           break;
         case "intent":
           intents.push({
-            intentId: `cached-intent-${(seq += 1)}`,
+            intentId: entry.intent?.intentId ?? `cached-intent-${(seq += 1)}`,
             owner: entry.member,
             agentId: entry.member.deviceId,
             modifyPaths: [path],
             createPaths: [],
             scopeKind: "file",
             branch: session.branch,
-            description: "",
+            description: entry.intent?.description ?? "",
             eventRevision: entry.eventRevision,
           });
           break;
         case "planned_file_creation":
           intents.push({
-            intentId: `cached-planned-${(seq += 1)}`,
+            intentId: entry.intent?.intentId ?? `cached-planned-${(seq += 1)}`,
             owner: entry.member,
             agentId: entry.member.deviceId,
             modifyPaths: [],
             createPaths: [{ path }],
             scopeKind: "file",
             branch: session.branch,
-            description: "",
+            description: entry.intent?.description ?? "",
             eventRevision: entry.eventRevision,
           });
           break;
@@ -206,5 +229,122 @@ export class AgentView {
       });
     }
     return [...out.values()].sort((a, b) => a.path.localeCompare(b.path));
+  }
+
+  /**
+   * Build the live, metadata-only team projection used by the Local API, MCP,
+   * and editor panel. Only members with active coordination entries appear;
+   * membership/idle roster data remains a host concern rather than being
+   * invented by this cache.
+   */
+  teamActivity(session: SessionId): TeamMemberActivity[] {
+    interface MutableTask {
+      intentId: string;
+      description: string;
+      modifyPaths: Set<string>;
+      createPaths: Set<string>;
+    }
+    interface MutableMember {
+      memberId: string;
+      deviceIds: Set<string>;
+      files: Map<string, Set<TeamActivityFile["roles"][number]>>;
+      tasks: Map<string, MutableTask>;
+      lastEventRevision: number;
+    }
+
+    const members = new Map<string, MutableMember>();
+    const memberFor = (update: CoordinationUpdate): MutableMember => {
+      let member = members.get(update.member.memberId);
+      if (member === undefined) {
+        member = {
+          memberId: update.member.memberId,
+          deviceIds: new Set(),
+          files: new Map(),
+          tasks: new Map(),
+          lastEventRevision: 0,
+        };
+        members.set(member.memberId, member);
+      }
+      member.deviceIds.add(update.member.deviceId);
+      member.lastEventRevision = Math.max(
+        member.lastEventRevision,
+        update.eventRevision,
+      );
+      return member;
+    };
+
+    const addFileRole = (
+      member: MutableMember,
+      path: string,
+      role: TeamActivityFile["roles"][number],
+    ): void => {
+      const normalized = normalizePath(path);
+      const roles = member.files.get(normalized) ?? new Set();
+      roles.add(role);
+      member.files.set(normalized, roles);
+    };
+
+    for (const update of this.entries(session)) {
+      if (update.path === undefined) {
+        continue;
+      }
+      const member = memberFor(update);
+      switch (update.entryType) {
+        case "presence":
+          addFileRole(member, update.path, "editing");
+          break;
+        case "soft_lock":
+          addFileRole(member, update.path, "soft-lock");
+          break;
+        case "intent":
+        case "planned_file_creation": {
+          const role =
+            update.entryType === "intent" ? "intent" : "planned-create";
+          addFileRole(member, update.path, role);
+          const intentId = update.intent?.intentId ?? `path:${update.path}`;
+          const task = member.tasks.get(intentId) ?? {
+            intentId,
+            description: update.intent?.description ?? "",
+            modifyPaths: new Set<string>(),
+            createPaths: new Set<string>(),
+          };
+          if (update.entryType === "intent") {
+            task.modifyPaths.add(normalizePath(update.path));
+          } else {
+            task.createPaths.add(normalizePath(update.path));
+          }
+          member.tasks.set(intentId, task);
+          break;
+        }
+        default:
+          break;
+      }
+    }
+
+    return [...members.values()]
+      .map((member) => ({
+        memberId: member.memberId,
+        deviceIds: [...member.deviceIds].sort((a, b) => a.localeCompare(b)),
+        files: [...member.files.entries()]
+          .map(([path, roles]) => ({
+            path,
+            roles: [...roles].sort((a, b) => a.localeCompare(b)),
+          }))
+          .sort((a, b) => a.path.localeCompare(b.path)),
+        tasks: [...member.tasks.values()]
+          .map((task) => ({
+            intentId: task.intentId,
+            description: task.description,
+            modifyPaths: [...task.modifyPaths].sort((a, b) =>
+              a.localeCompare(b),
+            ),
+            createPaths: [...task.createPaths].sort((a, b) =>
+              a.localeCompare(b),
+            ),
+          }))
+          .sort((a, b) => a.intentId.localeCompare(b.intentId)),
+        lastEventRevision: member.lastEventRevision,
+      }))
+      .sort((a, b) => a.memberId.localeCompare(b.memberId));
   }
 }

@@ -27,7 +27,7 @@ identities, explanation paths, connectivity status, and staleness indicators.
 Two trust boundaries matter:
 
 - **Local trust zone** (one teammate's computer): Editor_Extension, AI_Agent,
-  Local_MCP_Server, CoordinationAgent, OS credential store, Authorized_Folder.
+  the `cfls mcp` stdio bridge, CoordinationAgent, OS credential store, Authorized_Folder.
   Everything here is loopback-only.
 - **Network trust zone** (WSS/TLS): the single authenticated channel between each
   CoordinationAgent and the CoordinationHost.
@@ -42,9 +42,9 @@ graph TB
   subgraph Laptop_A["Teammate A computer (local trust zone)"]
     AIA["AI_Agent"]
     VSA["VS Code Editor_Extension"]
+    MCPA["CFLS MCP bridge\n(cfls mcp, stdio)"]
     subgraph AgentA["CoordinationAgent (Node.js)"]
-      MCPA["Local_MCP_Server\n(@modelcontextprotocol/sdk)"]
-      LAPIA["Local_API\n(named pipe / loopback WS + token)"]
+      LAPIA["Local_API\n(loopback WS + token)"]
       COREA["Core state, cache,\ndependency analyzer"]
     end
     CREDA["OS_Credential_Store\n(Ed25519 private key)"]
@@ -53,7 +53,7 @@ graph TB
 
   subgraph Laptop_B["Teammate B computer (local trust zone)"]
     VSB["VS Code Editor_Extension"]
-    AgentB["CoordinationAgent + Local_MCP_Server"]
+    AgentB["CoordinationAgent + local MCP bridge"]
   end
 
   subgraph HostZone["Host_Machine (host trust zone)"]
@@ -61,9 +61,9 @@ graph TB
     STORE["Metadata store\n(SQLite via DAO -> PostgreSQL later)"]
   end
 
-  AIA -- "MCP (stdio/local)" --> MCPA
+  AIA -- "MCP (stdio)" --> MCPA
+  MCPA -- "authenticated Local_API" --> LAPIA
   VSA -- "Local_API (loopback only)" --> LAPIA
-  MCPA --> COREA
   LAPIA --> COREA
   AgentA -- "Device private key" --> CREDA
   AgentA -- "watch metadata only" --> FOLDA
@@ -179,9 +179,9 @@ interface IngestResult {
 
 ### CoordinationAgent (`apps/agent`)
 
-Per-user agent on each teammate's computer: login startup without admin, one outbound WSS
-connection, localhost-only Local_API, embedded Local_MCP_Server, watches only the
-Authorized_Folder (never modifies it), Ed25519 key gen/storage, dependency-graph building,
+Per-user agent on each teammate's computer: one outbound WSS connection, localhost-only
+Local_API, watches only the Authorized_Folder (never modifies it), Ed25519 key gen/storage,
+dependency-graph building,
 Offline_State + backoff, reconnect sync + re-assert, coalescing/dedup, local encrypted
 cache, multi-client fan-in under one identity, and path-change/deletion notifications.
 
@@ -199,10 +199,12 @@ interface CoordinationAgent {
 
 ### Local_API
 
-Loopback-only channel between the Editor_Extension / AI_Agent and the agent. **Windows-first →
-named pipe**, with an authenticated loopback WebSocket fallback on other OSes, both requiring
-a per-session `Local_Auth_Token`. Rejects any non-loopback origin; emits a startup error and
-refuses clients if it cannot bind.
+Loopback-only channel between the Editor_Extension / AI_Agent and the agent. The shipped CLI
+uses an authenticated loopback WebSocket on every supported OS, requiring a per-session
+`Local_Auth_Token`. The agent also has an optional Windows named-pipe transport for integrations
+that explicitly enable it; the VS Code extension and stdio MCP bridge use the documented
+WebSocket endpoint. The server rejects any non-loopback origin and refuses clients if it cannot
+bind.
 
 ```typescript
 interface LocalApi {
@@ -212,14 +214,16 @@ interface LocalApi {
 }
 ```
 
-### Local_MCP_Server (`packages/mcp-server`)
+### Local_MCP_Server and stdio bridge (`packages/mcp-server`, `apps/cli`)
 
-Built on `@modelcontextprotocol/sdk` (stdio/local transport), embedded beside the agent.
-Exposes exactly **12 tools**. Every response is machine-readable and carries `connection`
-and `staleness` envelopes. The full tool catalog and schemas are documented in
-[protocol.md](./protocol.md#mcp-tool-surface). The 12 tools:
+Built on `@modelcontextprotocol/sdk` and exposed over stdio by
+`cfls mcp --workspace /absolute/repo/path`. The bridge authenticates to the already-running
+local Agent's Local_API; it never opens a second Host connection. It exposes exactly **13
+tools**. Every response is machine-readable and carries `connection` and `staleness`
+envelopes. The full tool catalog and schemas are documented in
+[protocol.md](./protocol.md#mcp-tool-surface). The 13 tools:
 
-`get_risk_map`, `get_dependency_impact`, `get_dependencies`, `get_dependents`,
+`get_risk_map`, `get_team_status`, `get_dependency_impact`, `get_dependencies`, `get_dependents`,
 `declare_intent`, `update_intent`, `withdraw_intent`, `acquire_lock`, `release_lock`,
 `subscribe_to_coordination_updates`, `get_connection_status`, `get_project_session_status`.
 
@@ -243,7 +247,9 @@ interface McpEnvelope<T> {
 
 Talks only to the Local_API (never to the host). Emits Editor_Events within 2s, renders
 coordination state within 2s, enforces hard-stop for cooperating edits, shows offline/stale
-indicators, and sends heartbeats to the agent.
+indicators, and sends heartbeats to the agent. Its CFLS status-bar item opens an active-team
+panel with member task and repository-relative file metadata; it does not display or transmit
+source patches or diffs.
 
 ```typescript
 type EditorEventKind =
@@ -275,6 +281,7 @@ compatibility (`MESSAGE_FORMAT_VERSION`). See [protocol.md](./protocol.md).
   and swappable for PostgreSQL later without behavior change.
 - **Ed25519 device keys:** small, fast, per-device identity enabling targeted revocation and
   rotation. Fail closed if the OS credential store is unavailable.
-- **Named pipe vs loopback for Local_API:** Windows-first uses a named pipe (inherently
-  local, Windows ACL integration, no open TCP port); other OSes use an authenticated loopback
-  WebSocket with a per-session token.
+- **Local_API transport:** the deployed CLI uses an authenticated loopback WebSocket with a
+  per-session token on Windows and Linux so the extension and stdio bridge share one documented
+  endpoint. A Windows named-pipe transport remains optional for integrations that explicitly
+  enable it; it is not the default deployment path.

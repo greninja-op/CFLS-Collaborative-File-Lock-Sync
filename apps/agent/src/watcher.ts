@@ -12,10 +12,13 @@
  * Change detection is a deterministic scan diff: {@link FolderWatcher.scanOnce}
  * compares the current tree against the last known tree and emits typed
  * {@link FileChangeEvent}s, pairing a same-file deletion+creation into a
- * `renamed` event (by inode when available, else size). A real `fs.watch` (with
- * a debounce) drives the same scan when {@link FolderWatcher.start} is used, so
- * tests can invoke {@link FolderWatcher.scanOnce} directly for determinism
- * across platforms.
+ * `renamed` event only when a stable filesystem identity proves it. When an
+ * inode is unavailable, CFLS safely reports a create plus delete rather than
+ * guessing and migrating coordination state to an unrelated file. A real recursive
+ * `fs.watch` (with a debounce) drives the same scan when available. When that
+ * facility is unavailable or fails at runtime, a single polling reconciler
+ * drives the same scan instead. Tests can invoke {@link FolderWatcher.scanOnce}
+ * directly for determinism across platforms.
  */
 
 import { EventEmitter } from "node:events";
@@ -29,6 +32,7 @@ import {
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
 import { normalizePath } from "@cfls/core-state";
+import { isExcludedPath } from "@cfls/dependency-analyzer";
 
 /** The kind of persisted change the watcher confirmed (Req 30). */
 export type FileChangeKind = "created" | "saved" | "renamed" | "deleted";
@@ -55,11 +59,15 @@ export const DEFAULT_IGNORED_DIRS: readonly string[] = [
   "vendor",
   ".venv",
   "venv",
-  // The agent's own local encrypted cache and the editor's settings live inside
+  // CFLS's local cache/discovery token and the editor's settings live inside
   // the watched folder but are not project source — never coordinate on them.
+  ".coordination",
   ".cfls-cache",
   ".vscode",
 ];
+
+/** Default reconciliation interval when recursive native watching is unavailable. */
+export const DEFAULT_POLL_INTERVAL_MS = 1_000;
 
 /** Options for a {@link FolderWatcher}. */
 export interface FolderWatcherOptions {
@@ -69,6 +77,11 @@ export interface FolderWatcherOptions {
   ignoredDirs?: readonly string[];
   /** Debounce for coalescing rapid fs events before a scan (ms, default 50). */
   debounceMs?: number;
+  /**
+   * Reconciliation interval used only when recursive native watching is
+   * unavailable or fails (ms, default {@link DEFAULT_POLL_INTERVAL_MS}).
+   */
+  pollIntervalMs?: number;
 }
 
 /** A recorded file's identity used to diff scans and detect renames. */
@@ -87,15 +100,19 @@ export class FolderWatcher extends EventEmitter {
   private readonly folder: string;
   private readonly ignored: Set<string>;
   private readonly debounceMs: number;
+  private readonly pollIntervalMs: number;
   private known = new Map<string, FileMeta>();
   private fsWatcher: FSWatcher | undefined;
   private debounceTimer: NodeJS.Timeout | undefined;
+  private pollingTimer: NodeJS.Timeout | undefined;
+  private started = false;
 
   constructor(options: FolderWatcherOptions) {
     super();
     this.folder = resolve(options.folder);
     this.ignored = new Set(options.ignoredDirs ?? DEFAULT_IGNORED_DIRS);
     this.debounceMs = options.debounceMs ?? 50;
+    this.pollIntervalMs = this.resolvePollInterval(options.pollIntervalMs);
   }
 
   /** Prime the known-file baseline without emitting events (initial state). */
@@ -104,35 +121,97 @@ export class FolderWatcher extends EventEmitter {
   }
 
   /**
-   * Start watching. Primes the baseline, then wires a debounced `fs.watch` that
-   * triggers {@link scanOnce}. Recursive watching is used where supported; the
-   * scan diff is the source of truth regardless, so a missed native event only
-   * delays (never drops) detection at the next scan.
+   * Start watching. Primes the baseline, then wires a debounced recursive
+   * `fs.watch` that triggers {@link scanOnce}. If recursive watching is not
+   * supported or later reports an error, a single polling reconciler takes over.
+   * Calling `start` while already running is intentionally a no-op so a retry or
+   * duplicate lifecycle signal can never create duplicate polling intervals.
    */
   start(): void {
+    if (this.started) {
+      return;
+    }
+    this.started = true;
     this.prime();
+    let openedWatcher: FSWatcher | undefined;
     try {
-      this.fsWatcher = watch(this.folder, { recursive: true }, () => {
+      const fsWatcher = watch(this.folder, { recursive: true }, () => {
         this.scheduleScan();
       });
+      openedWatcher = fsWatcher;
+      this.fsWatcher = fsWatcher;
+      // An `error` event without a listener is fatal in Node. Treat an error or
+      // unexpected close as a signal to reconcile via polling instead.
+      fsWatcher.on("error", () => this.handleNativeWatcherFailure(fsWatcher));
+      fsWatcher.on("close", () => this.handleNativeWatcherFailure(fsWatcher));
     } catch {
-      // Recursive watch may be unsupported on some platforms; the scan-diff API
-      // still works when driven manually or by a poll. Do not modify the FS.
-      this.fsWatcher = undefined;
+      // Recursive watch is unavailable on some platforms. The scan-diff remains
+      // the source of truth; polling makes that fallback automatic.
+      if (this.fsWatcher === openedWatcher) {
+        this.fsWatcher = undefined;
+        try {
+          openedWatcher?.close();
+        } catch {
+          // A partially initialized watcher may already be closed.
+        }
+      }
+      this.startPolling();
     }
   }
 
-  private scheduleScan(): void {
+  /** Switch a failed native watcher to the one-and-only polling reconciler. */
+  private handleNativeWatcherFailure(fsWatcher: FSWatcher): void {
+    // Ignore notifications from a watcher that has been stopped or superseded.
+    if (this.fsWatcher !== fsWatcher) {
+      return;
+    }
+    this.fsWatcher = undefined;
     if (this.debounceTimer !== undefined) {
+      clearTimeout(this.debounceTimer);
+      this.debounceTimer = undefined;
+    }
+    try {
+      fsWatcher.close();
+    } catch {
+      // It may already be closed; polling is still safe and sufficient.
+    }
+    this.startPolling();
+  }
+
+  /** Start periodic reconciliation exactly once, only while running. */
+  private startPolling(): void {
+    if (
+      !this.started ||
+      this.fsWatcher !== undefined ||
+      this.pollingTimer !== undefined
+    ) {
+      return;
+    }
+    this.pollingTimer = setInterval(() => {
+      this.emitScan();
+    }, this.pollIntervalMs);
+  }
+
+  private scheduleScan(): void {
+    if (
+      !this.started ||
+      this.fsWatcher === undefined ||
+      this.debounceTimer !== undefined
+    ) {
       return;
     }
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = undefined;
-      for (const event of this.scanOnce()) {
-        this.emit("change", event);
-      }
+      this.emitScan();
     }, this.debounceMs);
     this.debounceTimer.unref?.();
+  }
+
+  /** Reconcile one scan and emit each confirmed persisted change. */
+  private emitScan(): void {
+    for (const event of this.scanOnce()) {
+      this.emit("change", event);
+    }
   }
 
   /**
@@ -162,25 +241,38 @@ export class FolderWatcher extends EventEmitter {
     }
 
     // Pair a deletion + creation of the same underlying file as a rename/move
-    // (Req 30.1): match by inode when meaningful, else by identical size.
+    // (Req 30.1) only when both scans expose the same stable inode. A size or
+    // timestamp match is not identity: coarse-time/network filesystems can give
+    // two independent files both values. It is safer to report a real rename as
+    // create/delete than to migrate coordination state across unrelated files.
+    const candidatesByDeletion = new Map<string, string[]>();
+    const candidatesByCreation = new Map<string, string[]>();
+    for (const del of deletions) {
+      const delMeta = this.known.get(del)!;
+      for (const cre of creations) {
+        const creMeta = current.get(cre)!;
+        if (!this.isRenameCandidate(delMeta, creMeta)) {
+          continue;
+        }
+        const deletionCandidates = candidatesByDeletion.get(del) ?? [];
+        deletionCandidates.push(cre);
+        candidatesByDeletion.set(del, deletionCandidates);
+        const creationCandidates = candidatesByCreation.get(cre) ?? [];
+        creationCandidates.push(del);
+        candidatesByCreation.set(cre, creationCandidates);
+      }
+    }
+
     const unmatchedDeletions: string[] = [];
     const usedCreations = new Set<string>();
     for (const del of deletions) {
-      const delMeta = this.known.get(del)!;
-      let matched: string | undefined;
-      for (const cre of creations) {
-        if (usedCreations.has(cre)) {
-          continue;
-        }
-        const creMeta = current.get(cre)!;
-        const sameIno = delMeta.ino !== 0 && delMeta.ino === creMeta.ino;
-        const sameSize = delMeta.size === creMeta.size;
-        if (sameIno || sameSize) {
-          matched = cre;
-          break;
-        }
-      }
-      if (matched !== undefined) {
+      const candidates = candidatesByDeletion.get(del) ?? [];
+      const matched = candidates.length === 1 ? candidates[0] : undefined;
+      if (
+        matched !== undefined &&
+        (candidatesByCreation.get(matched)?.length ?? 0) === 1 &&
+        !usedCreations.has(matched)
+      ) {
         usedCreations.add(matched);
         events.push({ kind: "renamed", path: matched, fromPath: del });
       } else {
@@ -199,6 +291,16 @@ export class FolderWatcher extends EventEmitter {
 
     this.known = current;
     return events;
+  }
+
+  /**
+   * Return true only when two scan entries have the same stable filesystem
+   * identity. Without that proof, never infer a rename from metadata alone.
+   */
+  private isRenameCandidate(before: FileMeta, after: FileMeta): boolean {
+    const beforeHasInode = Number.isSafeInteger(before.ino) && before.ino > 0;
+    const afterHasInode = Number.isSafeInteger(after.ino) && after.ino > 0;
+    return beforeHasInode && afterHasInode && before.ino === after.ino;
   }
 
   /** Recursively enumerate files under the Authorized_Folder (excluding ignored). */
@@ -220,15 +322,19 @@ export class FolderWatcher extends EventEmitter {
         if (!this.isWithinFolder(abs)) {
           continue;
         }
+        const repoRelative = this.toRepoRelative(abs);
         if (entry.isDirectory()) {
-          if (this.ignored.has(entry.name)) {
+          if (this.ignored.has(entry.name) || isExcludedPath(repoRelative)) {
             continue;
           }
           walk(abs);
         } else if (entry.isFile()) {
+          if (isExcludedPath(repoRelative)) {
+            continue;
+          }
           try {
             const st = statSync(abs);
-            out.set(this.toRepoRelative(abs), {
+            out.set(repoRelative, {
               ino: Number(st.ino),
               size: st.size,
               mtimeMs: st.mtimeMs,
@@ -253,15 +359,35 @@ export class FolderWatcher extends EventEmitter {
     return normalizePath(rel);
   }
 
+  private resolvePollInterval(value: number | undefined): number {
+    if (value === undefined) {
+      return DEFAULT_POLL_INTERVAL_MS;
+    }
+    // Avoid an accidental busy loop from a malformed external configuration.
+    return Number.isFinite(value) && value > 0
+      ? value
+      : DEFAULT_POLL_INTERVAL_MS;
+  }
+
   /** Stop watching (does not touch the filesystem). */
   stop(): void {
+    this.started = false;
     if (this.debounceTimer !== undefined) {
       clearTimeout(this.debounceTimer);
       this.debounceTimer = undefined;
     }
+    if (this.pollingTimer !== undefined) {
+      clearInterval(this.pollingTimer);
+      this.pollingTimer = undefined;
+    }
     if (this.fsWatcher !== undefined) {
-      this.fsWatcher.close();
+      const fsWatcher = this.fsWatcher;
       this.fsWatcher = undefined;
+      try {
+        fsWatcher.close();
+      } catch {
+        // A failed native watcher may already be closed. Nothing to clean up.
+      }
     }
   }
 }

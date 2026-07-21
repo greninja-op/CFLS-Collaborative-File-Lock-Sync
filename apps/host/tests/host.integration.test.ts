@@ -11,7 +11,7 @@ import { get } from "node:https";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   startHost,
@@ -320,6 +320,193 @@ describe("ingest → broadcast (Req 7, 8.1, 25)", () => {
     b.close();
   });
 
+  it("directly acknowledges each mutation by Event_ID, including a losing lock claim", async () => {
+    const bob = makeDevice("bob");
+    const a = await TestClient.open(url());
+    const b = await TestClient.open(url());
+    await a.handshake(session, admin, invitationFor(session, admin.key, admin));
+    await b.handshake(session, bob, invitationFor(session, admin.key, bob));
+
+    a.sendEvent(
+      signedEvent(
+        "lock.acquire",
+        { scope: "src/ack.ts", scopeKind: "file", mode: "soft" },
+        {
+          session,
+          device: admin,
+          counter: a.nextCounter(),
+          eventId: "evt-ack-winner",
+        },
+      ),
+    );
+    const winningAck = await a.waitFor(
+      (m) =>
+        m?.type === "event.applied" && m.payload?.eventId === "evt-ack-winner",
+    );
+    expect(winningAck.payload).toMatchObject({
+      eventId: "evt-ack-winner",
+      eventRevision: 1,
+    });
+    expect(winningAck.payload.lockConflict).toBeUndefined();
+
+    b.sendEvent(
+      signedEvent(
+        "lock.acquire",
+        { scope: "src/ack.ts", scopeKind: "file", mode: "soft" },
+        {
+          session,
+          device: bob,
+          counter: b.nextCounter(),
+          eventId: "evt-ack-loser",
+        },
+      ),
+    );
+    const losingAck = await b.waitFor(
+      (m) =>
+        m?.type === "event.applied" && m.payload?.eventId === "evt-ack-loser",
+    );
+    expect(losingAck.payload).toMatchObject({
+      eventId: "evt-ack-loser",
+      eventRevision: 2,
+      lockConflict: {
+        scope: "src/ack.ts",
+        winner: { memberId: "admin", eventRevision: 1 },
+      },
+    });
+
+    b.sendEvent(
+      signedEvent(
+        "lock.release",
+        { scope: "src/missing.ts" },
+        {
+          session,
+          device: bob,
+          counter: b.nextCounter(),
+          eventId: "evt-ack-error",
+        },
+      ),
+    );
+    const rejected = await b.waitFor(
+      (m) => m?.type === "error" && m.payload?.refEventId === "evt-ack-error",
+    );
+    expect(rejected.payload).toMatchObject({
+      code: "NO_ACTIVE_LOCK",
+      refEventId: "evt-ack-error",
+    });
+
+    a.close();
+    b.close();
+  });
+
+  it("returns a correlated STORAGE_ERROR rather than a false acknowledgement when persistence fails", async () => {
+    const client = await TestClient.open(url());
+    await client.handshake(
+      session,
+      admin,
+      invitationFor(session, admin.key, admin),
+    );
+    const commit = vi
+      .spyOn(host.store, "commitMutation")
+      .mockImplementationOnce(() => {
+        throw new Error("injected storage failure");
+      });
+
+    client.sendEvent(
+      signedEvent(
+        "lock.acquire",
+        { scope: "src/durable.ts", scopeKind: "file", mode: "soft" },
+        {
+          session,
+          device: admin,
+          counter: client.nextCounter(),
+          eventId: "evt-storage-failure",
+        },
+      ),
+    );
+
+    const error = await client.waitFor(
+      (m) =>
+        m?.type === "error" && m.payload?.refEventId === "evt-storage-failure",
+    );
+    expect(error.payload).toMatchObject({
+      code: "STORAGE_ERROR",
+      refEventId: "evt-storage-failure",
+    });
+    expect(host.authority.snapshot(session).locks).toEqual([]);
+    expect(host.store.hasAppliedEventId(session, "evt-storage-failure")).toBe(
+      null,
+    );
+
+    commit.mockRestore();
+    client.close();
+  });
+
+  it("keeps a retried domain rejection as an error instead of event.applied", async () => {
+    const bob = makeDevice("bob");
+    const aliceClient = await TestClient.open(url());
+    const bobClient = await TestClient.open(url());
+    await aliceClient.handshake(
+      session,
+      admin,
+      invitationFor(session, admin.key, admin),
+    );
+    await bobClient.handshake(
+      session,
+      bob,
+      invitationFor(session, admin.key, bob),
+    );
+
+    aliceClient.sendEvent(
+      signedEvent(
+        "lock.acquire",
+        { scope: "src/rejected-wire.ts", scopeKind: "file", mode: "soft" },
+        {
+          session,
+          device: admin,
+          counter: aliceClient.nextCounter(),
+          eventId: "evt-wire-owner",
+        },
+      ),
+    );
+    await aliceClient.waitFor(
+      (m) =>
+        m?.type === "event.applied" && m.payload?.eventId === "evt-wire-owner",
+    );
+
+    const rejectedEvent = signedEvent(
+      "lock.release",
+      { scope: "src/rejected-wire.ts" },
+      {
+        session,
+        device: bob,
+        counter: bobClient.nextCounter(),
+        eventId: "evt-wire-rejected",
+      },
+    );
+    bobClient.sendEvent(rejectedEvent);
+    const firstError = await bobClient.waitFor(
+      (m) =>
+        m?.type === "error" &&
+        m.payload?.refEventId === "evt-wire-rejected" &&
+        m.payload?.code === "NOT_LOCK_HOLDER",
+    );
+    expect(firstError.payload.code).toBe("NOT_LOCK_HOLDER");
+
+    // Simulate a retry after the original error was lost in transit. The same
+    // signed event must not receive a synthetic event.applied acknowledgement.
+    bobClient.sendEvent(rejectedEvent);
+    const retryError = await bobClient.waitFor(
+      (m) =>
+        m?.type === "error" &&
+        m.payload?.refEventId === "evt-wire-rejected" &&
+        m.payload?.code === "FORMAT_ERROR",
+    );
+    expect(retryError.payload.code).toBe("FORMAT_ERROR");
+
+    aliceClient.close();
+    bobClient.close();
+  });
+
   it("returns an idempotent result for a duplicate Event_ID (Req 7.4)", async () => {
     const alice = admin;
     const a = await TestClient.open(url());
@@ -382,6 +569,52 @@ describe("sync-from-revision (Req 9.3)", () => {
       ).toContain("src/one.ts");
     }
     a.close();
+  });
+});
+
+describe("authentication liveness baseline (Req 26)", () => {
+  it("expires work created before the first periodic heartbeat after a client stops", async () => {
+    const client = await TestClient.open(url());
+    await client.handshake(
+      session,
+      admin,
+      invitationFor(session, admin.key, admin),
+    );
+
+    // Do not send heartbeat.ping: the successful handshake itself must have
+    // established liveness for this newly declared work.
+    client.sendEvent(
+      signedEvent(
+        "intent.declare",
+        {
+          modifyPaths: ["src/abrupt-stop.ts"],
+          createPaths: [],
+          description: "short-lived task",
+        },
+        {
+          session,
+          device: admin,
+          counter: client.nextCounter(),
+          eventId: "evt-before-first-heartbeat",
+        },
+      ),
+    );
+    await client.waitFor(
+      (m) =>
+        m?.type === "event.applied" &&
+        m.payload?.eventId === "evt-before-first-heartbeat",
+    );
+    client.close();
+
+    const removals = host.authority.sweepExpiry(session, Date.now() + 60_000);
+    expect(removals).toContainEqual(
+      expect.objectContaining({
+        entryType: "intent",
+        op: "removed",
+        path: "src/abrupt-stop.ts",
+      }),
+    );
+    expect(host.authority.snapshot(session).intents).toHaveLength(0);
   });
 });
 

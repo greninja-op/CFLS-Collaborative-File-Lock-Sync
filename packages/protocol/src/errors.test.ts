@@ -23,6 +23,7 @@ import {
   HeartbeatMessageType,
   SyncMessageType,
   BroadcastMessageType,
+  EventMessageType,
   ErrorMessageType,
   MessageType,
   MESSAGE_TYPES,
@@ -131,6 +132,8 @@ describe("MessageType constants map to expected wire strings (design §4.3)", ()
 
     expect(BroadcastMessageType.UPDATE).toBe("coordination.update");
 
+    expect(EventMessageType.EVENT_APPLIED).toBe("event.applied");
+
     expect(ErrorMessageType.ERROR).toBe("error");
   });
 
@@ -154,6 +157,7 @@ const ALL_GROUPS = [
   HeartbeatMessageType,
   SyncMessageType,
   BroadcastMessageType,
+  EventMessageType,
   ErrorMessageType,
 ];
 
@@ -166,10 +170,10 @@ describe("MESSAGE_TYPES catalog", () => {
     }
   });
 
-  it("contains exactly the 31 catalog message types", () => {
+  it("contains exactly the 32 catalog message types", () => {
     const expected = ALL_GROUPS.flatMap((group) => Object.values(group));
     expect([...MESSAGE_TYPES].sort()).toEqual([...expected].sort());
-    expect(MESSAGE_TYPES.length).toBe(31);
+    expect(MESSAGE_TYPES.length).toBe(32);
   });
 
   it("has no duplicate entries", () => {

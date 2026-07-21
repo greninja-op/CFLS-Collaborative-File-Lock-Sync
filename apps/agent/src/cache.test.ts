@@ -87,6 +87,25 @@ describe("EncryptedCache (Req 35.1, 35.3)", () => {
     ).toBeNull();
   });
 
+  it("persists a monotonic encrypted replay counter across cache instances", () => {
+    const cache = new EncryptedCache({ dir, passphrase: "device-private-key" });
+    expect(cache.loadReplayCounter()).toBe(0);
+
+    cache.saveReplayCounter(7);
+    // A stale process must never be able to roll the durable counter back.
+    cache.saveReplayCounter(3);
+
+    expect(
+      new EncryptedCache({
+        dir,
+        passphrase: "device-private-key",
+      }).loadReplayCounter(),
+    ).toBe(7);
+    expect(
+      readFileSync(join(dir, "device-replay.cache"), "utf8"),
+    ).not.toContain("replayCounter");
+  });
+
   it("refuses to cache a snapshot carrying source content (Req 35.3)", () => {
     const cache = new EncryptedCache({ dir, passphrase: "k" });
     const withSource = {

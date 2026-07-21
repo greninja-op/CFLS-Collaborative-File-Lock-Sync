@@ -10,9 +10,12 @@
  * `@cfls/agent`, and `@cfls/core-state` — no host/agent/security logic is
  * reimplemented here.
  *
- * Commands: admin-init · host · id · invite · join · connect · agent.
+ * Commands: admin-init · host · id · invite · join · connect · agent · mcp · service.
  */
 
+import { execFile } from "node:child_process";
+import { mkdir, rm, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -61,6 +64,7 @@ import {
   loadAdminKey,
   loadOrCreateThisDeviceKey,
 } from "./keys";
+import { startMcpBridge } from "./mcp-bridge";
 import {
   boolOption,
   log,
@@ -75,6 +79,15 @@ import {
   describeSession,
   resolveRepositorySession,
 } from "./session";
+import {
+  getServiceStatus,
+  installService,
+  normalizeServicePlatform,
+  uninstallService,
+  type ServiceCommand,
+  type ServiceCommandResult,
+  type ServicePlanExecutor,
+} from "./service";
 
 /** Default loopback Local_API port for `cfls agent` (matches the extension default). */
 const DEFAULT_LOCAL_API_PORT = 8750;
@@ -404,6 +417,192 @@ async function cmdAgent(args: ParsedArgs, cwd: string): Promise<void> {
   });
 }
 
+/** `cfls mcp [--workspace <path>]` — expose a running agent over MCP stdio. */
+async function cmdMcp(args: ParsedArgs, cwd: string): Promise<void> {
+  if (args.options["help"] === true || args.options["help"] === "true") {
+    log.info("Usage: cfls mcp [--workspace <path>]");
+    return;
+  }
+  if (
+    args.positionals.length > 0 ||
+    args.options["workspace"] === true ||
+    Object.keys(args.options).some((option) => option !== "workspace")
+  ) {
+    throw new Error("Usage: cfls mcp [--workspace <path>]");
+  }
+
+  const workspaceOption = stringOption(args, "workspace");
+  if (workspaceOption !== undefined && workspaceOption.trim().length === 0) {
+    throw new Error("The --workspace path must not be empty.");
+  }
+  const workspace = resolveRepoRoot(
+    workspaceOption === undefined ? cwd : resolve(cwd, workspaceOption),
+  );
+  await startMcpBridge(workspace);
+}
+
+/** Execute a platform service-manager command without involving a shell. */
+function runServiceCommand(
+  command: ServiceCommand,
+): Promise<ServiceCommandResult> {
+  return new Promise<ServiceCommandResult>((resolveCommand, rejectCommand) => {
+    execFile(
+      command.executable,
+      [...command.args],
+      { encoding: "utf8", maxBuffer: 1024 * 1024, windowsHide: true },
+      (error, stdout, stderr) => {
+        if (error === null) {
+          resolveCommand({ exitCode: 0, stdout, stderr });
+          return;
+        }
+        const code = (error as NodeJS.ErrnoException & { code?: unknown }).code;
+        if (typeof code === "number") {
+          resolveCommand({ exitCode: code, stdout, stderr });
+          return;
+        }
+        rejectCommand(error);
+      },
+    );
+  });
+}
+
+/** The small native adapter used only when the user explicitly runs `service`. */
+function nativeServiceExecutor(): ServicePlanExecutor {
+  return {
+    ensureDirectory: async (path) => {
+      await mkdir(path, { recursive: true });
+    },
+    writeFile: async (file) => {
+      await writeFile(file.path, file.content, {
+        encoding: "utf8",
+        ...(file.mode !== undefined ? { mode: file.mode } : {}),
+      });
+    },
+    removeFile: async (file) => {
+      await rm(file.path, { force: file.allowMissing });
+    },
+    run: runServiceCommand,
+  };
+}
+
+/** Build argv for a background agent when this CLI is Node-hosted or a SEA exe. */
+function serviceAgentArgs(args: ParsedArgs): string[] {
+  const agentArgs: string[] = [];
+  // A standalone Node SEA executable invokes itself directly. A normal npm/pnpm
+  // install needs Node to run the current JavaScript entry file first.
+  if (process.versions["sea"] === undefined) {
+    const entry = process.argv[1];
+    if (entry === undefined || entry === "") {
+      throw new Error(
+        "Cannot determine the CFLS CLI entry point for the background service.",
+      );
+    }
+    agentArgs.push(resolve(entry));
+  }
+  agentArgs.push("agent");
+  if (boolOption(args, "insecure-tls")) {
+    agentArgs.push("--insecure-tls");
+  }
+  const localPort = stringOption(args, "local-port");
+  if (localPort !== undefined) {
+    agentArgs.push("--local-port", localPort);
+  }
+  return agentArgs;
+}
+
+function serviceUsage(): string {
+  return (
+    "Usage: cfls service <install|uninstall|status> [--workspace <path>] " +
+    "[--name <service-name>] [--insecure-tls] [--local-port <port>] " +
+    "[--windows-user <DOMAIN\\\\User-or-SID>]"
+  );
+}
+
+/** `cfls service` — install/query/remove the per-user CFLS agent service. */
+async function cmdService(args: ParsedArgs, cwd: string): Promise<void> {
+  if (args.options["help"] === true || args.options["help"] === "true") {
+    log.info(serviceUsage());
+    return;
+  }
+  const [action] = args.positionals;
+  if (
+    (action !== "install" && action !== "uninstall" && action !== "status") ||
+    args.positionals.length !== 1
+  ) {
+    throw new Error(serviceUsage());
+  }
+
+  const requestedPlatform = stringOption(args, "platform") ?? process.platform;
+  const platform = normalizeServicePlatform(requestedPlatform);
+  if (platform !== process.platform) {
+    throw new Error(
+      `Run this command on its target platform (requested ${platform}, running ${process.platform}).`,
+    );
+  }
+
+  const workspaceOption = stringOption(args, "workspace");
+  const workspace = resolveRepoRoot(
+    workspaceOption === undefined ? cwd : resolve(cwd, workspaceOption),
+  );
+  const userHome = homedir();
+  const serviceName = stringOption(args, "name");
+  const windowsUserId = stringOption(args, "windows-user");
+  const identity = {
+    platform,
+    userHome,
+    ...(serviceName !== undefined ? { serviceName } : {}),
+  };
+  const executor = nativeServiceExecutor();
+
+  if (action === "status") {
+    const status = await getServiceStatus(identity, executor);
+    log.info(
+      `CFLS agent service (${status.serviceName}): ${status.state}. ${status.detail}`,
+    );
+    return;
+  }
+
+  const result =
+    action === "install"
+      ? await installService(
+          {
+            ...identity,
+            executablePath: process.execPath,
+            workspacePath: workspace,
+            args: serviceAgentArgs(args),
+            ...(platform === "win32" && windowsUserId !== undefined
+              ? { windowsUserId }
+              : {}),
+          },
+          executor,
+        )
+      : await uninstallService(identity, executor);
+
+  for (const warning of result.warnings) {
+    log.warn(warning);
+  }
+  if (!result.ok) {
+    const target = result.failure?.target ?? "unknown step";
+    const exit =
+      result.failure?.exitCode === undefined
+        ? ""
+        : ` (exit code ${result.failure.exitCode})`;
+    throw new Error(
+      `Could not ${action} CFLS agent service at ${target}${exit}.`,
+    );
+  }
+  log.info(
+    action === "install"
+      ? `CFLS agent service installed for ${workspace}.`
+      : "CFLS agent service removed.",
+  );
+  if (action === "install" && platform === "linux") {
+    log.info(
+      "For headless use after logout, enable systemd user lingering for this account if your distro requires it.",
+    );
+  }
+}
+
 /**
  * Read the live set of repo-relative paths OTHER teammates are actively editing
  * or holding a lock on, from the agent's converged coordination view. Used to
@@ -703,6 +902,9 @@ function printUsage(): void {
       "  cfls connect <invitationBase64>               Store an invitation",
       "  cfls agent [--insecure-tls] [--local-port 8750]",
       "                                                Run the local CoordinationAgent",
+      "  cfls mcp [--workspace <path>]                 Expose this running agent to an MCP client",
+      "  cfls service <install|uninstall|status>       Manage the per-user background agent",
+      "            [--workspace <path>] [--name <id>] [--windows-user <principal>]",
       "",
       "Automatic git sync (Model A, opt-in via .coordination/config.json):",
       "  cfls clone <repo-url> [--host <wss>] [--name <name>] [--team <id>]",
@@ -745,6 +947,12 @@ export async function main(
         return 0;
       case "agent":
         await cmdAgent(args, cwd);
+        return 0;
+      case "mcp":
+        await cmdMcp(args, cwd);
+        return 0;
+      case "service":
+        await cmdService(args, cwd);
         return 0;
       case "sync":
         await cmdSync(args, cwd);

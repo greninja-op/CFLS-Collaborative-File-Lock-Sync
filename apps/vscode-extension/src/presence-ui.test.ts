@@ -46,6 +46,8 @@ function viewModel(
     stale: false,
     secondsSinceSync: 1,
     statusText: "Online",
+    teamId: null,
+    members: [],
     ...overrides,
   };
 }

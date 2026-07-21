@@ -23,6 +23,7 @@ import {
 } from "./expiry";
 import { IntentRegistry } from "./intents";
 import { LockRegistry } from "./locks";
+import { PresenceRegistry } from "./presence";
 import { RevisionCounter } from "./revisions";
 
 const session: SessionId = {
@@ -39,6 +40,7 @@ const bob: MemberRef = { memberId: "bob", deviceId: "bob-dev-1" };
 interface Harness {
   locks: LockRegistry;
   intents: IntentRegistry;
+  presence: PresenceRegistry;
   revisions: RevisionCounter;
   engine: ExpiryEngine;
 }
@@ -46,9 +48,10 @@ interface Harness {
 function harness(config = {}): Harness {
   const locks = new LockRegistry("case-sensitive");
   const intents = new IntentRegistry("case-sensitive");
+  const presence = new PresenceRegistry("case-sensitive");
   const revisions = new RevisionCounter();
-  const engine = new ExpiryEngine(locks, intents, revisions, config);
-  return { locks, intents, revisions, engine };
+  const engine = new ExpiryEngine(locks, intents, revisions, config, presence);
+  return { locks, intents, presence, revisions, engine };
 }
 
 describe("resolveExpiryConfig (Req 26.1, 26.3, 26.5)", () => {
@@ -173,7 +176,7 @@ describe("ExpiryEngine.sweep — heartbeat expiry (Req 26.3, 26.4)", () => {
       owner: alice,
       agentId: "agent-a",
       modifyPaths: ["src/a.ts"],
-      createPaths: [],
+      createPaths: ["src/a.test.ts"],
       scopeKind: "file",
       branch: "main",
       description: "edit a",
@@ -214,7 +217,7 @@ describe("ExpiryEngine.sweep — heartbeat expiry (Req 26.3, 26.4)", () => {
     const result = h.engine.sweep(session, 100_000);
 
     expect(result.expiredDevices).toEqual([alice.deviceId]);
-    // Alice's lock + intent removed; Bob's untouched.
+    // Alice's lock + every intent path removed; Bob's untouched.
     expect(h.locks.allLocks(session).map((l) => l.lockId)).toEqual([
       "lock-bob",
     ]);
@@ -231,7 +234,7 @@ describe("ExpiryEngine.sweep — heartbeat expiry (Req 26.3, 26.4)", () => {
 
     const result = h.engine.sweep(session, 100_000);
 
-    expect(result.removals).toHaveLength(2);
+    expect(result.removals).toHaveLength(3);
     for (const update of result.removals) {
       expect(update.op).toBe("removed");
       expect(update.member).toEqual(alice);
@@ -239,8 +242,18 @@ describe("ExpiryEngine.sweep — heartbeat expiry (Req 26.3, 26.4)", () => {
     }
     const lockUpdate = result.removals.find((u) => u.entryType === "soft_lock");
     const intentUpdate = result.removals.find((u) => u.entryType === "intent");
+    const creationUpdate = result.removals.find(
+      (u) => u.entryType === "planned_file_creation",
+    );
     expect(lockUpdate?.path).toBe("src/a.ts");
-    expect(intentUpdate).toBeDefined();
+    expect(intentUpdate).toMatchObject({
+      path: "src/a.ts",
+      intent: { intentId: "intent-alice", description: "edit a" },
+    });
+    expect(creationUpdate).toMatchObject({
+      path: "src/a.test.ts",
+      intent: { intentId: "intent-alice", description: "edit a" },
+    });
     // Revisions are unique and strictly increasing.
     const revs = result.removals.map((u) => u.eventRevision);
     expect(new Set(revs).size).toBe(revs.length);
@@ -271,6 +284,112 @@ describe("ExpiryEngine.sweep — heartbeat expiry (Req 26.3, 26.4)", () => {
     expect(result.removals).toEqual([]);
     expect(h.locks.allLocks(session)).toHaveLength(2);
     expect(h.intents.allIntents(session)).toHaveLength(2);
+  });
+
+  it("ends a stale device's active presence and emits removed updates", () => {
+    const h = harness();
+    h.presence.report({
+      session,
+      member: alice,
+      path: "src/a.ts",
+      state: "editing",
+      eventRevision: h.revisions.next(session),
+    });
+    h.presence.report({
+      session,
+      member: alice,
+      path: "src/a.test.ts",
+      state: "started",
+      eventRevision: h.revisions.next(session),
+    });
+    h.presence.report({
+      session,
+      member: bob,
+      path: "src/b.ts",
+      state: "editing",
+      eventRevision: h.revisions.next(session),
+    });
+    const revisionBefore = h.revisions.highest(session);
+    h.engine.recordHeartbeat(session, alice.deviceId, 0);
+    h.engine.recordHeartbeat(session, bob.deviceId, 100_000);
+
+    const result = h.engine.sweep(session, 100_000);
+    const removals = result.removals.filter(
+      (update) => update.entryType === "presence",
+    );
+
+    expect(removals).toEqual([
+      expect.objectContaining({
+        entryType: "presence",
+        op: "removed",
+        member: alice,
+        path: "src/a.test.ts",
+      }),
+      expect.objectContaining({
+        entryType: "presence",
+        op: "removed",
+        member: alice,
+        path: "src/a.ts",
+      }),
+    ]);
+    expect(
+      removals.every((update) => update.eventRevision > revisionBefore),
+    ).toBe(true);
+    expect(h.presence.activeForDevice(session, alice.deviceId)).toEqual([]);
+    expect(h.presence.activeForDevice(session, bob.deviceId)).toHaveLength(1);
+  });
+
+  it("announces the next winning claim when an expired winner is promoted", () => {
+    const h = harness();
+    h.locks.acquire({
+      session,
+      lockId: "lock-alice-winner",
+      scope: "src/shared.ts",
+      scopeKind: "file",
+      mode: "soft",
+      holder: alice,
+      branch: "main",
+      eventRevision: h.revisions.next(session),
+      acquiredAt: "2024-01-01T00:00:00.000Z",
+    });
+    h.locks.acquire({
+      session,
+      lockId: "lock-bob-waiting",
+      scope: "src/shared.ts",
+      scopeKind: "file",
+      mode: "soft",
+      holder: bob,
+      branch: "main",
+      eventRevision: h.revisions.next(session),
+      acquiredAt: "2024-01-01T00:00:01.000Z",
+    });
+    h.engine.recordHeartbeat(session, alice.deviceId, 0);
+    h.engine.recordHeartbeat(session, bob.deviceId, 100_000);
+
+    const result = h.engine.sweep(session, 100_000);
+
+    expect(result.removals).toEqual([
+      expect.objectContaining({
+        entryType: "soft_lock",
+        op: "removed",
+        member: alice,
+        path: "src/shared.ts",
+      }),
+    ]);
+    expect(result.promotions).toEqual([
+      expect.objectContaining({
+        entryType: "soft_lock",
+        op: "added",
+        member: bob,
+        path: "src/shared.ts",
+      }),
+    ]);
+    expect(result.promotions[0]?.eventRevision).toBeGreaterThan(
+      result.removals[0]?.eventRevision ?? 0,
+    );
+    expect(
+      h.locks.winningLock(session, "src/shared.ts", "file", "main"),
+    ).toMatchObject({ lockId: "lock-bob-waiting", concurrent: false });
   });
 });
 

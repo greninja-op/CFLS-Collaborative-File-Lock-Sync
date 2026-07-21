@@ -51,6 +51,14 @@ function entryKey(
   return `${member.memberId}\u0000${pathKey}`;
 }
 
+/** Stable code-point comparison; unlike localeCompare it never varies by host locale. */
+function compareText(left: string, right: string): number {
+  if (left === right) {
+    return 0;
+  }
+  return left < right ? -1 : 1;
+}
+
 /**
  * Pure in-memory registry of Team_Member presence per member/path (Req 11).
  */
@@ -123,6 +131,57 @@ export class PresenceRegistry {
     return this.active(session).filter(
       (p) => pathMatchKey(p.path, this.sensitivity) === targetKey,
     );
+  }
+
+  /**
+   * Active presence owned by one device, sorted so a host-expiry transition is
+   * deterministic even when the reports arrived in a different order.
+   */
+  activeForDevice(session: SessionId, deviceId: string): readonly Presence[] {
+    return this.active(session)
+      .filter((presence) => presence.member.deviceId === deviceId)
+      .sort(
+        (left, right) =>
+          compareText(left.path, right.path) ||
+          compareText(left.member.memberId, right.member.memberId),
+      );
+  }
+
+  /**
+   * End every active presence entry for a device.
+   *
+   * The caller supplies a revision allocator because each stopped transition
+   * must participate in the host's single per-session event order. Existing
+   * stopped records are deliberately left untouched, so repeated expiry sweeps
+   * are idempotent at the registry layer.
+   */
+  stopActiveForDevice(
+    session: SessionId,
+    deviceId: string,
+    nextEventRevision: (presence: Presence) => number,
+  ): readonly Presence[] {
+    const stopped: Presence[] = [];
+    for (const active of this.activeForDevice(session, deviceId)) {
+      const eventRevision = nextEventRevision(active);
+      if (
+        !Number.isFinite(eventRevision) ||
+        eventRevision <= active.eventRevision
+      ) {
+        throw new RangeError(
+          "Stopped presence must have a revision newer than its active entry.",
+        );
+      }
+      stopped.push(
+        this.report({
+          session,
+          member: active.member,
+          path: active.path,
+          state: "stopped",
+          eventRevision,
+        }),
+      );
+    }
+    return stopped;
   }
 
   /**

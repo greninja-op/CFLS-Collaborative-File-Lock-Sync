@@ -26,7 +26,8 @@
  * The agent's cached coordination state is modeled as the **set of active
  * coordination entries** the host broadcasts — exactly the
  * {@link CoordinationUpdate}s of design §4.3. Each entry is identified by a
- * stable {@link coordinationEntryKey} of `(entryType, path, member)`; an
+ * stable {@link coordinationEntryKey} of `(entryType, path, member/device,
+ * intent where applicable)`; an
  * `op: "added"` update installs (or replaces) that entry and an `op: "removed"`
  * update deletes it. Replaying a session's ordered update log from empty
  * therefore reproduces the host's authoritative entry set, and a
@@ -61,17 +62,26 @@ export type SyncResponse =
 /**
  * A stable identity for a coordination entry, so an `added`/`removed` pair for
  * the "same thing" collapses to one cache slot. Two updates address the same
- * entry when they share `entryType`, normalized `path`, and holder `memberId`.
- * Paths are normalized so equivalent spellings map to one key (Req 10.3–10.4);
- * a path-less entry (e.g. an intent with no single path) keys on the empty path.
+ * entry when they share `entryType`, normalized `path`, holder member/device,
+ * and (for declared work) intent id. Paths are normalized so equivalent
+ * spellings map to one key (Req 10.3–10.4); a path-less entry (e.g. an intent
+ * with no single path) keys on the empty path. Keeping `deviceId` retains
+ * simultaneous activity from one member's multiple devices; keeping `intentId`
+ * prevents two tasks touching one file from overwriting each other.
  */
 export function coordinationEntryKey(update: {
   entryType: CoordinationUpdate["entryType"];
   path?: string;
   member: MemberRef;
+  intent?: CoordinationUpdate["intent"];
 }): string {
   const pathKey = update.path === undefined ? "" : normalizePath(update.path);
-  return `${update.entryType}\u0000${pathKey}\u0000${update.member.memberId}`;
+  const intentKey =
+    update.entryType === "intent" ||
+    update.entryType === "planned_file_creation"
+      ? (update.intent?.intentId ?? "")
+      : "";
+  return `${update.entryType}\u0000${pathKey}\u0000${update.member.memberId}\u0000${update.member.deviceId}\u0000${intentKey}`;
 }
 
 /**
@@ -82,7 +92,7 @@ export function coordinationEntryKey(update: {
  * that replaying the session's full update log would.
  *
  * The projection mirrors what the host broadcasts as `added` updates:
- *   - every recorded lock → a `soft_lock` entry at its scope, held by its holder;
+ *   - every winning lock → a `soft_lock` entry at its scope, held by its holder;
  *   - every **active** presence (`started`/`editing`; `stopped` is end-of-presence
  *     and therefore absent) → a `presence` entry;
  *   - every Declared_Intent → an `intent` entry per `modifyPaths` path and a
@@ -97,6 +107,13 @@ export function projectSnapshot(
   const entries: CoordinationUpdate[] = [];
 
   for (const lock of snapshot.locks) {
+    // Concurrent claims are retained by the host for deterministic promotion,
+    // but clients coordinate against the current winner. Incremental host
+    // broadcasts likewise project only that winner, so snapshot replacement
+    // must not suddenly surface a losing claim as an active lock.
+    if (lock.concurrent) {
+      continue;
+    }
     entries.push({
       entryType: "soft_lock",
       op: "added",
@@ -127,6 +144,10 @@ export function projectSnapshot(
         path,
         member: { ...intent.owner },
         eventRevision: intent.eventRevision,
+        intent: {
+          intentId: intent.intentId,
+          description: intent.description,
+        },
       });
     }
     for (const creation of intent.createPaths) {
@@ -136,6 +157,10 @@ export function projectSnapshot(
         path: creation.path,
         member: { ...intent.owner },
         eventRevision: intent.eventRevision,
+        intent: {
+          intentId: intent.intentId,
+          description: intent.description,
+        },
       });
     }
   }
@@ -192,7 +217,11 @@ export class CoordinationEventLog {
           `revision ${last.eventRevision} for the session.`,
       );
     }
-    log.push({ ...update, member: { ...update.member } });
+    log.push({
+      ...update,
+      member: { ...update.member },
+      ...(update.intent !== undefined ? { intent: { ...update.intent } } : {}),
+    });
     this.logs.set(key, log);
   }
 
@@ -261,7 +290,13 @@ export class CoordinationEventLog {
     const log = this.logs.get(sessionKey(session)) ?? [];
     const events = log
       .filter((update) => update.eventRevision > fromRevision)
-      .map((update) => ({ ...update, member: { ...update.member } }));
+      .map((update) => ({
+        ...update,
+        member: { ...update.member },
+        ...(update.intent !== undefined
+          ? { intent: { ...update.intent } }
+          : {}),
+      }));
     return { kind: "events", events };
   }
 }
@@ -341,9 +376,41 @@ export class AgentSyncCache {
     const map = this.entriesFor(session);
     const entryKey = coordinationEntryKey(update);
     if (update.op === "removed") {
-      map.delete(entryKey);
+      const isIntentEntry =
+        update.entryType === "intent" ||
+        update.entryType === "planned_file_creation";
+      const intentPrefix = `${update.entryType}\u0000${
+        update.path === undefined ? "" : normalizePath(update.path)
+      }\u0000${update.member.memberId}\u0000${update.member.deviceId}\u0000`;
+      // Pre-intent-metadata hosts could not identify which of several intents
+      // owned one member/device/path. Treat a legacy removal as a removal of
+      // every matching legacy/modern intent entry rather than leaving a stale
+      // task visible. Modern hosts include intent metadata and take the exact
+      // key path above.
+      if (isIntentEntry && update.intent === undefined) {
+        for (const key of map.keys()) {
+          if (key.startsWith(intentPrefix)) {
+            map.delete(key);
+          }
+        }
+      } else {
+        map.delete(entryKey);
+        // A cache may have been filled from an older host before it upgraded
+        // to intent metadata. A current, precise removal must retire that one
+        // legacy slot as well, while preserving any other named task on the
+        // same member/device/path.
+        if (isIntentEntry) {
+          map.delete(intentPrefix);
+        }
+      }
     } else {
-      map.set(entryKey, { ...update, member: { ...update.member } });
+      map.set(entryKey, {
+        ...update,
+        member: { ...update.member },
+        ...(update.intent !== undefined
+          ? { intent: { ...update.intent } }
+          : {}),
+      });
     }
     this.highest.set(key, update.eventRevision);
   }
@@ -411,6 +478,7 @@ export class AgentSyncCache {
     return Array.from(map.values(), (entry) => ({
       ...entry,
       member: { ...entry.member },
+      ...(entry.intent !== undefined ? { intent: { ...entry.intent } } : {}),
     }));
   }
 }

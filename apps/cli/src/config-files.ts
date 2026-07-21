@@ -1,16 +1,32 @@
 /**
  * Read/write helpers for the CLI's non-secret configuration files (design §9.4).
  *
- * These files contain ONLY non-secret coordination metadata — public keys, the
- * team id, the Host_URL, the member name, and the loopback Local_API address +
- * per-session Local_Auth_Token. Private keys are NEVER written here; they live
- * only in the OS secret store / encrypted-file fallback (see `admin-key.ts` and
- * `@cfls/security`). All writes are pretty-printed JSON and every file path is
- * passed explicitly so the round-trip is unit-testable against a temp dir.
+ * These files contain public coordination metadata — public keys, the team id,
+ * the Host_URL, and the member name — plus the short-lived Local_API token used
+ * for extension discovery. That token is handled as a secret: it is atomically
+ * written with owner-only permissions. Private keys are NEVER written here;
+ * they live only in the OS secret store / encrypted-file fallback (see
+ * `admin-key.ts` and `@cfls/security`). Every file path is passed explicitly so
+ * the round-trip is unit-testable against a temp dir.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { randomUUID } from "node:crypto";
+import { execFileSync } from "node:child_process";
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  fstatSync,
+  fsyncSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
+import { basename, dirname, join } from "node:path";
 
 /** `~/.cfls/host.json` — the host's authorized admin keys + team id. */
 export interface HostConfigFile {
@@ -182,17 +198,337 @@ export function updateAgentConfig(
 // local-api.json
 // ---------------------------------------------------------------------------
 
+/**
+ * OS-specific protection for the short-lived Local_API discovery token.
+ *
+ * This is injectable so the Windows branch can be tested on a non-Windows
+ * runner. Production callers use the default security implementation.
+ */
+export interface LocalApiFileSecurity {
+  /** The platform whose filesystem access rules should be enforced. */
+  readonly platform: NodeJS.Platform;
+  /**
+   * Replace a Windows file's DACL with a protected, current-user-only ACL.
+   * Implementations must throw when they cannot establish that ACL.
+   */
+  secureWindowsFile(path: string): void;
+  /** True only when a Windows file still has the required private ACL. */
+  verifyWindowsFile(path: string): boolean;
+}
+
+const WINDOWS_DISCOVERY_PATH_ENV = "CFLS_LOCAL_API_DISCOVERY_PATH";
+
+/**
+ * The PowerShell programs below are static and passed with -EncodedCommand.
+ * The path is passed via a child-only environment variable, never interpolated
+ * into a command string, so a repository path cannot inject PowerShell syntax.
+ */
+const WINDOWS_SET_PRIVATE_ACL_SCRIPT = [
+  "$ErrorActionPreference = 'Stop'",
+  "$path = $env:CFLS_LOCAL_API_DISCOVERY_PATH",
+  "if ([string]::IsNullOrWhiteSpace($path)) { throw 'Missing Local_API discovery path.' }",
+  "$current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User",
+  "if ($null -eq $current) { throw 'Unable to determine the current Windows user.' }",
+  "$acl = New-Object -TypeName System.Security.AccessControl.FileSecurity",
+  "$acl.SetOwner($current)",
+  "$acl.SetAccessRuleProtection($true, $false)",
+  "$rights = [System.Security.AccessControl.FileSystemRights]::FullControl",
+  "$allow = [System.Security.AccessControl.AccessControlType]::Allow",
+  "$rule = New-Object -TypeName System.Security.AccessControl.FileSystemAccessRule -ArgumentList @($current, $rights, $allow)",
+  "$acl.SetAccessRule($rule)",
+  "[System.IO.File]::SetAccessControl($path, $acl)",
+].join("\n");
+
+/**
+ * Verify the security descriptor through Windows' access-control APIs, rather
+ * than trying to parse localized icacls output. A valid discovery record:
+ *
+ * - is owned by the current SID;
+ * - has a protected (non-inherited) DACL;
+ * - has only explicit Allow rules for that SID; and
+ * - gives that SID FullControl.
+ */
+const WINDOWS_VERIFY_PRIVATE_ACL_SCRIPT = [
+  "$ErrorActionPreference = 'Stop'",
+  "$path = $env:CFLS_LOCAL_API_DISCOVERY_PATH",
+  "if ([string]::IsNullOrWhiteSpace($path)) { exit 1 }",
+  "$current = [System.Security.Principal.WindowsIdentity]::GetCurrent().User",
+  "if ($null -eq $current) { exit 1 }",
+  "$acl = [System.IO.File]::GetAccessControl($path)",
+  "$owner = $acl.GetOwner([System.Security.Principal.SecurityIdentifier])",
+  "if ($null -eq $owner) { exit 1 }",
+  "$rules = @($acl.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier]))",
+  "$onlyCurrentAllow = @(",
+  "  $rules | Where-Object {",
+  "    $_.IdentityReference.Value -eq $current.Value -and",
+  "    -not $_.IsInherited -and",
+  "    $_.AccessControlType -eq [System.Security.AccessControl.AccessControlType]::Allow",
+  "  }",
+  ")",
+  "$fullControl = [System.Security.AccessControl.FileSystemRights]::FullControl",
+  "$hasFullControl = @(",
+  "  $onlyCurrentAllow | Where-Object {",
+  "    ($_.FileSystemRights -band $fullControl) -eq $fullControl",
+  "  }",
+  ").Count -gt 0",
+  "$isPrivate = (",
+  "  $acl.AreAccessRulesProtected -and",
+  "  $owner.Value -eq $current.Value -and",
+  "  $rules.Count -gt 0 -and",
+  "  $onlyCurrentAllow.Count -eq $rules.Count -and",
+  "  $hasFullControl",
+  ")",
+  "if ($isPrivate) { exit 0 }",
+  "exit 1",
+].join("\n");
+
+function encodedPowerShell(script: string): string {
+  return Buffer.from(script, "utf16le").toString("base64");
+}
+
+function windowsPowerShellPath(): string {
+  const systemRoot = process.env["SystemRoot"] ?? process.env["WINDIR"];
+  if (systemRoot === undefined || systemRoot.length === 0) {
+    throw new Error("Windows system root is unavailable.");
+  }
+  return join(
+    systemRoot,
+    "System32",
+    "WindowsPowerShell",
+    "v1.0",
+    "powershell.exe",
+  );
+}
+
+/**
+ * Run a static PowerShell program with the discovery path as child-only data.
+ * execFileSync deliberately bypasses cmd.exe and a shell. Use the system
+ * PowerShell path rather than resolving an executable from PATH.
+ */
+function runWindowsAclProgram(script: string, path: string): void {
+  execFileSync(
+    windowsPowerShellPath(),
+    [
+      "-NoProfile",
+      "-NonInteractive",
+      "-EncodedCommand",
+      encodedPowerShell(script),
+    ],
+    {
+      env: {
+        ...process.env,
+        [WINDOWS_DISCOVERY_PATH_ENV]: path,
+      },
+      stdio: "ignore",
+      windowsHide: true,
+    },
+  );
+}
+
+/**
+ * Give only the current Windows account control of a discovery record. The
+ * caller runs this against the private temporary file before the atomic rename,
+ * so a failed ACL setup never publishes a token-bearing target.
+ */
+function secureWindowsLocalApiFile(path: string): void {
+  try {
+    runWindowsAclProgram(WINDOWS_SET_PRIVATE_ACL_SCRIPT, path);
+  } catch {
+    throw new Error(
+      "Could not establish a current-user-only Windows ACL for Local_API discovery.",
+    );
+  }
+}
+
+/** Return false rather than trusting a discovery record when ACL inspection fails. */
+function verifyWindowsLocalApiFile(path: string): boolean {
+  try {
+    runWindowsAclProgram(WINDOWS_VERIFY_PRIVATE_ACL_SCRIPT, path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+const defaultLocalApiFileSecurity: LocalApiFileSecurity = {
+  platform: process.platform,
+  secureWindowsFile: secureWindowsLocalApiFile,
+  verifyWindowsFile: verifyWindowsLocalApiFile,
+};
+
+/** True when this record uses POSIX owner/group/other file modes. */
+function hasPosixFileModes(security: LocalApiFileSecurity): boolean {
+  return security.platform !== "win32";
+}
+
+function assertPrivateWindowsFile(
+  path: string,
+  security: LocalApiFileSecurity,
+): void {
+  if (!security.verifyWindowsFile(path)) {
+    throw new Error(
+      "Could not verify a current-user-only Windows ACL for Local_API discovery.",
+    );
+  }
+}
+
+/**
+ * Read a Local_API discovery record without following a symlink or accepting a
+ * record another local account can read/write. The token is intentionally short
+ * lived, but it grants access to the live local agent while it is valid.
+ */
+function readPrivateJsonObject(
+  path: string,
+  security: LocalApiFileSecurity,
+): Record<string, unknown> | null {
+  if (!existsSync(path)) {
+    return null;
+  }
+
+  let fd: number | undefined;
+  try {
+    // lstat first so a symlink is never accepted as a discovery record. The
+    // fstat comparison below also closes the replacement race between lstat and
+    // open as far as the portable Node APIs permit.
+    const before = lstatSync(path);
+    if (!before.isFile() || before.isSymbolicLink()) {
+      return null;
+    }
+    if (
+      hasPosixFileModes(security) &&
+      ((before.mode & 0o077) !== 0 || before.uid !== process.getuid?.())
+    ) {
+      return null;
+    }
+    if (!hasPosixFileModes(security) && !security.verifyWindowsFile(path)) {
+      return null;
+    }
+
+    fd = openSync(path, "r");
+    const opened = fstatSync(fd);
+    if (
+      !opened.isFile() ||
+      opened.dev !== before.dev ||
+      opened.ino !== before.ino ||
+      (hasPosixFileModes(security) &&
+        ((opened.mode & 0o077) !== 0 || opened.uid !== process.getuid?.()))
+    ) {
+      return null;
+    }
+    // The first verification protects the object we lstat'd; this second one
+    // makes an ACL change/replacement during open fail closed. A different
+    // local account can at most cause a rejected record, never impersonate the
+    // current SID required by the verifier.
+    if (!hasPosixFileModes(security) && !security.verifyWindowsFile(path)) {
+      return null;
+    }
+
+    const parsed: unknown = JSON.parse(readFileSync(fd, "utf8"));
+    if (
+      typeof parsed === "object" &&
+      parsed !== null &&
+      !Array.isArray(parsed)
+    ) {
+      return parsed as Record<string, unknown>;
+    }
+    return null;
+  } catch {
+    return null;
+  } finally {
+    if (fd !== undefined) {
+      closeSync(fd);
+    }
+  }
+}
+
+/**
+ * Atomically replace a private JSON record. The temporary file is created in
+ * the target directory with mode 0600, flushed, then renamed into place so a
+ * reader observes either the complete old record or the complete new record.
+ */
+function writePrivateJson(
+  path: string,
+  value: unknown,
+  security: LocalApiFileSecurity,
+): void {
+  const parent = dirname(path);
+  mkdirSync(parent, { recursive: true, mode: 0o700 });
+
+  const temporary = join(
+    parent,
+    `.${basename(path)}.${process.pid}.${randomUUID()}.tmp`,
+  );
+  let fd: number | undefined;
+  let renamed = false;
+  let windowsTargetVerified = hasPosixFileModes(security);
+  try {
+    fd = openSync(temporary, "wx", 0o600);
+    writeFileSync(fd, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+    fsyncSync(fd);
+    closeSync(fd);
+    fd = undefined;
+
+    // Establish and verify the private Windows DACL before publication. This
+    // preserves the atomic write guarantee: an ACL failure only leaves a
+    // private temporary file that the finally block removes.
+    if (!hasPosixFileModes(security)) {
+      security.secureWindowsFile(temporary);
+      assertPrivateWindowsFile(temporary, security);
+    }
+
+    // Same-directory rename is atomic on the supported filesystems. Opening
+    // the temporary file with 0600 means there is no permissive post-rename
+    // window even when the process has a relaxed umask.
+    renameSync(temporary, path);
+    renamed = true;
+    if (hasPosixFileModes(security)) {
+      chmodSync(path, 0o600);
+    } else {
+      assertPrivateWindowsFile(path, security);
+      windowsTargetVerified = true;
+    }
+  } finally {
+    if (fd !== undefined) {
+      closeSync(fd);
+    }
+    if (!renamed) {
+      try {
+        unlinkSync(temporary);
+      } catch {
+        // The temporary file may not have been created, or the failed rename
+        // may already have cleaned it up. Never hide the original write error.
+      }
+    } else if (!windowsTargetVerified) {
+      // The newly published file could not be verified. Remove our target so
+      // the caller never leaves a token record available for discovery.
+      try {
+        unlinkSync(path);
+      } catch {
+        // A concurrent replacement may already have removed it. Reads still
+        // fail closed because they independently validate the owner and DACL.
+      }
+    }
+  }
+}
+
 /** Write the Local_API discovery file for the VS Code extension. */
 export function writeLocalApiConfig(
   path: string,
   value: LocalApiConfigFile,
+  security: LocalApiFileSecurity = defaultLocalApiFileSecurity,
 ): void {
-  writeJson(path, value);
+  writePrivateJson(path, value, security);
 }
 
-/** Read the Local_API discovery file, or `null` when absent/invalid. */
-export function readLocalApiConfig(path: string): LocalApiConfigFile | null {
-  const raw = readJsonObject(path);
+/**
+ * Read the Local_API discovery file, or `null` when absent, invalid, symlinked,
+ * or readable/writable by another local account on POSIX.
+ */
+export function readLocalApiConfig(
+  path: string,
+  security: LocalApiFileSecurity = defaultLocalApiFileSecurity,
+): LocalApiConfigFile | null {
+  const raw = readPrivateJsonObject(path, security);
   if (raw === null) {
     return null;
   }

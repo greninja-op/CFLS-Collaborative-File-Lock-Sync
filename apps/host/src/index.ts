@@ -24,6 +24,8 @@ export {
   StoreError,
   type Store,
   type PersistedEvent,
+  type PersistedExpiry,
+  type PersistedMutation,
   type PersistedSession,
 } from "./store";
 export { generateChallenge, signChallenge, verifyChallenge } from "./challenge";

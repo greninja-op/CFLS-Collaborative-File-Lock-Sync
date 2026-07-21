@@ -4,9 +4,9 @@
  *
  * Before the CoordinationHost mutates any authoritative coordination state it
  * runs every inbound Signed_Event through this single gate. The gate is the pure
- * embodiment of design §4.4's four guarantees, applied in an order chosen so that
- * a rejection provably leaves state unchanged and a legitimate retransmission is
- * never mistaken for an attack:
+ * embodiment of design §4.4's four guarantees, applied in an order chosen so
+ * every gate-level rejection leaves state unchanged and a legitimate
+ * retransmission is never mistaken for an attack:
  *
  *   1. **Schema / version validation (Req 7.6, 7.7).** The event is validated
  *      with `@cfls/protocol` {@link validateSignedEvent}; a malformed envelope,
@@ -28,12 +28,13 @@
  *      (per-device monotonic counter + nonce) rejects a `counter <= last-seen` or
  *      a reused nonce with `FORMAT_ERROR`, again leaving state unchanged.
  *
- * Only when all four checks pass does the gate assign the next monotonic
- * Event_Revision (via {@link RevisionCounter}), record the `Event_ID`, advance the
- * replay guard, and invoke the optional {@link Applier} that performs the actual
- * state mutation (locks/intents/presence/etc., implemented by later tasks). The
- * gate itself holds only metadata — counters, nonces, event ids, revisions —
- * never source content or secrets.
+ * Only when all four checks pass does the gate advance the replay guard, assign
+ * the next monotonic Event_Revision (via {@link RevisionCounter}), and invoke
+ * the optional {@link Applier}. An applier can reject a valid event on a
+ * business rule without recording it as applied: its replay counter and
+ * revision remain consumed, but its Event_ID cannot later become a false
+ * idempotent success. The gate itself holds only metadata — counters, nonces,
+ * event ids, revisions — never source content or secrets.
  *
  * Signature verification (Req 7.2, 7.3) is intentionally *not* performed here: it
  * requires the sending device's `Device_Public_Key` and is applied by the host
@@ -65,16 +66,22 @@ export type PermissionCheck = (
   envelope: TypedEventEnvelope,
 ) => PermissionDecision;
 
+/** A business-rule rejection returned by an {@link Applier}. */
+export interface ApplierRejection {
+  code: ErrorCode;
+  reason: string;
+}
+
 /**
- * Side-effecting mutation applied exactly once for a newly accepted event, after
- * its Event_Revision has been assigned. Later tasks (locks, intents, presence,
- * dependency, …) provide the concrete applier; the gate guarantees it runs at
- * most once per `Event_ID`.
+ * Side-effecting mutation applied after a validated event receives its
+ * Event_Revision. Returning an {@link ApplierRejection} consumes replay and the
+ * revision but keeps the Event_ID out of the idempotency-success index. An
+ * applier must return that rejection before mutating domain state.
  */
 export type Applier = (
   envelope: TypedEventEnvelope,
   eventRevision: number,
-) => void;
+) => void | ApplierRejection;
 
 /** The result of a single {@link IngestGate.ingest} call (design §3.1). */
 export interface IngestResult {
@@ -126,8 +133,10 @@ export const permitAll: PermissionCheck = () => ({ permitted: true });
  * The ingest gate (Req 7.4, 7.5, 7.7; design §4.4).
  *
  * Stateful, in-memory, and I/O-free: it owns the applied-`Event_ID` index and
- * borrows a {@link RevisionCounter} and {@link ReplayGuard}. All rejections leave
- * every piece of tracked state untouched.
+ * borrows a {@link RevisionCounter} and {@link ReplayGuard}. Validation,
+ * permission, idempotency, and replay rejections leave tracked state untouched.
+ * A business-rule rejection returned by an applier deliberately consumes its
+ * replay counter and revision so it cannot later be treated as success.
  */
 export class IngestGate {
   private readonly revisions: RevisionCounter;
@@ -152,14 +161,15 @@ export class IngestGate {
    * Run an inbound event through the gate (design §4.4).
    *
    * `input` is untrusted and may be any value: the gate validates it structurally
-   * before use. When every check passes, `apply` (if provided) is invoked exactly
-   * once with the validated envelope and its freshly assigned Event_Revision, and
-   * the returned {@link IngestResult} carries `accepted: true` and `eventRevision`.
+   * before use. When every check passes, `apply` (if provided) is invoked with
+   * the validated envelope and its freshly assigned Event_Revision. If it
+   * accepts, the returned {@link IngestResult} carries `accepted: true`; if it
+   * returns an {@link ApplierRejection}, the result carries that error and the
+   * consumed Event_Revision without recording the Event_ID as applied.
    *
-   * On any rejection the result carries `accepted: false` and the relevant
-   * {@link ErrorCode}, and no tracked state (revision counter, replay guard,
-   * applied index) is mutated. A duplicate `Event_ID` yields `accepted: true`
-   * with `duplicateOf` set and does not re-invoke `apply` (Req 7.4).
+   * Validation/permission/replay rejection leaves tracked state untouched. A
+   * duplicate `Event_ID` yields `accepted: true` with `duplicateOf` set and does
+   * not re-invoke `apply` (Req 7.4).
    */
   ingest(input: unknown, apply?: Applier): IngestResult {
     // 1. Schema / version validation (Req 7.6, 7.7) — before any state change.
@@ -211,10 +221,18 @@ export class IngestGate {
       };
     }
 
-    // 5. Accept: assign the revision, record the Event_ID, apply exactly once.
+    // 5. Assign the revision and let the domain applier accept or reject it.
     const eventRevision = this.revisions.next(envelope.session);
+    const applied = apply?.(envelope, eventRevision);
+    if (applied !== undefined) {
+      return {
+        accepted: false,
+        eventRevision,
+        error: applied.code,
+        reason: applied.reason,
+      };
+    }
     this.recordApplied(key, envelope.eventId, eventRevision);
-    apply?.(envelope, eventRevision);
     return { accepted: true, eventRevision };
   }
 

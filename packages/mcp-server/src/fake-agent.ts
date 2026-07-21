@@ -59,6 +59,8 @@ import type {
   GetDependentsRequest,
   GetRiskMapData,
   GetRiskMapRequest,
+  GetTeamStatusData,
+  GetTeamStatusRequest,
   ProjectSessionStatusData,
   ReleaseLockData,
   ReleaseLockRequest,
@@ -254,7 +256,12 @@ export class CoreStateAgentPort implements AgentPort {
     const entries = buildRiskMap({
       requester: this.self,
       branch: this.session.branch,
-      locks: this.locks.allLocks(this.session),
+      // Match the real agent's synchronized projection: concurrent claims are
+      // retained by the host for promotion, while the client-facing Risk_Map
+      // and team status expose the current winning lock only.
+      locks: this.locks
+        .allLocks(this.session)
+        .filter((lock) => !lock.concurrent),
       presence: this.presence.all(this.session),
       intents: this.intents.allIntents(this.session),
       rules: this.rules,
@@ -304,6 +311,120 @@ export class CoreStateAgentPort implements AgentPort {
         plannedFileCreations: [...planned.values()].sort((a, b) =>
           a.path.localeCompare(b.path),
         ),
+        highestRevision: this.revisions.highest(this.session),
+      },
+    };
+  }
+
+  getTeamStatus(req: GetTeamStatusRequest): AgentResult<GetTeamStatusData> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+
+    type Role = "editing" | "soft-lock" | "intent" | "planned-create";
+    interface MutableTask {
+      intentId: string;
+      description: string;
+      modifyPaths: Set<string>;
+      createPaths: Set<string>;
+    }
+    interface MutableMember {
+      memberId: string;
+      deviceIds: Set<string>;
+      files: Map<string, Set<Role>>;
+      tasks: Map<string, MutableTask>;
+      lastEventRevision: number;
+    }
+
+    const members = new Map<string, MutableMember>();
+    const memberFor = (member: MemberRef, revision: number): MutableMember => {
+      let item = members.get(member.memberId);
+      if (item === undefined) {
+        item = {
+          memberId: member.memberId,
+          deviceIds: new Set(),
+          files: new Map(),
+          tasks: new Map(),
+          lastEventRevision: 0,
+        };
+        members.set(item.memberId, item);
+      }
+      item.deviceIds.add(member.deviceId);
+      item.lastEventRevision = Math.max(item.lastEventRevision, revision);
+      return item;
+    };
+    const addFile = (item: MutableMember, path: string, role: Role): void => {
+      const normalized = normalizePath(path);
+      const roles = item.files.get(normalized) ?? new Set<Role>();
+      roles.add(role);
+      item.files.set(normalized, roles);
+    };
+
+    for (const lock of this.locks.allLocks(this.session)) {
+      if (lock.concurrent) {
+        continue;
+      }
+      const item = memberFor(lock.holder, lock.eventRevision);
+      addFile(item, lock.scope, "soft-lock");
+    }
+    for (const presence of this.presence.all(this.session)) {
+      if (presence.state === "stopped") {
+        continue;
+      }
+      const item = memberFor(presence.member, presence.eventRevision);
+      addFile(item, presence.path, "editing");
+    }
+    for (const intent of this.intents.allIntents(this.session)) {
+      const item = memberFor(intent.owner, intent.eventRevision);
+      const task: MutableTask = {
+        intentId: intent.intentId,
+        description: intent.description,
+        modifyPaths: new Set(intent.modifyPaths.map(normalizePath)),
+        createPaths: new Set(
+          intent.createPaths.map((entry) => normalizePath(entry.path)),
+        ),
+      };
+      item.tasks.set(task.intentId, task);
+      for (const path of task.modifyPaths) {
+        addFile(item, path, "intent");
+      }
+      for (const path of task.createPaths) {
+        addFile(item, path, "planned-create");
+      }
+    }
+
+    return {
+      ok: true,
+      data: {
+        teamId: this.session.teamId,
+        members: [...members.values()]
+          .map((member) => ({
+            memberId: member.memberId,
+            deviceIds: [...member.deviceIds].sort((a, b) => a.localeCompare(b)),
+            files: [...member.files.entries()]
+              .map(([path, roles]) => ({
+                path,
+                roles: [...roles].sort((a, b) => a.localeCompare(b)),
+              }))
+              .sort((a, b) => a.path.localeCompare(b.path)),
+            tasks: [...member.tasks.values()]
+              .map((task) => ({
+                intentId: task.intentId,
+                description: task.description,
+                modifyPaths: [...task.modifyPaths].sort((a, b) =>
+                  a.localeCompare(b),
+                ),
+                createPaths: [...task.createPaths].sort((a, b) =>
+                  a.localeCompare(b),
+                ),
+              }))
+              .sort((a, b) => a.intentId.localeCompare(b.intentId)),
+            lastEventRevision: member.lastEventRevision,
+          }))
+          .sort((a, b) => a.memberId.localeCompare(b.memberId)),
         highestRevision: this.revisions.highest(this.session),
       },
     };
