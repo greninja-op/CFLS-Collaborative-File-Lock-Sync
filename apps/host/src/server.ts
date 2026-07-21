@@ -43,6 +43,7 @@ import {
 import type { HostConfig } from "./config";
 import { buildDashboardState, renderDashboardHtml } from "./dashboard";
 import { HostedMcpEndpoint } from "./remote-mcp";
+import { DemoPairingEndpoint } from "./demo-pairing";
 import { resolveTls } from "./tls";
 
 /** Per-connection state tracked by the server. */
@@ -99,6 +100,8 @@ export class CoordinationServer {
   private readonly bySession = new Map<string, Set<Connection>>();
   /** Optional, bearer-gated read-only MCP endpoint for a single session. */
   private readonly hostedMcp: HostedMcpEndpoint | undefined;
+  /** Explicitly opt-in open enrollment used only by the public demo relay. */
+  private readonly demoPairing: DemoPairingEndpoint | undefined;
   private sweepTimer: NodeJS.Timeout | undefined;
   private startedAt = 0;
 
@@ -114,6 +117,9 @@ export class CoordinationServer {
         authority: this.authority,
         connectedMembers: (session) => this.connectedMemberIds(session),
       });
+    }
+    if (this.config.demoPairing !== undefined) {
+      this.demoPairing = new DemoPairingEndpoint(this.config.demoPairing);
     }
   }
 
@@ -224,6 +230,10 @@ export class CoordinationServer {
   private handleHttp(req: IncomingMessage, res: ServerResponse): void {
     if (this.hostedMcp?.matches(req)) {
       void this.hostedMcp.handle(req, res);
+      return;
+    }
+    if (this.demoPairing?.matches(req)) {
+      void this.demoPairing.handle(req, res);
       return;
     }
     const url = req.url ?? "/";

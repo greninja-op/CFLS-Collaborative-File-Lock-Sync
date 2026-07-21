@@ -30,6 +30,7 @@ import {
   readLocalApiSettings,
   readRepositoryRules,
   registerCommand,
+  setUpDemoWorkspace,
   showErrorMessage,
   showWarningMessage,
   type VsCodeExtensionContext,
@@ -524,6 +525,15 @@ export async function activate(context: VsCodeExtensionContext): Promise<void> {
     }),
     registerCommand("cfls.reconnectLocalAgent", () => {
       void recovery.reconnect();
+    }),
+    registerCommand("cfls.setupDemo", () => {
+      void setUpDemoWorkspace()
+        .then(() => recovery.reconnect())
+        .catch((error: unknown) => {
+          showErrorMessage(
+            `CFLS setup could not finish: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        });
     }),
   );
 

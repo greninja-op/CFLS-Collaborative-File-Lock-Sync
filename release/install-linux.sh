@@ -119,7 +119,7 @@ case ":$PATH:" in
 esac
 
 if [ -z "$WORKSPACE" ]; then
-  note "binary installation complete. To configure a repository, rerun with --workspace, --name, and --invite."
+  note "binary installation complete. Open your project in VS Code, install the CFLS extension, then click the CFLS status item to pair this computer."
   exit 0
 fi
 
@@ -142,9 +142,7 @@ else
 fi
 
 if [ -z "$INVITATION" ]; then
-  note "relay configuration was saved, but this device needs its signed invitation before it can connect."
-  note "After receiving it, run: $DESTINATION connect '<invitation>'  (from $WORKSPACE)"
-  note "Then run: $DESTINATION service install --workspace '$WORKSPACE'"
+  note "relay configuration was saved. For the easy demo flow, open this folder in VS Code and use CFLS: Set Up This Workspace (Demo Pairing)."
   exit 0
 fi
 

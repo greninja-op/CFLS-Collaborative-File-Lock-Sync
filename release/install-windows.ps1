@@ -46,7 +46,7 @@ Copy-Item -LiteralPath $Binary -Destination $Destination -Force
 Note "installed $Destination"
 
 if ([string]::IsNullOrWhiteSpace($Workspace)) {
-    Note "binary installation complete. Re-run with -Workspace, -Name, and -Invite to connect this computer."
+    Note "binary installation complete. Open your project in VS Code, install the CFLS extension, then click the CFLS status item to pair this computer."
     exit 0
 }
 
@@ -73,9 +73,7 @@ try {
 }
 
 if ([string]::IsNullOrWhiteSpace($Invite)) {
-    Note "relay configuration was saved, but this device needs its signed invitation before it can connect."
-    Note "After receiving it, from $Workspace run: $Destination connect '<invitation>'"
-    Note "Then run: $Destination service install --workspace `"$Workspace`" --windows-user `"$([System.Security.Principal.WindowsIdentity]::GetCurrent().Name)`""
+    Note "relay configuration was saved. For the easy demo flow, open this folder in VS Code and use CFLS: Set Up This Workspace (Demo Pairing)."
     exit 0
 }
 

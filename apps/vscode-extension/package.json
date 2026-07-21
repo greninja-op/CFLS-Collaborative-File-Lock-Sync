@@ -30,6 +30,10 @@
       {
         "command": "cfls.reconnectLocalAgent",
         "title": "CFLS: Reconnect to Local Coordination Agent"
+      },
+      {
+        "command": "cfls.setupDemo",
+        "title": "CFLS: Set Up This Workspace (Demo Pairing)"
       }
     ],
     "configuration": {
@@ -39,6 +43,11 @@
           "type": "string",
           "default": "ws://127.0.0.1:8750",
           "description": "Loopback WebSocket URL of the local CoordinationAgent Local_API. The extension never connects to the CoordinationHost directly."
+        },
+        "cfls.clientPath": {
+          "type": "string",
+          "default": "",
+          "description": "Optional absolute path to the installed CFLS client. Leave blank to use the standard installer location."
         },
         "cfls.localApi.token": {
           "type": "string",

@@ -18,6 +18,7 @@ export {
   type HostConfigInput,
   type HostTlsConfig,
   type RemoteMcpConfig,
+  type DemoPairingConfig,
 } from "./config";
 export {
   HostedMcpEndpoint,

@@ -10,6 +10,7 @@
 
 import type { ExpiryConfigInput } from "@cfls/core-state";
 import type { SessionId } from "@cfls/protocol";
+import type { DevicePrivateKey, DevicePublicKey } from "@cfls/security";
 
 /** TLS material for the WSS listener (Req 6.1, 6.3; design §4.1). */
 export interface HostTlsConfig {
@@ -40,6 +41,24 @@ export interface RemoteMcpConfig {
   publicHostUrl?: string;
 }
 
+/**
+ * Explicitly opt-in, demo-only enrollment via a short pairing code. The relay
+ * uses its existing admin key to mint normal signed invitations; this setting
+ * intentionally removes the usual human-admin approval step and MUST stay off
+ * for a production relay.
+ */
+export interface DemoPairingConfig {
+  /** The one hosted session this demo relay is allowed to enroll into. */
+  session: SessionId;
+  /** Persistent relay admin identity that signs the resulting invitations. */
+  issuerPublicKey: DevicePublicKey;
+  issuerPrivateKey: DevicePrivateKey;
+  /** Pairing-code lifetime. Defaults to ten minutes. */
+  codeTtlMs?: number;
+  /** Resulting invitation lifetime. Defaults to twelve hours. */
+  invitationTtlMs?: number;
+}
+
 /** Fully-resolved host configuration. */
 export interface HostConfig {
   /** The configured `Host_URL`, e.g. `wss://dev-host.local:8443` (Req 6.1). */
@@ -60,6 +79,8 @@ export interface HostConfig {
   dashboard: boolean;
   /** Optional bearer-gated hosted MCP endpoint. Omitted means the route is off. */
   remoteMcp?: RemoteMcpConfig;
+  /** Demo-only short-code enrollment. Never enabled implicitly. */
+  demoPairing?: DemoPairingConfig;
   /** Heartbeat/expiry tuning forwarded to the core-state expiry engine (Req 26). */
   expiry?: ExpiryConfigInput;
   /** Milliseconds the {@link start} call is allowed before failing (Req 1.1). */
@@ -75,6 +96,8 @@ export interface HostConfigInput {
   dashboard?: boolean;
   /** Enable a bearer-gated, read-only hosted MCP endpoint for one session. */
   remoteMcp?: RemoteMcpConfig;
+  /** Enable explicitly supplied demo-only short-code enrollment. */
+  demoPairing?: DemoPairingConfig;
   expiry?: ExpiryConfigInput;
   startTimeoutMs?: number;
 }
@@ -160,8 +183,57 @@ export function loadHostConfig(
     ...(input.remoteMcp !== undefined
       ? { remoteMcp: normalizeRemoteMcp(input.remoteMcp) }
       : {}),
+    ...(input.demoPairing !== undefined
+      ? { demoPairing: normalizeDemoPairing(input.demoPairing) }
+      : {}),
     ...(input.expiry !== undefined ? { expiry: input.expiry } : {}),
     startTimeoutMs: input.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS,
+  };
+}
+
+function normalizeDemoPairing(config: DemoPairingConfig): DemoPairingConfig {
+  if (
+    config.session.repoId.trim() === "" ||
+    config.session.teamId.trim() === "" ||
+    config.session.branch.trim() === "" ||
+    config.issuerPublicKey.trim() === "" ||
+    config.issuerPrivateKey.trim() === ""
+  ) {
+    throw new Error(
+      "CFLS demo pairing requires a complete session and admin key.",
+    );
+  }
+  const codeTtlMs = config.codeTtlMs ?? 10 * 60_000;
+  const invitationTtlMs = config.invitationTtlMs ?? 12 * 60 * 60_000;
+  if (
+    !Number.isInteger(codeTtlMs) ||
+    codeTtlMs < 60_000 ||
+    codeTtlMs > 60 * 60_000
+  ) {
+    throw new Error(
+      "CFLS demo pairing code TTL must be between one and sixty minutes.",
+    );
+  }
+  if (
+    !Number.isInteger(invitationTtlMs) ||
+    invitationTtlMs < 60_000 ||
+    invitationTtlMs > 7 * 24 * 60 * 60_000
+  ) {
+    throw new Error(
+      "CFLS demo pairing invitation TTL must be between one minute and seven days.",
+    );
+  }
+  return {
+    session: {
+      repoId: config.session.repoId,
+      teamId: config.session.teamId,
+      branch: config.session.branch,
+      baseRevision: config.session.baseRevision ?? null,
+    },
+    issuerPublicKey: config.issuerPublicKey,
+    issuerPrivateKey: config.issuerPrivateKey,
+    codeTtlMs,
+    invitationTtlMs,
   };
 }
 

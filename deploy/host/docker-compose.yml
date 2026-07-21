@@ -30,6 +30,9 @@ services:
       # The dashboard reveals collaboration metadata. Keep it disabled until
       # an authenticated admin route is deliberately configured.
       CFLS_DASHBOARD: "false"
+      # This public relay is intentionally used for a short-code product demo.
+      # It must remain false/absent for any production deployment.
+      CFLS_DEMO_OPEN_PAIRING: ${CFLS_DEMO_OPEN_PAIRING:-false}
     volumes:
       # Contains the durable SQLite store and encrypted admin-key fallback.
       - cfls-data:/var/lib/cfls

@@ -15,7 +15,7 @@
 
 import { execFile } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, userInfo } from "node:os";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -248,6 +248,14 @@ async function cmdHost(args: ParsedArgs, cwd: string): Promise<void> {
     stringOption(args, "db") ?? process.env["CFLS_DB_PATH"] ?? "host.db";
   const dashboard = parseDashboardEnv(process.env["CFLS_DASHBOARD"]);
   const remoteMcpToken = process.env["CFLS_REMOTE_MCP_TOKEN"]?.trim();
+  const demoPairingEnabled =
+    parseDashboardEnv(process.env["CFLS_DEMO_OPEN_PAIRING"]) === true;
+  // This is deliberately loaded only for an explicitly enabled demo relay.
+  // Normal hosts never keep their admin private key in the network server's
+  // pairing configuration.
+  const demoAdminKey = demoPairingEnabled
+    ? await loadAdminKey(hostConfig.teamId)
+    : undefined;
   const running = await startHost(
     {
       hostUrl,
@@ -263,6 +271,15 @@ async function cmdHost(args: ParsedArgs, cwd: string): Promise<void> {
               ...(process.env["CFLS_PUBLIC_RELAY_URL"] !== undefined
                 ? { publicHostUrl: process.env["CFLS_PUBLIC_RELAY_URL"] }
                 : {}),
+            },
+          }),
+      ...(demoAdminKey === undefined
+        ? {}
+        : {
+            demoPairing: {
+              session,
+              issuerPublicKey: demoAdminKey.publicKey,
+              issuerPrivateKey: demoAdminKey.privateKey,
             },
           }),
     },
@@ -284,6 +301,11 @@ async function cmdHost(args: ParsedArgs, cwd: string): Promise<void> {
   if (remoteMcpToken !== undefined && remoteMcpToken !== "") {
     log.info(
       "Hosted read-only MCP endpoint: /mcp (bearer authentication required).",
+    );
+  }
+  if (demoAdminKey !== undefined) {
+    log.warn(
+      "DEMO OPEN PAIRING is enabled at /demo-pair. Do not use this host configuration in production.",
     );
   }
   log.info("Press Ctrl+C to stop.");
@@ -386,6 +408,134 @@ async function cmdJoin(args: ParsedArgs, cwd: string): Promise<void> {
     "  3. Paste the invitation they return into:  cfls connect <invitation>",
   );
   log.info("  4. Then start coordinating:  cfls agent");
+}
+
+interface DemoPairResponse {
+  invitation: unknown;
+  code?: string;
+  expiresAt?: string;
+}
+
+/** Turn a configured websocket relay URL into its colocated HTTPS pairing URL. */
+function demoPairingBaseUrl(hostUrl: string): string {
+  const url = new URL(hostUrl);
+  if (url.protocol === "wss:") url.protocol = "https:";
+  else if (url.protocol === "ws:") url.protocol = "http:";
+  else throw new Error("The CFLS relay URL must use ws:// or wss://.");
+  url.pathname = "/demo-pair";
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/$/u, "");
+}
+
+function defaultDemoMemberName(devicePublicKey: string): string {
+  return `member-${deriveDeviceId(devicePublicKey).slice(0, 6)}`;
+}
+
+async function requestDemoPairing(
+  hostUrl: string,
+  action: "host" | "join",
+  body: Record<string, string>,
+): Promise<DemoPairResponse> {
+  let response: Response;
+  try {
+    response = await fetch(`${demoPairingBaseUrl(hostUrl)}/${action}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(12_000),
+    });
+  } catch {
+    throw new Error(
+      "Could not reach the CFLS demo relay. Check your internet connection and try again.",
+    );
+  }
+  let parsed: unknown = null;
+  try {
+    parsed = await response.json();
+  } catch {
+    // The status below remains useful even if a proxy returned non-JSON.
+  }
+  if (!response.ok || typeof parsed !== "object" || parsed === null) {
+    const error =
+      typeof parsed === "object" &&
+      parsed !== null &&
+      typeof (parsed as { error?: unknown }).error === "string"
+        ? (parsed as { error: string }).error.replace(/_/g, " ")
+        : `relay returned HTTP ${response.status}`;
+    throw new Error(`CFLS demo pairing failed: ${error}.`);
+  }
+  const result = parsed as DemoPairResponse;
+  // `decodeInvitation` is also the canonical shape validation used by agent
+  // setup; encode the returned JSON before it ever reaches disk.
+  decodeInvitation(
+    Buffer.from(JSON.stringify(result.invitation), "utf8").toString("base64"),
+  );
+  return result;
+}
+
+async function cmdDemoPair(
+  args: ParsedArgs,
+  cwd: string,
+  action: "host" | "join",
+): Promise<void> {
+  const repoRoot = resolveRepoRoot(cwd);
+  const config = readAgentConfig(agentConfigPath(repoRoot));
+  const hostUrl =
+    stringOption(args, "host") ?? config.hostUrl ?? DEFAULT_DEMO_RELAY_URL;
+  const teamId = stringOption(args, "team") ?? config.teamId ?? DEFAULT_TEAM_ID;
+  const localSession = resolveRepositorySession({ repoRoot, teamId });
+  const deviceKey = await loadOrCreateThisDeviceKey(
+    localSession.session.repoId,
+  );
+  const memberId =
+    stringOption(args, "name") ??
+    config.memberName ??
+    defaultDemoMemberName(deviceKey.publicKey);
+  const code = action === "join" ? args.positionals[0] : undefined;
+  if (action === "join" && (code === undefined || !/^\d{8}$/u.test(code))) {
+    throw new Error(
+      "Usage: cfls demo-join <8-digit-code> [--name <memberName>]",
+    );
+  }
+  const result = await requestDemoPairing(hostUrl, action, {
+    devicePublicKey: deviceKey.publicKey,
+    memberId,
+    ...(code !== undefined ? { code } : {}),
+  });
+  const encoded = Buffer.from(
+    JSON.stringify(result.invitation),
+    "utf8",
+  ).toString("base64");
+  const invitation = decodeInvitation(encoded);
+  if (invitation.claims.devicePublicKey !== deviceKey.publicKey) {
+    throw new Error(
+      "The relay returned an invitation for a different device; pairing was not saved.",
+    );
+  }
+  if (invitation.claims.session.repoId !== localSession.session.repoId) {
+    throw new Error(
+      "This workspace is not the repository configured on the CFLS demo relay.",
+    );
+  }
+  updateAgentConfig(agentConfigPath(repoRoot), {
+    hostUrl,
+    memberName: invitation.claims.memberId,
+    teamId: invitation.claims.session.teamId,
+    invitation: encoded,
+  });
+  if (action === "host") {
+    if (
+      typeof result.code !== "string" ||
+      typeof result.expiresAt !== "string"
+    ) {
+      throw new Error("The relay did not return a pairing code.");
+    }
+    log.info(`CFLS_PAIR_CODE=${result.code}`);
+    log.info(`CFLS_PAIR_EXPIRES_AT=${result.expiresAt}`);
+  }
+  log.info(`CFLS_PAIR_MEMBER=${invitation.claims.memberId}`);
+  log.info(`CFLS_PAIR_SESSION=${describeSession(invitation.claims.session)}`);
 }
 
 /** `cfls connect <invitationBase64>` — validate + store the invitation. */
@@ -649,7 +799,9 @@ async function cmdService(args: ParsedArgs, cwd: string): Promise<void> {
   );
   const userHome = homedir();
   const serviceName = stringOption(args, "name");
-  const windowsUserId = stringOption(args, "windows-user");
+  const windowsUserId =
+    stringOption(args, "windows-user") ??
+    (platform === "win32" ? defaultWindowsUserId() : undefined);
   const identity = {
     platform,
     userHome,
@@ -704,6 +856,17 @@ async function cmdService(args: ParsedArgs, cwd: string): Promise<void> {
       "For headless use after logout, enable systemd user lingering for this account if your distro requires it.",
     );
   }
+}
+
+/** Resolve the current interactive Windows identity for one-click extension setup. */
+function defaultWindowsUserId(): string | undefined {
+  const name = process.env["USERNAME"]?.trim() || userInfo().username.trim();
+  const domain = process.env["USERDOMAIN"]?.trim();
+  return name === ""
+    ? undefined
+    : domain === undefined || domain === ""
+      ? name
+      : `${domain}\\${name}`;
 }
 
 /**
@@ -1003,6 +1166,8 @@ function printUsage(): void {
       "  cfls join [--host <wss-url>] [--name <name>] [--team <id>]",
       "                                                Defaults to the hosted demo relay",
       "  cfls connect <invitationBase64>               Store an invitation",
+      "  cfls demo-host [--name <name>]                Demo: create a short pairing code",
+      "  cfls demo-join <8-digit-code> [--name <name>] Demo: join a host code",
       "  cfls agent [--insecure-tls] [--local-port 8750]",
       "                                                Run the local CoordinationAgent",
       "  cfls mcp [--workspace <path>]                 Expose this running agent to an MCP client",
@@ -1047,6 +1212,12 @@ export async function main(
         return 0;
       case "connect":
         cmdConnect(args, cwd);
+        return 0;
+      case "demo-host":
+        await cmdDemoPair(args, cwd, "host");
+        return 0;
+      case "demo-join":
+        await cmdDemoPair(args, cwd, "join");
         return 0;
       case "agent":
         await cmdAgent(args, cwd);

@@ -312,6 +312,58 @@ describe("dashboard HTTP", () => {
   });
 });
 
+describe("demo short-code pairing", () => {
+  it("mints ordinary device-bound invitations and consumes each join code once", async () => {
+    await host.stop();
+    host = await startFreshHost({
+      demoPairing: {
+        session,
+        issuerPublicKey: admin.key.publicKey,
+        issuerPrivateKey: admin.key.privateKey,
+      },
+    });
+    host.authority.registerSession(session, [admin.key.publicKey]);
+
+    const first = makeDevice("alice");
+    const issued = await postHttp("/demo-pair/host", {
+      devicePublicKey: first.key.publicKey,
+      memberId: first.memberId,
+    });
+    expect(issued.statusCode).toBe(201);
+    const hosted = JSON.parse(issued.body) as {
+      code: string;
+      invitation: unknown;
+    };
+    expect(hosted.code).toMatch(/^\d{8}$/u);
+
+    const second = makeDevice("bob");
+    const joined = await postHttp("/demo-pair/join", {
+      code: hosted.code,
+      devicePublicKey: second.key.publicKey,
+      memberId: second.memberId,
+    });
+    expect(joined.statusCode).toBe(201);
+    const joinedInvitation = Buffer.from(
+      JSON.stringify(
+        (JSON.parse(joined.body) as { invitation: unknown }).invitation,
+      ),
+      "utf8",
+    ).toString("base64");
+    const client = await TestClient.open(url());
+    expect(await client.handshake(session, second, joinedInvitation)).toEqual({
+      ok: true,
+    });
+    client.close();
+
+    const replay = await postHttp("/demo-pair/join", {
+      code: hosted.code,
+      devicePublicKey: makeDevice("mallory").key.publicKey,
+      memberId: "mallory",
+    });
+    expect(replay.statusCode).toBe(404);
+  });
+});
+
 describe("hosted read-only MCP", () => {
   const mcpToken = "cfls-hosted-mcp-test-token-0123456789";
   const initialize = {

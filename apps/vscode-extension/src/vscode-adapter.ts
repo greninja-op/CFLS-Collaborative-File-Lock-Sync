@@ -10,7 +10,9 @@
  */
 
 import type { RiskLevel } from "@cfls/protocol";
+import { execFile } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 
 import * as vscode from "vscode";
@@ -218,6 +220,147 @@ export function showInformationMessage(
     return;
   }
   void vscode.window.showInformationMessage(message, options);
+}
+
+/** Execute the installed standalone client without using a shell. */
+function runCfls(
+  executable: string,
+  args: readonly string[],
+  cwd: string,
+): Promise<string> {
+  return new Promise((resolveCommand, rejectCommand) => {
+    execFile(
+      executable,
+      [...args],
+      { cwd, encoding: "utf8", windowsHide: true, timeout: 30_000 },
+      (error, stdout, stderr) => {
+        if (error === null) {
+          resolveCommand(stdout);
+          return;
+        }
+        const detail = stderr.trim() || stdout.trim() || error.message;
+        rejectCommand(new Error(detail));
+      },
+    );
+  });
+}
+
+/** Prefer the installer locations, with an explicit setting for custom installs. */
+function findCflsClient(): string {
+  const configured = vscode.workspace
+    .getConfiguration("cfls")
+    .get<string>("clientPath", "")
+    .trim();
+  if (configured !== "") return configured;
+  const installed =
+    process.platform === "win32"
+      ? join(
+          process.env["LOCALAPPDATA"] ?? homedir(),
+          "CFLS",
+          "bin",
+          "cfls.exe",
+        )
+      : join(homedir(), ".local", "bin", "cfls");
+  return existsSync(installed) ? installed : "cfls";
+}
+
+function pairingCodeFromOutput(output: string): string | undefined {
+  const match = /^CFLS_PAIR_CODE=(\d{8})$/mu.exec(output);
+  return match?.[1];
+}
+
+/**
+ * One-click, demo-only pairing for the current workspace. The extension talks
+ * only to the installed local client; that client obtains a normal signed
+ * invitation from the relay and then installs the existing per-user service.
+ */
+export async function setUpDemoWorkspace(): Promise<void> {
+  const workspace = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+  if (workspace === undefined) {
+    throw new Error(
+      "Open the project folder in VS Code before setting up CFLS.",
+    );
+  }
+  const choice = await vscode.window.showQuickPick(
+    [
+      {
+        label: "Create a pairing code",
+        description:
+          "Use this on the first laptop, then share its 8-digit code.",
+        action: "host" as const,
+      },
+      {
+        label: "Join with a pairing code",
+        description:
+          "Use this on the second laptop after the first creates a code.",
+        action: "join" as const,
+      },
+    ],
+    {
+      title: "CFLS demo setup",
+      placeHolder: "Choose how this computer joins the demo",
+    },
+  );
+  if (choice === undefined) return;
+  const memberName = await vscode.window.showInputBox({
+    title: "CFLS display name (optional)",
+    prompt:
+      "For example, Alice. Leave blank to use this device's generated name.",
+    validateInput: (value) =>
+      /[\u0000-\u001f\u007f]/u.test(value) || value.trim().length > 64
+        ? "Use up to 64 normal characters."
+        : undefined,
+  });
+  if (memberName === undefined) return;
+  let code: string | undefined;
+  if (choice.action === "join") {
+    code = await vscode.window.showInputBox({
+      title: "Enter the 8-digit CFLS pairing code",
+      ignoreFocusOut: true,
+      validateInput: (value) =>
+        /^\d{8}$/u.test(value.trim()) ? undefined : "Enter exactly 8 digits.",
+    });
+    if (code === undefined) return;
+  }
+  const executable = findCflsClient();
+  const pairingArgs = [
+    choice.action === "host" ? "demo-host" : "demo-join",
+    ...(code === undefined ? [] : [code.trim()]),
+    ...(memberName.trim() === "" ? [] : ["--name", memberName.trim()]),
+  ];
+  const output = await vscode.window.withProgress(
+    {
+      location: vscode.ProgressLocation.Notification,
+      title: "CFLS is connecting this workspace…",
+      cancellable: false,
+    },
+    async () => {
+      const pairOutput = await runCfls(executable, pairingArgs, workspace);
+      await runCfls(
+        executable,
+        ["service", "install", "--workspace", workspace],
+        workspace,
+      );
+      return pairOutput;
+    },
+  );
+  if (choice.action === "host") {
+    const pairingCode = pairingCodeFromOutput(output);
+    if (pairingCode === undefined) {
+      throw new Error(
+        "CFLS paired this laptop but did not return a usable pairing code.",
+      );
+    }
+    await vscode.env.clipboard.writeText(pairingCode);
+    void vscode.window.showInformationMessage(
+      `CFLS pairing code: ${pairingCode} — copied. Enter it on the second laptop within 10 minutes.`,
+      { modal: true },
+    );
+    return;
+  }
+  void vscode.window.showInformationMessage(
+    "CFLS is connected. The background service is running for this folder.",
+  );
 }
 
 /**
@@ -437,6 +580,9 @@ export class StatusBarRenderer {
     // Keep the CFLS mark at the leading edge. The whole chip is a command, so
     // it remains obvious that clicking it opens the live team desk.
     this.item.text = `$(organization) CFLS  ${coordinationIcon}  ${teamLabel} · ${summary}`;
+    this.item.command = vm.offline
+      ? "cfls.setupDemo"
+      : "cfls.showCoordinationStatus";
     this.item.backgroundColor = hasActiveCoordination
       ? new vscode.ThemeColor("statusBarItem.warningBackground")
       : undefined;
@@ -445,6 +591,11 @@ export class StatusBarRenderer {
       buildStatusTooltip(vm, this.selfMemberId),
     );
     tooltip.isTrusted = false;
+    if (vm.offline) {
+      tooltip.appendMarkdown(
+        "\n\nClick **CFLS** to set up this workspace with a short pairing code.",
+      );
+    }
     this.item.tooltip = tooltip;
   }
 
