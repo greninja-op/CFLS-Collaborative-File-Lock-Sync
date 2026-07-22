@@ -41,6 +41,8 @@ export type {
   MessageKind,
   MessagePriority,
   MessageDto,
+  TaskStatus,
+  TaskDto,
 } from "./models";
 
 // ---- Error codes (design §11.1) ----
@@ -75,6 +77,7 @@ export {
   BroadcastMessageType,
   EventMessageType,
   MessagingMessageType,
+  TaskMessageType,
   ErrorMessageType,
   MessageType,
   MESSAGE_TYPES,
@@ -124,6 +127,11 @@ export type {
   MessageSendPayload,
   MessageUpdatePayload,
   MessageReadPayload,
+  TaskAssignPayload,
+  TaskRespondPayload,
+  TaskProgressPayload,
+  TaskWithdrawPayload,
+  TaskUpdatePayload,
   ErrorPayload,
 } from "./messages";
 

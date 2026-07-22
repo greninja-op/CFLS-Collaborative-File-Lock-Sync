@@ -26,6 +26,7 @@ import type {
   MessageDto,
   MessageKind,
   MessagePriority,
+  TaskDto,
 } from "./models";
 import type { ErrorCode } from "./errors";
 
@@ -147,6 +148,20 @@ export const MessagingMessageType = {
   READ: "message.read",
 } as const;
 
+/** V2 task message types (Phase 2; Req 2.1–2.3). */
+export const TaskMessageType = {
+  /** C→H: assign a new task (proposed) to a member. */
+  ASSIGN: "task.assign",
+  /** C→H: assignee approves or rejects an incoming proposed task. */
+  RESPOND: "task.respond",
+  /** C→H: assignee reports progress (in_progress | done). */
+  PROGRESS: "task.progress",
+  /** C→H: assigner or assignee withdraws a task. */
+  WITHDRAW: "task.withdraw",
+  /** H→C: broadcast of the authoritative task state. */
+  UPDATE: "task.update",
+} as const;
+
 /** Error message type (§11.1, §11.2). */
 export const ErrorMessageType = {
   /** H→C: typed error carrying an ErrorCode. */
@@ -172,6 +187,9 @@ export const MessageType = {
   // the MessagingMessageType const directly). MESSAGE_TYPES below is the lossless
   // catalog and includes every messaging wire string.
   ...MessagingMessageType,
+  // TaskMessageType is likewise spread before BroadcastMessageType so the shared
+  // `UPDATE` key still resolves to `coordination.update` in this convenience map.
+  ...TaskMessageType,
   ...BroadcastMessageType,
   ...EventMessageType,
   ...ErrorMessageType,
@@ -190,6 +208,7 @@ export type MessageTypeName =
   | (typeof BroadcastMessageType)[keyof typeof BroadcastMessageType]
   | (typeof EventMessageType)[keyof typeof EventMessageType]
   | (typeof MessagingMessageType)[keyof typeof MessagingMessageType]
+  | (typeof TaskMessageType)[keyof typeof TaskMessageType]
   | (typeof ErrorMessageType)[keyof typeof ErrorMessageType];
 
 /**
@@ -215,6 +234,7 @@ export const MESSAGE_TYPES: readonly MessageTypeName[] = [
   ...Object.values(BroadcastMessageType),
   ...Object.values(EventMessageType),
   ...Object.values(MessagingMessageType),
+  ...Object.values(TaskMessageType),
   ...Object.values(ErrorMessageType),
 ] as MessageTypeName[];
 
@@ -559,6 +579,42 @@ export interface MessageReadPayload {
 }
 
 // ---------------------------------------------------------------------------
+// V2 task payloads (Phase 2; Req 2.1-2.3)
+// ---------------------------------------------------------------------------
+
+/** `task.assign` (C→H). The host assigns taskId (=Event_ID), assigner=sender. */
+export interface TaskAssignPayload {
+  title: string;
+  description: string;
+  /** The member whose Task_List the task targets. */
+  assigneeMemberId: string;
+}
+
+/** `task.respond` (C→H) — assignee approves or rejects a proposed task (Req 2.2). */
+export interface TaskRespondPayload {
+  taskId: string;
+  /** True to accept (→ accepted), false to reject (→ rejected). */
+  accept: boolean;
+}
+
+/** `task.progress` (C→H) — assignee advances a task's status (Req 2.3). */
+export interface TaskProgressPayload {
+  taskId: string;
+  status: "in_progress" | "done";
+}
+
+/** `task.withdraw` (C→H) — assigner or assignee withdraws a task (Req 2.2). */
+export interface TaskWithdrawPayload {
+  taskId: string;
+}
+
+/** `task.update` (H→C) — the authoritative task state. */
+export interface TaskUpdatePayload {
+  op: "added" | "updated" | "removed";
+  task: TaskDto;
+}
+
+// ---------------------------------------------------------------------------
 // Type-level payload map — associates each message type with its payload
 // ---------------------------------------------------------------------------
 
@@ -614,6 +670,12 @@ export interface MessagePayloadMap {
   [MessagingMessageType.SEND]: MessageSendPayload;
   [MessagingMessageType.UPDATE]: MessageUpdatePayload;
   [MessagingMessageType.READ]: MessageReadPayload;
+
+  [TaskMessageType.ASSIGN]: TaskAssignPayload;
+  [TaskMessageType.RESPOND]: TaskRespondPayload;
+  [TaskMessageType.PROGRESS]: TaskProgressPayload;
+  [TaskMessageType.WITHDRAW]: TaskWithdrawPayload;
+  [TaskMessageType.UPDATE]: TaskUpdatePayload;
 
   [ErrorMessageType.ERROR]: ErrorPayload;
 }

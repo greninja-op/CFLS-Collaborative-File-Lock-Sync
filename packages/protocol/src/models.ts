@@ -290,3 +290,42 @@ export interface MessageDto {
   /** ISO-8601 send time; advisory only, never a sole conflict resolver. */
   sentAt: string;
 }
+
+// ---- V2 Collaboration Layer: Tasks (Phase 2; idea.md §6 Task management) ----
+
+/**
+ * The lifecycle status of a {@link TaskDto} (Req 2.1). A human (or Luna) assigns
+ * a task as `proposed`; the receiving member `accepted`/`rejected` it before it
+ * lands in their Task_List; the assignee then drives `in_progress` → `done`;
+ * either party may `withdrawn` it.
+ */
+export type TaskStatus =
+  | "proposed"
+  | "accepted"
+  | "rejected"
+  | "in_progress"
+  | "done"
+  | "withdrawn";
+
+/**
+ * A shared unit of human-directed work (Req 2.1–2.3; idea.md §6). Tasks are the
+ * larger, human-assigned work items that require the receiving member's
+ * approval, distinct from the agent-level self-coordinated Declared_Intents.
+ * A task carries only coordination metadata — a title and description as team
+ * text, never source content.
+ */
+export interface TaskDto {
+  /** Globally unique task id (the originating Event_ID). */
+  taskId: string;
+  /** Short team-text title. */
+  title: string;
+  /** Team-text description of the work. */
+  description: string;
+  /** The member whose Task_List this task targets. */
+  assignee: MemberRef;
+  /** The member (human or Luna) that assigned the task. */
+  assigner: MemberRef;
+  status: TaskStatus;
+  /** Authoritative Event_Revision of the latest change to the task (Req 2.1). */
+  eventRevision: number;
+}

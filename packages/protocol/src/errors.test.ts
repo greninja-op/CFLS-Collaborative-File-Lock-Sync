@@ -25,6 +25,7 @@ import {
   BroadcastMessageType,
   EventMessageType,
   MessagingMessageType,
+  TaskMessageType,
   ErrorMessageType,
   MessageType,
   MESSAGE_TYPES,
@@ -161,6 +162,7 @@ const ALL_GROUPS = [
   BroadcastMessageType,
   EventMessageType,
   MessagingMessageType,
+  TaskMessageType,
   ErrorMessageType,
 ];
 
@@ -173,10 +175,10 @@ describe("MESSAGE_TYPES catalog", () => {
     }
   });
 
-  it("contains exactly the 36 catalog message types", () => {
+  it("contains exactly the 41 catalog message types", () => {
     const expected = ALL_GROUPS.flatMap((group) => Object.values(group));
     expect([...MESSAGE_TYPES].sort()).toEqual([...expected].sort());
-    expect(MESSAGE_TYPES.length).toBe(36);
+    expect(MESSAGE_TYPES.length).toBe(41);
   });
 
   it("has no duplicate entries", () => {
