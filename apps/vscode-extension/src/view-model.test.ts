@@ -300,3 +300,61 @@ describe("offline / stale indicator (Req 3.6, 33.3)", () => {
     ]);
   });
 });
+
+describe("view-model — V2 messages projection (Phase 1; Req 1.1–1.4)", () => {
+  const emptyRisk: GetRiskMapData = {
+    paths: [],
+    plannedFileCreations: [],
+    highestRevision: 0,
+  };
+
+  it("projects messages with priority and marks answered questions", () => {
+    const vm = buildCoordinationViewModel({
+      riskMap: emptyRisk,
+      messages: {
+        messages: [
+          {
+            messageId: "m-1",
+            kind: "broadcast",
+            sender: { memberId: "alice", deviceId: "d-a" },
+            priority: "urgent",
+            body: "deploy freeze",
+            eventRevision: 5,
+            sentAt: "2024-01-01T00:00:00Z",
+          },
+          {
+            messageId: "q-1",
+            kind: "question",
+            sender: { memberId: "bob", deviceId: "d-b" },
+            toMemberId: "me",
+            priority: "normal",
+            body: "which branch?",
+            answered: false,
+            correlationId: "c-1",
+            eventRevision: 6,
+            sentAt: "2024-01-01T00:01:00Z",
+          },
+        ],
+        unreadCount: 1,
+      },
+      connection: online,
+      staleness: fresh,
+    });
+
+    expect(vm.messages.map((m) => m.messageId)).toEqual(["m-1", "q-1"]);
+    expect(vm.messages[0]?.priority).toBe("urgent");
+    expect(vm.messages[0]?.answered).toBeNull(); // broadcast is not a question
+    expect(vm.messages[1]?.answered).toBe(false); // open question
+    expect(vm.unreadCount).toBe(1);
+  });
+
+  it("defaults to no messages and zero unread when messaging data is absent", () => {
+    const vm = buildCoordinationViewModel({
+      riskMap: emptyRisk,
+      connection: online,
+      staleness: fresh,
+    });
+    expect(vm.messages).toEqual([]);
+    expect(vm.unreadCount).toBe(0);
+  });
+});
