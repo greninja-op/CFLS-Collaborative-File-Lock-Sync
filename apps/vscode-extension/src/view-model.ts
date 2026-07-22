@@ -20,13 +20,19 @@ import type {
   GetRiskMapData,
   GetTeamStatusData,
   ListMessagesData,
+  ListTasksData,
   RiskEdge,
   StalenessSnapshot,
   TeamActivityFile,
   TeamActivityTask,
   TeamMemberActivity,
 } from "@cfls/mcp-server";
-import type { MessageKind, MessagePriority, RiskLevel } from "@cfls/protocol";
+import type {
+  MessageKind,
+  MessagePriority,
+  RiskLevel,
+  TaskStatus,
+} from "@cfls/protocol";
 
 /** Indirect dependency risk for a path, with its explanation (Req 3.4, 22). */
 export interface IndirectRiskView {
@@ -103,6 +109,16 @@ export interface MessageView {
   sentAt: string;
 }
 
+/** A rendered task for the extension's Tasks section (V2 Phase 2; Req 2.1–2.3). */
+export interface TaskView {
+  taskId: string;
+  title: string;
+  description: string;
+  assigneeMemberId: string;
+  assignerMemberId: string;
+  status: TaskStatus;
+}
+
 /** The full rendered coordination view for a Repository_Session. */
 export interface CoordinationViewModel {
   paths: PathView[];
@@ -111,6 +127,12 @@ export interface CoordinationViewModel {
   messages: MessageView[];
   /** Count of messages addressed to this member that it has not read (Req 1.4). */
   unreadCount: number;
+  /** This member's accepted task list (accepted/in_progress/done) (V2 Phase 2). */
+  myTasks: TaskView[];
+  /** Proposed tasks awaiting this member's approval (Req 2.2). */
+  incomingTasks: TaskView[];
+  /** All tasks in the session. */
+  allTasks: TaskView[];
   /** True while the local agent is in Offline_State (Req 3.6, 33.3). */
   offline: boolean;
   /** True when served coordination data may be stale (Req 33.2, 33.3). */
@@ -134,6 +156,8 @@ export interface CoordinationSnapshot {
   connectionStatus?: ConnectionStatusData;
   /** Optional messaging projection from `list_messages` (V2 Phase 1). */
   messages?: ListMessagesData;
+  /** Optional task projection from `list_tasks` (V2 Phase 2). */
+  tasks?: ListTasksData;
   /** Known from the local Repository_Session before activity is available. */
   teamId?: string;
   connection: ConnectionSnapshot;
@@ -362,6 +386,22 @@ export function buildCoordinationViewModel(
     }),
   );
 
+  const toTaskView = (t: {
+    taskId: string;
+    title: string;
+    description: string;
+    assignee: { memberId: string };
+    assigner: { memberId: string };
+    status: TaskStatus;
+  }): TaskView => ({
+    taskId: t.taskId,
+    title: t.title,
+    description: t.description,
+    assigneeMemberId: t.assignee.memberId,
+    assignerMemberId: t.assigner.memberId,
+    status: t.status,
+  });
+
   return {
     paths,
     plannedFileCreations: snapshot.riskMap.plannedFileCreations.map((p) => ({
@@ -370,6 +410,9 @@ export function buildCoordinationViewModel(
     })),
     messages,
     unreadCount: snapshot.messages?.unreadCount ?? 0,
+    myTasks: (snapshot.tasks?.myTaskList ?? []).map(toTaskView),
+    incomingTasks: (snapshot.tasks?.incomingProposals ?? []).map(toTaskView),
+    allTasks: (snapshot.tasks?.tasks ?? []).map(toTaskView),
     offline,
     stale,
     secondsSinceSync: snapshot.staleness.secondsSinceSync,

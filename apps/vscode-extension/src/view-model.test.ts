@@ -358,3 +358,50 @@ describe("view-model — V2 messages projection (Phase 1; Req 1.1–1.4)", () =>
     expect(vm.unreadCount).toBe(0);
   });
 });
+
+describe("view-model — V2 tasks projection (Phase 2; Req 2.1–2.3)", () => {
+  const emptyRisk: GetRiskMapData = {
+    paths: [],
+    plannedFileCreations: [],
+    highestRevision: 0,
+  };
+
+  it("projects my task list, incoming proposals, and all tasks", () => {
+    const mk = (taskId: string, status: string) => ({
+      taskId,
+      title: `T-${taskId}`,
+      description: "d",
+      assignee: { memberId: "me", deviceId: "" },
+      assigner: { memberId: "alice", deviceId: "d-a" },
+      status: status as never,
+      eventRevision: 1,
+    });
+    const vm = buildCoordinationViewModel({
+      riskMap: emptyRisk,
+      tasks: {
+        tasks: [mk("t-1", "in_progress"), mk("t-2", "proposed")],
+        myTaskList: [mk("t-1", "in_progress")],
+        incomingProposals: [mk("t-2", "proposed")],
+      },
+      connection: online,
+      staleness: fresh,
+    });
+
+    expect(vm.myTasks.map((t) => t.taskId)).toEqual(["t-1"]);
+    expect(vm.myTasks[0]?.status).toBe("in_progress");
+    expect(vm.incomingTasks.map((t) => t.taskId)).toEqual(["t-2"]);
+    expect(vm.allTasks.map((t) => t.taskId)).toEqual(["t-1", "t-2"]);
+    expect(vm.myTasks[0]?.assignerMemberId).toBe("alice");
+  });
+
+  it("defaults to empty task arrays when task data is absent", () => {
+    const vm = buildCoordinationViewModel({
+      riskMap: emptyRisk,
+      connection: online,
+      staleness: fresh,
+    });
+    expect(vm.myTasks).toEqual([]);
+    expect(vm.incomingTasks).toEqual([]);
+    expect(vm.allTasks).toEqual([]);
+  });
+});
