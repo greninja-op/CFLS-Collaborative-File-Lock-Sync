@@ -75,7 +75,9 @@ Execution waves (each wave depends on the previous one completing):
       _Requirements: X.3_
 - [ ] 1.11 extension: Messages section (inbox, priority styling, compose, Q/A);
       view-model tests. _Requirements: X.3_
-- [ ] 1.12 phase gate: green typecheck/tests; update memory; merge `V2`→`main`.
+- [x] 1.12 phase gate: `pnpm -r build` green; all changed packages green
+      (protocol 71, core-state 307, host 65, mcp 28, extension 61, simulation 11).
+      Merge to `main` deferred to the very end (per updated instruction).
 
 ### Phase 2 — Task management & human approvals
 

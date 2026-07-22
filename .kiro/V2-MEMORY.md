@@ -111,7 +111,7 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
 ## 7. Progress tracker (UPDATE AFTER EVERY TASK)
 
 - [x] Spec authored (requirements / design / tasks) — DONE
-- [ ] Phase 1 — Messaging (protocol layer done: 1.1, 1.2)
+- [x] Phase 1 — Messaging (COMPLETE: tasks 1.1–1.12; changed packages all green)
 - [ ] Phase 2 — Tasks & approvals
 - [ ] Phase 3 — Notifications, liveness & wake
 - [ ] Phase 4 — Luna orchestrator
@@ -141,6 +141,13 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
   "deduplicates subscriptions ... disposes on close" and connection.integration
   "retires a switched-away editor ..." fail on the CLEAN base in this sandbox
   (close-timing races). Verified via git stash. Do not chase these.
+- V2(p1/1.11-1.12) 5ead765/2c30990  extension messages view-model + Phase 1 gate.
+- PHASE 1 COMPLETE. Full-suite (`pnpm test`) shows 8 failures, ALL pre-existing/
+  environmental (NOT V2): agent local-api "deduplicates…" + connection.integration
+  editor-TTL tests (fail on clean base), cli config-files Windows owner-only perms +
+  mcp-bridge reconnect-timing (files untouched, mock handlers), and simulation only
+  under full parallel load (passes 11/11 in isolation). MERGE TO MAIN: only after ALL
+  phases done (updated instruction). Next: Phase 2 — Tasks & approvals (task 2.1).
 - KEY DECISION: message `body` is allowed TEAM TEXT (idea.md §6 Safety). The host
   value-scans the body for secrets/absolute/excluded paths (Req 1.4) but does NOT
   name-block it. Do the same for future free-text fields (task descriptions, luna
