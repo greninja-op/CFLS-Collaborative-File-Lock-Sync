@@ -496,3 +496,63 @@ describe("V2 messaging payload validation", () => {
     if (!result.ok) expect(result.error.code).toBe("FORMAT_ERROR");
   });
 });
+
+// ---------------------------------------------------------------------------
+// V2 task payload validation (Phase 2; Req 2.1-2.3)
+// ---------------------------------------------------------------------------
+
+describe("V2 task payload validation", () => {
+  it("accepts a valid task.assign payload", () => {
+    const result = validatePayload("task.assign", {
+      title: "Add logout flow",
+      description: "Implement the /logout endpoint and wire the UI button",
+      assigneeMemberId: "bob",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a task.assign missing assigneeMemberId with FORMAT_ERROR", () => {
+    const result = validatePayload("task.assign", {
+      title: "x",
+      description: "y",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("FORMAT_ERROR");
+  });
+
+  it("accepts a task.respond payload", () => {
+    const result = validatePayload("task.respond", {
+      taskId: "t-1",
+      accept: true,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepts a task.progress payload and rejects an out-of-range status", () => {
+    expect(
+      validatePayload("task.progress", { taskId: "t-1", status: "done" }).ok,
+    ).toBe(true);
+    const bad = validatePayload("task.progress", {
+      taskId: "t-1",
+      status: "proposed",
+    });
+    expect(bad.ok).toBe(false);
+    if (!bad.ok) expect(bad.error.code).toBe("FORMAT_ERROR");
+  });
+
+  it("accepts a valid task.update broadcast payload", () => {
+    const result = validatePayload("task.update", {
+      op: "added",
+      task: {
+        taskId: "t-1",
+        title: "Add logout flow",
+        description: "…",
+        assignee: { memberId: "bob", deviceId: "dev-b" },
+        assigner: { memberId: "alice", deviceId: "dev-a" },
+        status: "proposed",
+        eventRevision: 9,
+      },
+    });
+    expect(result.ok).toBe(true);
+  });
+});

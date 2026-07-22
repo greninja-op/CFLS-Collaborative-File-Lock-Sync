@@ -238,6 +238,14 @@ const MESSAGE_KINDS = [
   "heads_up",
 ] as const;
 const MESSAGE_PRIORITIES = ["fyi", "normal", "urgent"] as const;
+const TASK_STATUSES = [
+  "proposed",
+  "accepted",
+  "rejected",
+  "in_progress",
+  "done",
+  "withdrawn",
+] as const;
 
 const sessionIdSchema: ObjectSchema = {
   name: "SessionId",
@@ -456,6 +464,19 @@ const messageDtoSchema: ObjectSchema = {
     answered: { spec: { kind: "boolean" }, optional: true },
     eventRevision: { spec: { kind: "number" } },
     sentAt: { spec: { kind: "string" } },
+  },
+};
+
+const taskDtoSchema: ObjectSchema = {
+  name: "TaskDto",
+  fields: {
+    taskId: { spec: { kind: "string" } },
+    title: { spec: { kind: "string" } },
+    description: { spec: { kind: "string" } },
+    assignee: { spec: { kind: "object", schema: memberRefSchema } },
+    assigner: { spec: { kind: "object", schema: memberRefSchema } },
+    status: { spec: { kind: "enum", values: TASK_STATUSES } },
+    eventRevision: { spec: { kind: "number" } },
   },
 };
 
@@ -790,6 +811,41 @@ export const PAYLOAD_SCHEMAS: Record<MessageTypeName, ObjectSchema> = {
   "message.read": {
     name: "MessageReadPayload",
     fields: { messageId: { spec: { kind: "string" } } },
+  },
+
+  // ---- V2 tasks (Phase 2; Req 2.1-2.3) ----
+  "task.assign": {
+    name: "TaskAssignPayload",
+    fields: {
+      title: { spec: { kind: "string" } },
+      description: { spec: { kind: "string" } },
+      assigneeMemberId: { spec: { kind: "string" } },
+    },
+  },
+  "task.respond": {
+    name: "TaskRespondPayload",
+    fields: {
+      taskId: { spec: { kind: "string" } },
+      accept: { spec: { kind: "boolean" } },
+    },
+  },
+  "task.progress": {
+    name: "TaskProgressPayload",
+    fields: {
+      taskId: { spec: { kind: "string" } },
+      status: { spec: { kind: "enum", values: ["in_progress", "done"] } },
+    },
+  },
+  "task.withdraw": {
+    name: "TaskWithdrawPayload",
+    fields: { taskId: { spec: { kind: "string" } } },
+  },
+  "task.update": {
+    name: "TaskUpdatePayload",
+    fields: {
+      op: { spec: { kind: "enum", values: ["added", "updated", "removed"] } },
+      task: { spec: { kind: "object", schema: taskDtoSchema } },
+    },
   },
 
   // ---- Error (§11.1) ----
