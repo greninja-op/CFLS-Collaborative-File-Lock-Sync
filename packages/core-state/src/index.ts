@@ -153,6 +153,10 @@ export type {
   ExpirySweepResult,
 } from "./expiry";
 
+// ---- V2 Phase 1 — Messaging channel (Req 1.1–1.4; idea.md §6 Communication) ----
+export { MessageRegistry } from "./messaging";
+export type { AppendMessageInput, AppendMessageResult } from "./messaging";
+
 // ---- Coalescing & deduplication within the burst window (task 4.22; Req 34; §8.5) ----
 export {
   Coalescer,
