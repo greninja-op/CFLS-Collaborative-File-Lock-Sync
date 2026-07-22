@@ -428,3 +428,66 @@ describe("V2 messaging tools (Phase 1; Req 1.1–1.4)", () => {
     expect(sent.error?.code).toBe("OFFLINE_QUEUED");
   });
 });
+
+describe("V2 task tools (Phase 2; Req 2.1–2.3)", () => {
+  let harness: Harness;
+
+  afterEach(async () => {
+    await harness.close();
+  });
+
+  it("assigns a task and lists it as an incoming proposal for the assignee", async () => {
+    // self is u-1; assign to u-1 so the same fake agent sees it as incoming.
+    harness = await connectHarness();
+    const assigned = await harness.call<{ taskId: string }>("assign_task", {
+      session,
+      title: "Add logout",
+      description: "wire /logout",
+      assigneeMemberId: "u-1",
+    });
+    expect(assigned.ok).toBe(true);
+
+    const listed = await harness.call<{
+      tasks: Array<{ status: string }>;
+      incomingProposals: Array<{ taskId: string }>;
+    }>("list_tasks", { session });
+    expect(listed.ok).toBe(true);
+    expect(listed.data?.incomingProposals.map((t) => t.taskId)).toContain(
+      assigned.data!.taskId,
+    );
+  });
+
+  it("accepts then progresses a task via the tools", async () => {
+    harness = await connectHarness();
+    const assigned = await harness.call<{ taskId: string }>("assign_task", {
+      session,
+      title: "T",
+      description: "d",
+      assigneeMemberId: "u-1",
+    });
+    const taskId = assigned.data!.taskId;
+
+    expect((await harness.call("respond_to_task", { taskId, accept: true })).ok).toBe(true);
+    expect(
+      (await harness.call("update_task_progress", { taskId, status: "in_progress" })).ok,
+    ).toBe(true);
+
+    const listed = await harness.call<{ myTaskList: Array<{ status: string }> }>(
+      "list_tasks",
+      { session },
+    );
+    expect(listed.data?.myTaskList.map((t) => t.status)).toEqual(["in_progress"]);
+  });
+
+  it("returns OFFLINE_QUEUED for assign_task while offline (Req 4.8)", async () => {
+    harness = await connectHarness(false);
+    const assigned = await harness.call("assign_task", {
+      session,
+      title: "T",
+      description: "d",
+      assigneeMemberId: "u-2",
+    });
+    expect(assigned.ok).toBe(false);
+    expect(assigned.error?.code).toBe("OFFLINE_QUEUED");
+  });
+});

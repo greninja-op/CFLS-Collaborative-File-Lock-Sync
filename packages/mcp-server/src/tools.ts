@@ -49,6 +49,11 @@ export const TOOL_NAMES = [
   "ask_question",
   "answer_question",
   "list_open_questions",
+  // V2 Phase 2 — tasks (Req 2.1–2.3).
+  "assign_task",
+  "respond_to_task",
+  "update_task_progress",
+  "list_tasks",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -489,6 +494,78 @@ export function registerTools(server: McpServer, port: AgentPort): McpServer {
       inputSchema: { session: sessionSchema },
     },
     (args) => respond(port, port.listOpenQuestions({ session: args.session })),
+  );
+
+  // ---- V2 Phase 2 — tasks (Req 2.1–2.3) ------------------------------------
+
+  // 19. assign_task
+  server.registerTool(
+    "assign_task",
+    {
+      description:
+        "Assign a task to a teammate (created as 'proposed' — the assignee must " +
+        "approve it before it enters their task list). Title/description are team text.",
+      inputSchema: {
+        session: sessionSchema,
+        title: z.string(),
+        description: z.string().default(""),
+        assigneeMemberId: z.string(),
+      },
+    },
+    (args) =>
+      respond(
+        port,
+        port.assignTask({
+          session: args.session,
+          title: args.title,
+          description: args.description,
+          assigneeMemberId: args.assigneeMemberId,
+        }),
+      ),
+  );
+
+  // 20. respond_to_task
+  server.registerTool(
+    "respond_to_task",
+    {
+      description:
+        "Approve or reject an incoming proposed task. Only the assignee may respond.",
+      inputSchema: { taskId: z.string(), accept: z.boolean() },
+    },
+    (args) =>
+      respond(
+        port,
+        port.respondTask({ taskId: args.taskId, accept: args.accept }),
+      ),
+  );
+
+  // 21. update_task_progress
+  server.registerTool(
+    "update_task_progress",
+    {
+      description:
+        "Advance an accepted task to 'in_progress' or 'done'. Only the assignee may update progress.",
+      inputSchema: {
+        taskId: z.string(),
+        status: z.enum(["in_progress", "done"]),
+      },
+    },
+    (args) =>
+      respond(
+        port,
+        port.updateTaskProgress({ taskId: args.taskId, status: args.status }),
+      ),
+  );
+
+  // 22. list_tasks
+  server.registerTool(
+    "list_tasks",
+    {
+      description:
+        "List all session tasks, plus this member's accepted task list and incoming proposals.",
+      inputSchema: { session: sessionSchema },
+    },
+    (args) => respond(port, port.listTasks({ session: args.session })),
   );
 
   return server;
