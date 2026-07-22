@@ -130,3 +130,20 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
   gained optional `messages`; host will re-send missed message.updates after sync.
 - PUSH POLICY: push `V2` to origin after every commit (merge to main only at the end).
   Branch pushed & tracking origin/V2.
+- V2(p1/1.6-1.8) b6626c9/3ece26b/aea380c/040c57b  host: message apply-branches,
+  audience delivery, missed-message resend on sync, integration tests (65 host tests green).
+- V2(p1/1.9-1.10) ce3a2b7/3b17541  agent messaging vertical (view MessageRegistry,
+  gateway/connection relay of message.update, port sendMessage/listMessages/
+  markMessageRead/listOpenQuestions, dispatch); 6 MCP tools + tests (28 mcp green).
+- SIMPLIFICATION: ask/answer are MCP tools that call port.sendMessage with
+  kind=question/answer (no separate port methods) — fewer port methods, same feature.
+- PRE-EXISTING FLAKY TESTS (NOT ours): apps/agent local-api.integration
+  "deduplicates subscriptions ... disposes on close" and connection.integration
+  "retires a switched-away editor ..." fail on the CLEAN base in this sandbox
+  (close-timing races). Verified via git stash. Do not chase these.
+- KEY DECISION: message `body` is allowed TEAM TEXT (idea.md §6 Safety). The host
+  value-scans the body for secrets/absolute/excluded paths (Req 1.4) but does NOT
+  name-block it. Do the same for future free-text fields (task descriptions, luna
+  prompts) — but note `description`/`prompt`/`note` are already not name-blocked;
+  only `body`/`text`/`content`/`diff`/`patch` etc. are. Live diffs (P5) will need
+  the same value-scan treatment for `patch`.

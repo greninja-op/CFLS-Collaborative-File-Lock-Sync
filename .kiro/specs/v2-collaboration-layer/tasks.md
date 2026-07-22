@@ -61,16 +61,16 @@ Execution waves (each wave depends on the previous one completing):
       (ordering, unread-count exclusion, Q/A matching). _Requirements: 1.3, 1.4_
 - [x] 1.5 core-state: include messages in snapshot (`snapshot.ts`); reconnect
       delivery of missed messages handled host-side after sync. _Requirements: X.2_
-- [ ] 1.6 host: `messages` store table + append/read-state + snapshot wiring
-      (`store.ts`); dao tests. _Requirements: 1.4, X.2_
-- [ ] 1.7 host: `authority.ts` apply-branches for `message.*` (deliver/broadcast,
-      auth checks, data-minimization, audit). _Requirements: 1.1–1.4, X.1_
-- [ ] 1.8 host: integration test — send/deliver/read + offline reconnect delivery.
-      _Requirements: 1.1, 1.4, X.2_
-- [ ] 1.9 agent: port methods `sendMessage`/`markRead`/`listMessages`/
-      `askQuestion`/`answerQuestion`/`listOpenQuestions`; dispatch routes.
-      _Requirements: X.3_
-- [ ] 1.10 mcp: tools `send_message`, `list_messages`, `mark_message_read`,
+- [x] 1.6 host: messages persisted via existing snapshot mechanism (no separate
+      table needed — matches how locks/presence/intents persist). _Requirements: 1.4, X.2_
+- [x] 1.7 host: `authority.ts` apply-branches for `message.*` (deliver to audience,
+      auth checks, body value-scanned data-minimization); server delivery +
+      missed-message resend on sync. _Requirements: 1.1–1.4, X.1_
+- [x] 1.8 host: integration test — directed/broadcast/Q&A + offline reconnect. _Requirements: 1.1, 1.4, X.2_
+- [x] 1.9 agent: port methods `sendMessage`/`markMessageRead`/`listMessages`/
+      `listOpenQuestions` (ask/answer via sendMessage kind); view store; gateway +
+      connection relay of `message.update`; dispatch routes. _Requirements: X.3_
+- [x] 1.10 mcp: tools `send_message`, `list_messages`, `mark_message_read`,
       `ask_question`, `answer_question`, `list_open_questions`; tool tests.
       _Requirements: X.3_
 - [ ] 1.11 extension: Messages section (inbox, priority styling, compose, Q/A);
