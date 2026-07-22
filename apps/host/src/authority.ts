@@ -22,6 +22,7 @@ import {
   PresenceRegistry,
   RevisionCounter,
   checkInboundMinimization,
+  findMinimizationViolations,
   normalizePath,
   restoreSessionState,
   serializeSessionState,
@@ -50,6 +51,7 @@ import {
   type LockAcquirePayload,
   type LockOverridePayload,
   type LockReleasePayload,
+  type EventEnvelope,
   type MemberRef,
   type MembershipRegistryEntry,
   type MessageDto,
@@ -449,12 +451,19 @@ export class CoordinationAuthority {
     }
 
     // Data-minimization rejection before any state change (Req 29.5).
-    const minimization = checkInboundMinimization(envelope);
-    if (!minimization.ok) {
+    //
+    // V2 messages carry a `body` of legitimate team text (idea.md §6 Safety),
+    // which the generic gate would otherwise reject by field name as
+    // source-content. For `message.send` we therefore value-scan the body for
+    // secrets/absolute/out-of-tree/excluded paths (Req 1.4) and run the generic
+    // gate over the rest of the envelope; every other event type is checked
+    // wholesale exactly as in V1.
+    const minimizationError = this.checkEventMinimization(envelope);
+    if (minimizationError !== undefined) {
       return {
         accepted: false,
-        error: minimization.error.code,
-        reason: minimization.error.message,
+        error: minimizationError.code,
+        reason: minimizationError.message,
         broadcasts: [],
       };
     }
@@ -1493,6 +1502,36 @@ export class CoordinationAuthority {
         },
       });
     }
+  }
+
+  /**
+   * Data-minimization gate for one inbound envelope (Req 29.5, 1.4). Returns a
+   * `ProtocolError` to reject with, or `undefined` when clean. For
+   * `message.send`, the free-text `body` is allowed team content but its value
+   * is still scanned for secrets/absolute/out-of-tree/excluded paths (Req 1.4);
+   * the remaining envelope fields are checked by the standard gate.
+   */
+  private checkEventMinimization(
+    envelope: EventEnvelope,
+  ): { code: ErrorCode; message: string } | undefined {
+    if (envelope.type === "message.send") {
+      const payload = envelope.payload as MessageSendPayload;
+      const bodyViolations = findMinimizationViolations(payload.body);
+      if (bodyViolations.length > 0) {
+        return {
+          code: "FORMAT_ERROR",
+          message: `data-minimization violation in message body: ${bodyViolations[0]!.message}`,
+        };
+      }
+      // Check the rest of the envelope (without the free-text body) normally.
+      const { body: _body, ...restPayload } = payload;
+      void _body;
+      const rest = { ...envelope, payload: restPayload };
+      const check = checkInboundMinimization(rest);
+      return check.ok ? undefined : check.error;
+    }
+    const check = checkInboundMinimization(envelope);
+    return check.ok ? undefined : check.error;
   }
 
   /** The gate's permission predicate: the sender must be admitted (Req 7.7, 10.7). */
