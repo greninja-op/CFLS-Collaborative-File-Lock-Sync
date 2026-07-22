@@ -25,10 +25,12 @@ import {
   ErrorMessageType,
   EventMessageType,
   HeartbeatMessageType,
+  MessagingMessageType,
   SyncMessageType,
   type AuthHelloPayload,
   type AuthResponsePayload,
   type CoordinationUpdate,
+  type MessageDto,
   type SessionId,
   type SyncRequestPayload,
 } from "@cfls/protocol";
@@ -437,6 +439,20 @@ export class CoordinationServer {
           type: SyncMessageType.EVENTS,
           payload: { events: response.events },
         });
+        // Incremental sync only carries CoordinationUpdates; deliver any V2
+        // messages sent to this member while it was offline over the parallel
+        // message channel (Req 1.4, X.2). A snapshot response already embeds
+        // messages, so this is only needed on the incremental path.
+        for (const message of this.authority.messagesSince(
+          principal.session,
+          payload.fromRevision,
+          principal.memberId,
+        )) {
+          this.send(conn, {
+            type: MessagingMessageType.UPDATE,
+            payload: { op: "added", message },
+          });
+        }
       } else {
         this.send(conn, {
           type: SyncMessageType.SNAPSHOT,
@@ -459,6 +475,10 @@ export class CoordinationServer {
     }
     for (const update of outcome.broadcasts) {
       this.broadcast(principal.session, update);
+    }
+    // Deliver V2 message updates to their audience only (Phase 1; Req 1.1).
+    for (const messageUpdate of outcome.messageUpdates ?? []) {
+      this.deliverMessage(principal.session, messageUpdate);
     }
     // A dependency-graph upload updates the shared graph: fan the merged graph
     // out to every OTHER connection in the session (Req 19.4, 20.1).
@@ -551,6 +571,31 @@ export class CoordinationServer {
     if (set === undefined) return;
     for (const conn of set) {
       this.send(conn, { type: BroadcastMessageType.UPDATE, payload: update });
+    }
+  }
+
+  /**
+   * Deliver a V2 message update only to its audience (Phase 1; Req 1.1): every
+   * connection in the session for `"all"`, or only connections whose member is
+   * in the audience list for a directed message/question/answer.
+   */
+  private deliverMessage(
+    session: SessionId,
+    update: { op: "added" | "updated"; message: MessageDto; audience: "all" | string[] },
+  ): void {
+    const set = this.bySession.get(sessionKey(session));
+    if (set === undefined) return;
+    const audience =
+      update.audience === "all" ? null : new Set(update.audience);
+    for (const conn of set) {
+      if (conn.principal === undefined) continue;
+      if (audience !== null && !audience.has(conn.principal.memberId)) {
+        continue;
+      }
+      this.send(conn, {
+        type: MessagingMessageType.UPDATE,
+        payload: { op: update.op, message: update.message },
+      });
     }
   }
 
