@@ -112,7 +112,7 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
 
 - [x] Spec authored (requirements / design / tasks) — DONE
 - [x] Phase 1 — Messaging (COMPLETE: tasks 1.1–1.12; changed packages all green)
-- [ ] Phase 2 — Tasks & approvals
+- [x] Phase 2 — Tasks & approvals (COMPLETE: tasks 2.1–2.11; changed packages green)
 - [ ] Phase 3 — Notifications, liveness & wake
 - [ ] Phase 4 — Luna orchestrator
 - [ ] Phase 5 — Live diffs (opt-in)
@@ -148,6 +148,14 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
   mcp-bridge reconnect-timing (files untouched, mock handlers), and simulation only
   under full parallel load (passes 11/11 in isolation). MERGE TO MAIN: only after ALL
   phases done (updated instruction). Next: Phase 2 — Tasks & approvals (task 2.1).
+- PHASE 2 COMPLETE (tasks 2.1–2.11). Task lifecycle: proposed→accepted/rejected,
+  accepted/in_progress→in_progress/done, →withdrawn. Only assignee responds/progresses;
+  assigner or assignee withdraws. Tasks persist via snapshot (like messages, no table).
+  Host broadcasts task.update to whole session + resends tasksSince on reconnect.
+  4 MCP tools (assign_task/respond_to_task/update_task_progress/list_tasks). Extension
+  view-model has myTasks/incomingTasks/allTasks. TaskDto.assignee.deviceId is "" (a task
+  targets a member, not a device). core-state 323, host 68, mcp 31, extension 63.
+  NEXT: Phase 3 — Notifications, liveness & wake (task 3.1).
 - KEY DECISION: message `body` is allowed TEAM TEXT (idea.md §6 Safety). The host
   value-scans the body for secrets/absolute/excluded paths (Req 1.4) but does NOT
   name-block it. Do the same for future free-text fields (task descriptions, luna

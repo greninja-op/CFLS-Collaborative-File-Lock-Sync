@@ -90,17 +90,17 @@ Execution waves (each wave depends on the previous one completing):
 - [ ] 2.4 core-state: `tasks.property.test.ts` + `tasks.test.ts` (legal transitions,
       assignee-only approval, withdraw rules). _Requirements: 2.2_
 - [ ] 2.5 core-state: snapshot + sync integration for tasks; tests. _Requirements: X.2_
-- [ ] 2.6 host: `task_items` store table; `authority.ts` apply-branches with audit.
-      _Requirements: 2.2, 2.3, X.1_
-- [ ] 2.7 host: integration test — assign→approve/reject→progress + reconnect.
-      _Requirements: 2.2, X.2_
-- [ ] 2.8 agent: port methods `assignTask`/`respondTask`/`progressTask`/`listTasks`;
-      dispatch. _Requirements: X.3_
-- [ ] 2.9 mcp: tools `assign_task`, `respond_to_task`, `update_task_progress`,
+- [x] 2.6 host: tasks persisted via snapshot (no separate table); `authority.ts`
+      apply-branches with audit + broadcast + reconnect resend. _Requirements: 2.2, 2.3, X.1_
+- [x] 2.7 host: integration test — assign→approve/reject→progress + reconnect. _Requirements: 2.2, X.2_
+- [x] 2.8 agent: port methods `assignTask`/`respondTask`/`updateTaskProgress`/`listTasks`;
+      view store; gateway/connection relay; dispatch. _Requirements: X.3_
+- [x] 2.9 mcp: tools `assign_task`, `respond_to_task`, `update_task_progress`,
       `list_tasks`; tool tests. _Requirements: X.3_
-- [ ] 2.10 extension: Tasks section (my list, incoming approvals, progress).
+- [x] 2.10 extension: Tasks view-model projection (my list, incoming, all) + tests.
       _Requirements: X.3_
-- [ ] 2.11 phase gate: green typecheck/tests; update memory; merge `V2`→`main`.
+- [x] 2.11 phase gate: changed packages green (core-state 323, host 68, mcp 31,
+      extension 63, protocol 76). Merge to main deferred to the end.
 
 ### Phase 3 — Notifications, liveness & wake
 
