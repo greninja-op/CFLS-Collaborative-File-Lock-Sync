@@ -122,3 +122,7 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
 - V2(spec)  69dabbc/fbc7828/7b13d35/6a331ec  memory + requirements + design + tasks
 - V2(p1/1.1) 7f63288  protocol: message.* types, MessageDto, MessageKind/Priority
 - V2(p1/1.2) 20de98d  protocol: message.* validation schemas + unit tests (71 tests green)
+- V2(p1/1.3) beecf83  core-state: MessageRegistry (addressing, Q/A, read state)
+- V2(p1/1.4) 36ca765  core-state: MessageRegistry unit + property tests (307 tests green)
+- NOTE: whole workspace `pnpm -r build` green; run `pnpm -r build` before core-state
+  tests so @cfls/security dist resolves (ingest suites depend on it).

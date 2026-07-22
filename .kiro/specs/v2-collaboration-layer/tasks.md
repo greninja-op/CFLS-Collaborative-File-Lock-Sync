@@ -55,9 +55,9 @@ Execution waves (each wave depends on the previous one completing):
       _Requirements: 1.1–1.4_
 - [x] 1.2 protocol: add validation schemas for `message.send`/`message.update`/
       `message.read` in `validation.ts`; unit tests. _Requirements: 1.1, 1.4_
-- [ ] 1.3 core-state: `messaging.ts` `MessageRegistry` (append, deliver/read state,
+- [x] 1.3 core-state: `messaging.ts` `MessageRegistry` (append, deliver/read state,
       question/answer correlation, own-message exclusion). _Requirements: 1.1–1.4_
-- [ ] 1.4 core-state: `messaging.property.test.ts` + `messaging.test.ts`
+- [x] 1.4 core-state: `messaging.property.test.ts` + `messaging.test.ts`
       (ordering, unread-count exclusion, Q/A matching). _Requirements: 1.3, 1.4_
 - [ ] 1.5 core-state: include messages in snapshot (`snapshot.ts`) and sync
       projection (`sync.ts`); tests. _Requirements: X.2_
