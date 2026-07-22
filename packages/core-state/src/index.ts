@@ -157,6 +157,16 @@ export type {
 export { MessageRegistry } from "./messaging";
 export type { AppendMessageInput, AppendMessageResult } from "./messaging";
 
+// ---- V2 Phase 2 — Task lifecycle & approvals (Req 2.1–2.3; idea.md §6) ----
+export { TaskRegistry } from "./tasks";
+export type {
+  AssignTaskRequest,
+  RespondTaskRequest,
+  ProgressTaskRequest,
+  WithdrawTaskRequest,
+  TaskResult,
+} from "./tasks";
+
 // ---- Coalescing & deduplication within the burst window (task 4.22; Req 34; §8.5) ----
 export {
   Coalescer,
