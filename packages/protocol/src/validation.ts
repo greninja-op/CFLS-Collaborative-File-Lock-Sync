@@ -486,6 +486,13 @@ const sessionStateSnapshotSchema: ObjectSchema = {
         items: { kind: "object", schema: declaredIntentSchema },
       },
     },
+    messages: {
+      spec: {
+        kind: "array",
+        items: { kind: "object", schema: messageDtoSchema },
+      },
+      optional: true,
+    },
     highestRevision: { spec: { kind: "number" } },
   },
 };

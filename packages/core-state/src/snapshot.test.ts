@@ -24,6 +24,7 @@ import type {
 
 import { IntentRegistry } from "./intents";
 import { LockRegistry } from "./locks";
+import { MessageRegistry } from "./messaging";
 import { PresenceRegistry } from "./presence";
 import { RevisionCounter } from "./revisions";
 import {
@@ -349,5 +350,44 @@ describe("revision-counter restore (Req 1.6)", () => {
       ...snapshot.presence.map((p) => p.eventRevision),
     );
     expect(nextRevision).toBeGreaterThan(persistedMax);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V2 Phase 1 — messaging in the snapshot (Req 1.4, X.2)
+// ---------------------------------------------------------------------------
+
+describe("snapshot — V2 messaging round-trip", () => {
+  it("captures and restores messages, resuming the counter above their revision", () => {
+    const source: SessionRegistries = { ...fresh(), messages: new MessageRegistry() };
+    const rev = source.revisions.next(session); // 1
+    source.messages!.append({
+      session,
+      messageId: "m-1",
+      kind: "direct",
+      sender: alice,
+      toMemberId: "u-bob",
+      priority: "urgent",
+      body: "check payments.ts",
+      eventRevision: rev,
+      sentAt: "2024-01-01T00:00:00Z",
+    });
+
+    const snapshot = serializeSessionState(session, source);
+    expect(snapshot.messages?.map((m) => m.messageId)).toEqual(["m-1"]);
+
+    const target: SessionRegistries = { ...fresh(), messages: new MessageRegistry() };
+    restoreSessionState(snapshot, target);
+
+    expect(target.messages!.allMessages(session).map((m) => m.messageId)).toEqual(["m-1"]);
+    // bob still sees it as unread after restore.
+    expect(target.messages!.unreadCountFor(session, "u-bob")).toBe(1);
+    // the counter resumed above the message revision.
+    expect(target.revisions.next(session)).toBeGreaterThan(rev);
+  });
+
+  it("omits the messages field entirely when no message registry is provided (V1 back-compat)", () => {
+    const snapshot = serializeSessionState(session, fresh());
+    expect(snapshot.messages).toBeUndefined();
   });
 });

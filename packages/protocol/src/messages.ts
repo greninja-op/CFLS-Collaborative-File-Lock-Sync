@@ -460,6 +460,12 @@ export interface SessionStateSnapshot {
   locks: Lock[];
   presence: Presence[];
   intents: DeclaredIntent[];
+  /**
+   * V2 messaging history for the session (Phase 1; Req 1.4, X.2). Optional for
+   * wire back-compatibility with V1 snapshots; when present, a reconnecting
+   * agent restores it so messages sent while it was offline are delivered.
+   */
+  messages?: MessageDto[];
   highestRevision: number;
 }
 

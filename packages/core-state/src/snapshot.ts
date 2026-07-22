@@ -33,6 +33,7 @@ import type { SessionId, SessionStateSnapshot } from "@cfls/protocol";
 
 import type { IntentRegistry } from "./intents";
 import type { LockRegistry } from "./locks";
+import type { MessageRegistry } from "./messaging";
 import type { PresenceRegistry } from "./presence";
 import type { RevisionCounter } from "./revisions";
 
@@ -47,6 +48,12 @@ export interface SessionRegistries {
   intents: IntentRegistry;
   presence: PresenceRegistry;
   revisions: RevisionCounter;
+  /**
+   * V2 messaging registry (Phase 1). Optional so V1 callers that do not
+   * coordinate messages are unaffected; when present, messages are captured in
+   * and restored from the snapshot (Req 1.4, X.2).
+   */
+  messages?: MessageRegistry;
 }
 
 /**
@@ -77,13 +84,23 @@ export function serializeSessionState(
     createPaths: intent.createPaths.map((creation) => ({ ...creation })),
   }));
 
-  return {
+  const snapshot: SessionStateSnapshot = {
     session,
     locks,
     presence,
     intents,
     highestRevision: registries.revisions.highest(session),
   };
+
+  if (registries.messages !== undefined) {
+    // Deep, independent copies so persisting/mutating the snapshot never
+    // touches live registry state (Req 1.4, X.2).
+    snapshot.messages = registries.messages
+      .allMessages(session)
+      .map((message) => ({ ...message, sender: { ...message.sender } }));
+  }
+
+  return snapshot;
 }
 
 /**
@@ -109,6 +126,11 @@ function maxPersistedRevision(snapshot: SessionStateSnapshot): number {
       max = intent.eventRevision;
     }
   }
+  for (const message of snapshot.messages ?? []) {
+    if (message.eventRevision > max) {
+      max = message.eventRevision;
+    }
+  }
   return max;
 }
 
@@ -128,5 +150,8 @@ export function restoreSessionState(
   registries.locks.restore(snapshot.session, snapshot.locks);
   registries.intents.restore(snapshot.session, snapshot.intents);
   registries.presence.restore(snapshot.session, snapshot.presence);
+  if (registries.messages !== undefined) {
+    registries.messages.restore(snapshot.session, snapshot.messages ?? []);
+  }
   registries.revisions.resume(snapshot.session, maxPersistedRevision(snapshot));
 }
