@@ -50,10 +50,10 @@ Execution waves (each wave depends on the previous one completing):
 
 ### Phase 1 — Communication (Messaging)
 
-- [ ] 1.1 protocol: add `message.*` types + `MessageDto`, `MessageKind`,
+- [x] 1.1 protocol: add `message.*` types + `MessageDto`, `MessageKind`,
       `MessagePriority` to `messages.ts`/`models.ts`; export from `index.ts`.
       _Requirements: 1.1–1.4_
-- [ ] 1.2 protocol: add validation schemas for `message.send`/`message.update`/
+- [x] 1.2 protocol: add validation schemas for `message.send`/`message.update`/
       `message.read` in `validation.ts`; unit tests. _Requirements: 1.1, 1.4_
 - [ ] 1.3 core-state: `messaging.ts` `MessageRegistry` (append, deliver/read state,
       question/answer correlation, own-message exclusion). _Requirements: 1.1–1.4_

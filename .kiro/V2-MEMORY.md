@@ -110,8 +110,8 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
 
 ## 7. Progress tracker (UPDATE AFTER EVERY TASK)
 
-- [ ] Spec authored (requirements / design / tasks) — IN PROGRESS
-- [ ] Phase 1 — Messaging
+- [x] Spec authored (requirements / design / tasks) — DONE
+- [ ] Phase 1 — Messaging (protocol layer done: 1.1, 1.2)
 - [ ] Phase 2 — Tasks & approvals
 - [ ] Phase 3 — Notifications, liveness & wake
 - [ ] Phase 4 — Luna orchestrator
@@ -119,3 +119,6 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
 
 ### Task log
 - (append: `YYYY-MM-DD  V2(phaseN/taskX)  <commit hash>  <summary>`)
+- V2(spec)  69dabbc/fbc7828/7b13d35/6a331ec  memory + requirements + design + tasks
+- V2(p1/1.1) 7f63288  protocol: message.* types, MessageDto, MessageKind/Priority
+- V2(p1/1.2) 20de98d  protocol: message.* validation schemas + unit tests (71 tests green)
