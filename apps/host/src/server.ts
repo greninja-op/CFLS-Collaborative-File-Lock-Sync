@@ -26,6 +26,7 @@ import {
   EventMessageType,
   HeartbeatMessageType,
   MessagingMessageType,
+  TaskMessageType,
   SyncMessageType,
   type AuthHelloPayload,
   type AuthResponsePayload,
@@ -33,6 +34,7 @@ import {
   type MessageDto,
   type SessionId,
   type SyncRequestPayload,
+  type TaskDto,
 } from "@cfls/protocol";
 import { sessionKey } from "@cfls/core-state";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -453,6 +455,17 @@ export class CoordinationServer {
             payload: { op: "added", message },
           });
         }
+        // Likewise deliver task changes made while this member was offline
+        // (Phase 2; Req 2.1, X.2).
+        for (const task of this.authority.tasksSince(
+          principal.session,
+          payload.fromRevision,
+        )) {
+          this.send(conn, {
+            type: TaskMessageType.UPDATE,
+            payload: { op: "updated", task },
+          });
+        }
       } else {
         this.send(conn, {
           type: SyncMessageType.SNAPSHOT,
@@ -479,6 +492,10 @@ export class CoordinationServer {
     // Deliver V2 message updates to their audience only (Phase 1; Req 1.1).
     for (const messageUpdate of outcome.messageUpdates ?? []) {
       this.deliverMessage(principal.session, messageUpdate);
+    }
+    // Broadcast V2 task updates to the whole session (Phase 2; Req 2.1).
+    for (const taskUpdate of outcome.taskUpdates ?? []) {
+      this.deliverTask(principal.session, taskUpdate);
     }
     // A dependency-graph upload updates the shared graph: fan the merged graph
     // out to every OTHER connection in the session (Req 19.4, 20.1).
@@ -595,6 +612,25 @@ export class CoordinationServer {
       this.send(conn, {
         type: MessagingMessageType.UPDATE,
         payload: { op: update.op, message: update.message },
+      });
+    }
+  }
+
+  /**
+   * Broadcast a V2 task update to every connection in the session (Phase 2;
+   * Req 2.1) — tasks are shared team coordination metadata.
+   */
+  private deliverTask(
+    session: SessionId,
+    update: { op: "added" | "updated"; task: TaskDto },
+  ): void {
+    const set = this.bySession.get(sessionKey(session));
+    if (set === undefined) return;
+    for (const conn of set) {
+      if (conn.principal === undefined) continue;
+      this.send(conn, {
+        type: TaskMessageType.UPDATE,
+        payload: { op: update.op, task: update.task },
       });
     }
   }

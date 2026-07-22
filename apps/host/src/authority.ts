@@ -21,6 +21,7 @@ import {
   MessageRegistry,
   PresenceRegistry,
   RevisionCounter,
+  TaskRegistry,
   checkInboundMinimization,
   findMinimizationViolations,
   normalizePath,
@@ -57,6 +58,11 @@ import {
   type MessageDto,
   type MessageReadPayload,
   type MessageSendPayload,
+  type TaskAssignPayload,
+  type TaskDto,
+  type TaskProgressPayload,
+  type TaskRespondPayload,
+  type TaskWithdrawPayload,
   type PathDeletedPayload,
   type PathRenamedPayload,
   type PresenceReportPayload,
@@ -111,6 +117,16 @@ export interface MessageBroadcast {
   audience: "all" | string[];
 }
 
+/**
+ * A V2 task update to deliver to session participants (Phase 2; Req 2.1). Tasks
+ * are shared team coordination metadata, so a task update is delivered to every
+ * member of the session.
+ */
+export interface TaskBroadcast {
+  op: "added" | "updated";
+  task: TaskDto;
+}
+
 /** Outcome of ingesting a single coordination event. */
 export interface IngestOutcome {
   accepted: boolean;
@@ -124,6 +140,8 @@ export interface IngestOutcome {
   broadcasts: CoordinationUpdate[];
   /** V2 message updates to deliver to their audience (Phase 1; Req 1.1). */
   messageUpdates?: MessageBroadcast[];
+  /** V2 task updates to broadcast to the session (Phase 2; Req 2.1). */
+  taskUpdates?: TaskBroadcast[];
 }
 
 /** Effects that must be committed with the event rather than during apply. */
@@ -148,6 +166,7 @@ export class CoordinationAuthority {
   private readonly intents = new IntentRegistry();
   private readonly presence = new PresenceRegistry();
   private readonly messages = new MessageRegistry();
+  private readonly tasks = new TaskRegistry();
   private readonly revisions: RevisionCounter;
   private readonly eventLog = new CoordinationEventLog();
   private readonly gate: IngestGate;
@@ -194,6 +213,8 @@ export class CoordinationAuthority {
       // Messages are persisted and restored via the same snapshot mechanism as
       // locks/presence/intents (Req 1.4, X.2); no separate table is needed.
       messages: this.messages,
+      // Tasks likewise persist via the snapshot (Req 2.1, X.2).
+      tasks: this.tasks,
     };
 
     // Reseed the replay guard from persisted per-device counters (Req 7.5).
@@ -513,6 +534,7 @@ export class CoordinationAuthority {
       lockConflict?: EventAppliedLockConflict;
     } = {};
     const messageUpdates: MessageBroadcast[] = [];
+    const taskUpdates: TaskBroadcast[] = [];
 
     let result: IngestResult;
     try {
@@ -528,6 +550,7 @@ export class CoordinationAuthority {
             acknowledgement,
             effects,
             messageUpdates,
+            taskUpdates,
           ),
       );
     } catch {
@@ -649,6 +672,7 @@ export class CoordinationAuthority {
         : {}),
       broadcasts,
       ...(messageUpdates.length > 0 ? { messageUpdates } : {}),
+      ...(taskUpdates.length > 0 ? { taskUpdates } : {}),
     };
   }
 
@@ -668,6 +692,7 @@ export class CoordinationAuthority {
     acknowledgement: { lockConflict?: EventAppliedLockConflict },
     effects: MutationEffects,
     messageUpdates: MessageBroadcast[],
+    taskUpdates: TaskBroadcast[],
   ): { code: ErrorCode; reason: string } | undefined {
     const session = envelope.session;
     const now = new Date().toISOString();
@@ -1035,6 +1060,101 @@ export class CoordinationAuthority {
         // Read state is tracked live; it is intentionally not part of the
         // authoritative snapshot in Phase 1 (see messaging.ts). No broadcast.
         this.messages.markRead(session, payload.messageId, member.memberId);
+        return undefined;
+      }
+
+      case "task.assign": {
+        const payload = envelope.payload as TaskAssignPayload;
+        // A task targets a member (not a device); assignee.deviceId is unknown
+        // at assign time and unused by the lifecycle's authorization checks.
+        const result = this.tasks.assign({
+          session,
+          taskId: envelope.eventId,
+          title: payload.title,
+          description: payload.description,
+          assignee: { memberId: payload.assigneeMemberId, deviceId: "" },
+          assigner: member,
+          eventRevision,
+        });
+        if (!result.ok) {
+          return { code: result.code, reason: result.reason };
+        }
+        taskUpdates.push({ op: "added", task: result.task });
+        audits.push({
+          member,
+          action: "create",
+          targetScope: `task:${result.task.taskId}`,
+          eventRevision,
+          time: now,
+        });
+        return undefined;
+      }
+
+      case "task.respond": {
+        const payload = envelope.payload as TaskRespondPayload;
+        const result = this.tasks.respond({
+          session,
+          taskId: payload.taskId,
+          requester: member,
+          accept: payload.accept,
+          eventRevision,
+        });
+        if (!result.ok) {
+          return { code: result.code, reason: result.reason };
+        }
+        taskUpdates.push({ op: "updated", task: result.task });
+        audits.push({
+          member,
+          action: "update",
+          targetScope: `task:${result.task.taskId}`,
+          eventRevision,
+          time: now,
+        });
+        return undefined;
+      }
+
+      case "task.progress": {
+        const payload = envelope.payload as TaskProgressPayload;
+        const result = this.tasks.progress({
+          session,
+          taskId: payload.taskId,
+          requester: member,
+          status: payload.status,
+          eventRevision,
+        });
+        if (!result.ok) {
+          return { code: result.code, reason: result.reason };
+        }
+        taskUpdates.push({ op: "updated", task: result.task });
+        audits.push({
+          member,
+          action: "update",
+          targetScope: `task:${result.task.taskId}`,
+          eventRevision,
+          time: now,
+        });
+        return undefined;
+      }
+
+      case "task.withdraw": {
+        const payload = envelope.payload as TaskWithdrawPayload;
+        const result = this.tasks.withdraw({
+          session,
+          taskId: payload.taskId,
+          requester: member,
+          eventRevision,
+        });
+        if (!result.ok) {
+          return { code: result.code, reason: result.reason };
+        }
+        taskUpdates.push({ op: "updated", task: result.task });
+        audits.push({
+          member,
+          action: "withdraw",
+          targetScope: `task:${result.task.taskId}`,
+          eventRevision,
+          time: now,
+        });
         return undefined;
       }
 
@@ -1596,6 +1716,18 @@ export class CoordinationAuthority {
     return this.messages
       .messagesFor(session, memberId)
       .filter((message) => message.eventRevision > fromRevision);
+  }
+
+  /**
+   * Tasks with an Event_Revision greater than `fromRevision` (Phase 2; Req 2.1,
+   * X.2). The server resends these as `task.update` to a reconnecting member so
+   * task changes made while it was offline are delivered over the parallel task
+   * channel (incremental `sync.events` carries only CoordinationUpdates).
+   */
+  tasksSince(session: SessionId, fromRevision: number): TaskDto[] {
+    return this.tasks
+      .allTasks(session)
+      .filter((task) => task.eventRevision > fromRevision);
   }
 
   /**
