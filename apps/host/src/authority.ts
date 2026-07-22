@@ -18,6 +18,7 @@ import {
   IngestGate,
   IntentRegistry,
   LockRegistry,
+  MessageRegistry,
   PresenceRegistry,
   RevisionCounter,
   checkInboundMinimization,
@@ -51,6 +52,9 @@ import {
   type LockReleasePayload,
   type MemberRef,
   type MembershipRegistryEntry,
+  type MessageDto,
+  type MessageReadPayload,
+  type MessageSendPayload,
   type PathDeletedPayload,
   type PathRenamedPayload,
   type PresenceReportPayload,
@@ -92,6 +96,19 @@ export type HandshakeResult =
   | { ok: true; principal: AuthPrincipal; highestRevision: number }
   | { ok: false; code: ErrorCode; message: string };
 
+/**
+ * A V2 messaging update to deliver to session participants (Phase 1; Req 1.1).
+ * Unlike a {@link CoordinationUpdate} (delivered to all session subscribers), a
+ * message is delivered only to its `audience`: `"all"` for broadcast/heads-up,
+ * or the specific memberIds (sender + recipient) for a directed message,
+ * question, or answer.
+ */
+export interface MessageBroadcast {
+  op: "added" | "updated";
+  message: MessageDto;
+  audience: "all" | string[];
+}
+
 /** Outcome of ingesting a single coordination event. */
 export interface IngestOutcome {
   accepted: boolean;
@@ -103,6 +120,8 @@ export interface IngestOutcome {
   reason?: string;
   /** Coordination updates to broadcast to the session's subscribers (Req 25). */
   broadcasts: CoordinationUpdate[];
+  /** V2 message updates to deliver to their audience (Phase 1; Req 1.1). */
+  messageUpdates?: MessageBroadcast[];
 }
 
 /** Effects that must be committed with the event rather than during apply. */
@@ -126,6 +145,7 @@ export class CoordinationAuthority {
   private readonly locks = new LockRegistry();
   private readonly intents = new IntentRegistry();
   private readonly presence = new PresenceRegistry();
+  private readonly messages = new MessageRegistry();
   private readonly revisions: RevisionCounter;
   private readonly eventLog = new CoordinationEventLog();
   private readonly gate: IngestGate;
@@ -169,6 +189,9 @@ export class CoordinationAuthority {
       intents: this.intents,
       presence: this.presence,
       revisions: this.revisions,
+      // Messages are persisted and restored via the same snapshot mechanism as
+      // locks/presence/intents (Req 1.4, X.2); no separate table is needed.
+      messages: this.messages,
     };
 
     // Reseed the replay guard from persisted per-device counters (Req 7.5).
@@ -480,6 +503,7 @@ export class CoordinationAuthority {
     const acknowledgement: {
       lockConflict?: EventAppliedLockConflict;
     } = {};
+    const messageUpdates: MessageBroadcast[] = [];
 
     let result: IngestResult;
     try {
@@ -494,6 +518,7 @@ export class CoordinationAuthority {
             audits,
             acknowledgement,
             effects,
+            messageUpdates,
           ),
       );
     } catch {
@@ -614,6 +639,7 @@ export class CoordinationAuthority {
         ? { lockConflict: acknowledgement.lockConflict }
         : {}),
       broadcasts,
+      ...(messageUpdates.length > 0 ? { messageUpdates } : {}),
     };
   }
 
@@ -632,6 +658,7 @@ export class CoordinationAuthority {
     audits: AuditRecord[],
     acknowledgement: { lockConflict?: EventAppliedLockConflict },
     effects: MutationEffects,
+    messageUpdates: MessageBroadcast[],
   ): { code: ErrorCode; reason: string } | undefined {
     const session = envelope.session;
     const now = new Date().toISOString();
@@ -956,6 +983,49 @@ export class CoordinationAuthority {
       case "dep.delta": {
         const payload = envelope.payload as DepDeltaPayload;
         effects.dependencyGraph = this.mergeDependencyDelta(session, payload);
+        return undefined;
+      }
+
+      case "message.send": {
+        const payload = envelope.payload as MessageSendPayload;
+        const result = this.messages.append({
+          session,
+          messageId: envelope.eventId,
+          kind: payload.kind,
+          sender: member,
+          ...(payload.toMemberId !== undefined
+            ? { toMemberId: payload.toMemberId }
+            : {}),
+          priority: payload.priority ?? "normal",
+          body: payload.body,
+          ...(payload.correlationId !== undefined
+            ? { correlationId: payload.correlationId }
+            : {}),
+          eventRevision,
+          sentAt: now,
+        });
+        messageUpdates.push({
+          op: "added",
+          message: result.message,
+          audience: messageAudience(result.message),
+        });
+        // An answer flips its correlated question to `answered`; surface the
+        // updated question to that question's audience so the asker sees it.
+        if (result.answeredQuestion !== undefined) {
+          messageUpdates.push({
+            op: "updated",
+            message: result.answeredQuestion,
+            audience: messageAudience(result.answeredQuestion),
+          });
+        }
+        return undefined;
+      }
+
+      case "message.read": {
+        const payload = envelope.payload as MessageReadPayload;
+        // Read state is tracked live; it is intentionally not part of the
+        // authoritative snapshot in Phase 1 (see messaging.ts). No broadcast.
+        this.messages.markRead(session, payload.messageId, member.memberId);
         return undefined;
       }
 
@@ -1472,6 +1542,24 @@ export class CoordinationAuthority {
   }
 
   /**
+   * Messages visible to `memberId` with an Event_Revision greater than
+   * `fromRevision` (Phase 1; Req 1.4, X.2). The server sends these to a
+   * reconnecting member after `sync.request` so messages sent while it was
+   * offline are delivered — incremental `sync.events` only carries
+   * CoordinationUpdates, so messages ride this parallel channel. Delivery is
+   * idempotent: the agent keys messages by `messageId`.
+   */
+  messagesSince(
+    session: SessionId,
+    fromRevision: number,
+    memberId: string,
+  ): MessageDto[] {
+    return this.messages
+      .messagesFor(session, memberId)
+      .filter((message) => message.eventRevision > fromRevision);
+  }
+
+  /**
    * The latest metadata-only Dependency_Graph the host holds for a session, or
    * `null` when none has been uploaded (Req 19, 20). The server sends this to a
    * connecting agent so every client shares the same graph for risk analysis.
@@ -1702,4 +1790,23 @@ export class CoordinationAuthority {
       return null;
     }
   }
+}
+
+/**
+ * Who should receive a message (Phase 1; Req 1.1): everyone for
+ * broadcast/heads-up, or the sender plus the recipient for a directed message,
+ * question, or answer.
+ */
+function messageAudience(message: MessageDto): "all" | string[] {
+  if (message.kind === "broadcast" || message.kind === "heads_up") {
+    return "all";
+  }
+  const audience = [message.sender.memberId];
+  if (
+    message.toMemberId !== undefined &&
+    message.toMemberId !== message.sender.memberId
+  ) {
+    audience.push(message.toMemberId);
+  }
+  return audience;
 }
