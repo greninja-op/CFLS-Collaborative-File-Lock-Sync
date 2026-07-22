@@ -230,6 +230,14 @@ const COORD_ENTRY_TYPES = [
   "planned_file_creation",
   "dependency_risk",
 ] as const;
+const MESSAGE_KINDS = [
+  "direct",
+  "broadcast",
+  "question",
+  "answer",
+  "heads_up",
+] as const;
+const MESSAGE_PRIORITIES = ["fyi", "normal", "urgent"] as const;
 
 const sessionIdSchema: ObjectSchema = {
   name: "SessionId",
@@ -432,6 +440,22 @@ const coordinationUpdateSchema: ObjectSchema = {
       },
       optional: true,
     },
+  },
+};
+
+const messageDtoSchema: ObjectSchema = {
+  name: "MessageDto",
+  fields: {
+    messageId: { spec: { kind: "string" } },
+    kind: { spec: { kind: "enum", values: MESSAGE_KINDS } },
+    sender: { spec: { kind: "object", schema: memberRefSchema } },
+    toMemberId: { spec: { kind: "string" }, optional: true },
+    priority: { spec: { kind: "enum", values: MESSAGE_PRIORITIES } },
+    body: { spec: { kind: "string" } },
+    correlationId: { spec: { kind: "string" }, optional: true },
+    answered: { spec: { kind: "boolean" }, optional: true },
+    eventRevision: { spec: { kind: "number" } },
+    sentAt: { spec: { kind: "string" } },
   },
 };
 
@@ -733,6 +757,32 @@ export const PAYLOAD_SCHEMAS: Record<MessageTypeName, ObjectSchema> = {
         optional: true,
       },
     },
+  },
+
+  // ---- V2 messaging (Phase 1; Req 1.1-1.4) ----
+  "message.send": {
+    name: "MessageSendPayload",
+    fields: {
+      kind: { spec: { kind: "enum", values: MESSAGE_KINDS } },
+      toMemberId: { spec: { kind: "string" }, optional: true },
+      priority: {
+        spec: { kind: "enum", values: MESSAGE_PRIORITIES },
+        optional: true,
+      },
+      body: { spec: { kind: "string" } },
+      correlationId: { spec: { kind: "string" }, optional: true },
+    },
+  },
+  "message.update": {
+    name: "MessageUpdatePayload",
+    fields: {
+      op: { spec: { kind: "enum", values: ["added", "updated"] } },
+      message: { spec: { kind: "object", schema: messageDtoSchema } },
+    },
+  },
+  "message.read": {
+    name: "MessageReadPayload",
+    fields: { messageId: { spec: { kind: "string" } } },
   },
 
   // ---- Error (§11.1) ----

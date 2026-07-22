@@ -428,3 +428,71 @@ describe("canonicalize — stability regardless of key order", () => {
     expect(canonicalEnvelopeString(withSig)).toBe(canonicalEnvelopeString(env));
   });
 });
+
+// ---------------------------------------------------------------------------
+// V2 messaging payload validation (Phase 1; Req 1.1-1.4)
+// ---------------------------------------------------------------------------
+
+describe("V2 messaging payload validation", () => {
+  it("accepts a valid message.send (direct) payload", () => {
+    const result = validatePayload("message.send", {
+      kind: "direct",
+      toMemberId: "u-2",
+      priority: "urgent",
+      body: "heads up on payments.ts",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepts a message.send with only the required fields (priority optional)", () => {
+    const result = validatePayload("message.send", {
+      kind: "broadcast",
+      body: "team, standup in 5",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a message.send missing its body with FORMAT_ERROR", () => {
+    const result = validatePayload("message.send", { kind: "direct" });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("FORMAT_ERROR");
+  });
+
+  it("rejects a message.send with an out-of-range kind with FORMAT_ERROR", () => {
+    const result = validatePayload("message.send", {
+      kind: "shout",
+      body: "hi",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("FORMAT_ERROR");
+  });
+
+  it("accepts a valid message.update broadcast payload", () => {
+    const result = validatePayload("message.update", {
+      op: "added",
+      message: {
+        messageId: "m-1",
+        kind: "question",
+        sender: { memberId: "u-1", deviceId: "dev-1" },
+        toMemberId: "u-2",
+        priority: "normal",
+        body: "which branch is prod?",
+        correlationId: "c-1",
+        eventRevision: 12,
+        sentAt: "2024-01-01T10:00:00Z",
+      },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepts a valid message.read payload", () => {
+    const result = validatePayload("message.read", { messageId: "m-1" });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a message.read missing messageId with FORMAT_ERROR", () => {
+    const result = validatePayload("message.read", {});
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("FORMAT_ERROR");
+  });
+});
