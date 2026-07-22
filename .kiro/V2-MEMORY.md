@@ -126,3 +126,7 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
 - V2(p1/1.4) 36ca765  core-state: MessageRegistry unit + property tests (307 tests green)
 - NOTE: whole workspace `pnpm -r build` green; run `pnpm -r build` before core-state
   tests so @cfls/security dist resolves (ingest suites depend on it).
+- V2(p1/1.5) 88960ed  snapshot includes messages (reconnect-safe); SessionStateSnapshot
+  gained optional `messages`; host will re-send missed message.updates after sync.
+- PUSH POLICY: push `V2` to origin after every commit (merge to main only at the end).
+  Branch pushed & tracking origin/V2.

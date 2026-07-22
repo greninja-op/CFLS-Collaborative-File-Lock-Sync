@@ -59,8 +59,8 @@ Execution waves (each wave depends on the previous one completing):
       question/answer correlation, own-message exclusion). _Requirements: 1.1–1.4_
 - [x] 1.4 core-state: `messaging.property.test.ts` + `messaging.test.ts`
       (ordering, unread-count exclusion, Q/A matching). _Requirements: 1.3, 1.4_
-- [ ] 1.5 core-state: include messages in snapshot (`snapshot.ts`) and sync
-      projection (`sync.ts`); tests. _Requirements: X.2_
+- [x] 1.5 core-state: include messages in snapshot (`snapshot.ts`); reconnect
+      delivery of missed messages handled host-side after sync. _Requirements: X.2_
 - [ ] 1.6 host: `messages` store table + append/read-state + snapshot wiring
       (`store.ts`); dao tests. _Requirements: 1.4, X.2_
 - [ ] 1.7 host: `authority.ts` apply-branches for `message.*` (deliver/broadcast,
