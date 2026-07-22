@@ -38,6 +38,9 @@ export type {
   MembershipRegistryEntry,
   IntentActivity,
   CoordinationUpdate,
+  MessageKind,
+  MessagePriority,
+  MessageDto,
 } from "./models";
 
 // ---- Error codes (design §11.1) ----
@@ -71,6 +74,7 @@ export {
   SyncMessageType,
   BroadcastMessageType,
   EventMessageType,
+  MessagingMessageType,
   ErrorMessageType,
   MessageType,
   MESSAGE_TYPES,
@@ -117,6 +121,9 @@ export type {
   ParticipantsUpdatePayload,
   EventAppliedLockConflict,
   EventAppliedPayload,
+  MessageSendPayload,
+  MessageUpdatePayload,
+  MessageReadPayload,
   ErrorPayload,
 } from "./messages";
 

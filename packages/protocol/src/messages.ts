@@ -23,6 +23,9 @@ import type {
   RiskLevel,
   ScopeKind,
   CoordinationUpdate,
+  MessageDto,
+  MessageKind,
+  MessagePriority,
 } from "./models";
 import type { ErrorCode } from "./errors";
 
@@ -134,6 +137,16 @@ export const EventMessageType = {
   EVENT_APPLIED: "event.applied",
 } as const;
 
+/** V2 messaging message types (Phase 1; Req 1.1–1.4). */
+export const MessagingMessageType = {
+  /** C→H: send a directed/broadcast message, question, answer, or heads-up. */
+  SEND: "message.send",
+  /** H→C: broadcast of a message (added) or its updated state (answered/read). */
+  UPDATE: "message.update",
+  /** C→H: mark a delivered message as read. */
+  READ: "message.read",
+} as const;
+
 /** Error message type (§11.1, §11.2). */
 export const ErrorMessageType = {
   /** H→C: typed error carrying an ErrorCode. */
@@ -153,6 +166,12 @@ export const MessageType = {
   ...PathMessageType,
   ...HeartbeatMessageType,
   ...SyncMessageType,
+  // NOTE: MessagingMessageType is spread BEFORE BroadcastMessageType so the
+  // shared `UPDATE` key still resolves to `coordination.update` in this
+  // convenience map (the messaging `UPDATE` is `message.update`; consumers use
+  // the MessagingMessageType const directly). MESSAGE_TYPES below is the lossless
+  // catalog and includes every messaging wire string.
+  ...MessagingMessageType,
   ...BroadcastMessageType,
   ...EventMessageType,
   ...ErrorMessageType,
@@ -170,6 +189,7 @@ export type MessageTypeName =
   | (typeof SyncMessageType)[keyof typeof SyncMessageType]
   | (typeof BroadcastMessageType)[keyof typeof BroadcastMessageType]
   | (typeof EventMessageType)[keyof typeof EventMessageType]
+  | (typeof MessagingMessageType)[keyof typeof MessagingMessageType]
   | (typeof ErrorMessageType)[keyof typeof ErrorMessageType];
 
 /**
@@ -194,6 +214,7 @@ export const MESSAGE_TYPES: readonly MessageTypeName[] = [
   ...Object.values(SyncMessageType),
   ...Object.values(BroadcastMessageType),
   ...Object.values(EventMessageType),
+  ...Object.values(MessagingMessageType),
   ...Object.values(ErrorMessageType),
 ] as MessageTypeName[];
 
@@ -505,6 +526,33 @@ export interface ErrorPayload {
 }
 
 // ---------------------------------------------------------------------------
+// V2 messaging payloads (Phase 1; Req 1.1-1.4)
+// ---------------------------------------------------------------------------
+
+/** `message.send` (C→H). The host assigns messageId (=Event_ID), revision, sentAt. */
+export interface MessageSendPayload {
+  kind: MessageKind;
+  /** Required for `direct`/`question`/`answer`; omitted for `broadcast`/`heads_up`. */
+  toMemberId?: string;
+  /** Defaults to `normal` when omitted (Req 1.2). */
+  priority?: MessagePriority;
+  body: string;
+  /** Correlates an `answer` to its `question` (Req 1.3). */
+  correlationId?: string;
+}
+
+/** `message.update` (H→C) — the authoritative message state. */
+export interface MessageUpdatePayload {
+  op: "added" | "updated";
+  message: MessageDto;
+}
+
+/** `message.read` (C→H) — mark a delivered message read (Req 1.4). */
+export interface MessageReadPayload {
+  messageId: string;
+}
+
+// ---------------------------------------------------------------------------
 // Type-level payload map — associates each message type with its payload
 // ---------------------------------------------------------------------------
 
@@ -556,6 +604,10 @@ export interface MessagePayloadMap {
   [BroadcastMessageType.PARTICIPANTS]: ParticipantsUpdatePayload;
 
   [EventMessageType.EVENT_APPLIED]: EventAppliedPayload;
+
+  [MessagingMessageType.SEND]: MessageSendPayload;
+  [MessagingMessageType.UPDATE]: MessageUpdatePayload;
+  [MessagingMessageType.READ]: MessageReadPayload;
 
   [ErrorMessageType.ERROR]: ErrorPayload;
 }

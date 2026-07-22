@@ -247,3 +247,46 @@ export interface CoordinationUpdate {
   /** Present for intent-derived entries so local UI/MCP can show the stated task. */
   intent?: IntentActivity;
 }
+
+// ---- V2 Collaboration Layer: Messaging (Phase 1; idea.md §6 Communication) ----
+
+/** How a Message is addressed / what it expects (Req 1.1, 1.3). */
+export type MessageKind =
+  | "direct"
+  | "broadcast"
+  | "question"
+  | "answer"
+  | "heads_up";
+
+/** How loudly a recipient should be alerted to a Message (Req 1.2). */
+export type MessagePriority = "fyi" | "normal" | "urgent";
+
+/**
+ * A team coordination Message sent between members/AI agents (Req 1.1–1.4).
+ *
+ * Carries a human/agent-authored `body` as **team text metadata**. It is shared
+ * only within the authorized Repository_Session and is subject to the same
+ * data-minimization gate as every other event: it never carries secrets,
+ * credentials, or absolute/out-of-repo paths. Source file contents are never
+ * placed in a Message.
+ */
+export interface MessageDto {
+  /** Globally unique message id (the originating Event_ID). */
+  messageId: string;
+  kind: MessageKind;
+  /** The sending Team_Member and device. */
+  sender: MemberRef;
+  /** Recipient memberId for `direct`/`question`/`answer`; absent for `broadcast`/`heads_up`. */
+  toMemberId?: string;
+  priority: MessagePriority;
+  /** Team text; data-minimized (no secrets, credentials, or out-of-repo paths). */
+  body: string;
+  /** Correlation id linking a `question` to its `answer` (Req 1.3). */
+  correlationId?: string;
+  /** True once a `question` has received an `answer` (Req 1.3). */
+  answered?: boolean;
+  /** Authoritative Event_Revision assigned by the host (Req 1.1). */
+  eventRevision: number;
+  /** ISO-8601 send time; advisory only, never a sole conflict resolver. */
+  sentAt: string;
+}
