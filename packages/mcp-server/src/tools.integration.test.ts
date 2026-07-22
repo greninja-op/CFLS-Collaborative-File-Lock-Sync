@@ -355,3 +355,76 @@ function isCoordinationUpdateNotification(
     "update" in value
   );
 }
+
+describe("V2 messaging tools (Phase 1; Req 1.1–1.4)", () => {
+  let harness: Harness;
+
+  afterEach(async () => {
+    await harness.close();
+  });
+
+  it("sends a message and lists it back (own message not counted unread)", async () => {
+    harness = await connectHarness();
+    const sent = await harness.call<{ messageId: string; eventRevision: number }>(
+      "send_message",
+      { session, kind: "broadcast", body: "standup in 5" },
+    );
+    expect(sent.ok).toBe(true);
+    expect(typeof sent.data?.messageId).toBe("string");
+
+    const listed = await harness.call<{
+      messages: Array<{ body: string }>;
+      unreadCount: number;
+    }>("list_messages", { session });
+    expect(listed.ok).toBe(true);
+    expect(listed.data?.messages.map((m) => m.body)).toContain("standup in 5");
+    // The sender's own broadcast is excluded from its unread count (Req 1.4).
+    expect(listed.data?.unreadCount).toBe(0);
+  });
+
+  it("asks and answers a question through the tools", async () => {
+    harness = await connectHarness();
+    const asked = await harness.call("ask_question", {
+      session,
+      toMemberId: "u-2",
+      body: "which branch is prod?",
+      correlationId: "c-1",
+    });
+    expect(asked.ok).toBe(true);
+
+    const answered = await harness.call("answer_question", {
+      session,
+      toMemberId: "u-2",
+      body: "main",
+      correlationId: "c-1",
+    });
+    expect(answered.ok).toBe(true);
+
+    const open = await harness.call("list_open_questions", { session });
+    expect(open.ok).toBe(true);
+  });
+
+  it("marks a message read", async () => {
+    harness = await connectHarness();
+    const sent = await harness.call<{ messageId: string }>("send_message", {
+      session,
+      kind: "broadcast",
+      body: "note",
+    });
+    const read = await harness.call("mark_message_read", {
+      messageId: sent.data!.messageId,
+    });
+    expect(read.ok).toBe(true);
+  });
+
+  it("returns OFFLINE_QUEUED for send_message while offline (Req 4.8)", async () => {
+    harness = await connectHarness(false);
+    const sent = await harness.call("send_message", {
+      session,
+      kind: "broadcast",
+      body: "offline",
+    });
+    expect(sent.ok).toBe(false);
+    expect(sent.error?.code).toBe("OFFLINE_QUEUED");
+  });
+});

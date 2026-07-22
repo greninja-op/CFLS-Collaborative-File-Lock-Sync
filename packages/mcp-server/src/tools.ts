@@ -22,6 +22,7 @@ import type {
   AgentPort,
   DeclareIntentRequest,
   ReleaseLockRequest,
+  SendMessageRequest,
   SessionRef,
   SubscribeData,
 } from "./port";
@@ -41,6 +42,13 @@ export const TOOL_NAMES = [
   "subscribe_to_coordination_updates",
   "get_connection_status",
   "get_project_session_status",
+  // V2 Phase 1 — messaging (Req 1.1–1.4).
+  "send_message",
+  "list_messages",
+  "mark_message_read",
+  "ask_question",
+  "answer_question",
+  "list_open_questions",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -72,6 +80,14 @@ const sessionSchema = z.object({
 });
 
 const scopeKindSchema = z.enum(["file", "folder", "glob"]);
+const messagePrioritySchema = z.enum(["fyi", "normal", "urgent"]);
+const messageKindSchema = z.enum([
+  "direct",
+  "broadcast",
+  "question",
+  "answer",
+  "heads_up",
+]);
 
 /** Serialise an envelope as both structured content and a JSON text block. */
 function toToolResult<T>(envelope: McpEnvelope<T>): CallToolResult {
@@ -353,6 +369,126 @@ export function registerTools(server: McpServer, port: AgentPort): McpServer {
       inputSchema: {},
     },
     () => respond(port, port.getProjectSessionStatus()),
+  );
+
+  // ---- V2 Phase 1 — messaging (Req 1.1–1.4) --------------------------------
+
+  // 13. send_message
+  server.registerTool(
+    "send_message",
+    {
+      description:
+        "Send a coordination message to a teammate (direct) or the whole team " +
+        "(broadcast), or a heads-up. Team text only — never source content or secrets.",
+      inputSchema: {
+        session: sessionSchema,
+        kind: messageKindSchema.default("direct"),
+        toMemberId: z.string().optional(),
+        priority: messagePrioritySchema.optional(),
+        body: z.string(),
+        correlationId: z.string().optional(),
+      },
+    },
+    (args) => {
+      const req: SendMessageRequest = {
+        session: args.session,
+        kind: args.kind,
+        body: args.body,
+      };
+      if (args.toMemberId !== undefined) req.toMemberId = args.toMemberId;
+      if (args.priority !== undefined) req.priority = args.priority;
+      if (args.correlationId !== undefined)
+        req.correlationId = args.correlationId;
+      return respond(port, port.sendMessage(req));
+    },
+  );
+
+  // 14. list_messages
+  server.registerTool(
+    "list_messages",
+    {
+      description:
+        "List messages visible to this member (sent by or addressed to it) plus the unread count.",
+      inputSchema: { session: sessionSchema },
+    },
+    (args) => respond(port, port.listMessages({ session: args.session })),
+  );
+
+  // 15. mark_message_read
+  server.registerTool(
+    "mark_message_read",
+    {
+      description: "Mark a delivered message as read.",
+      inputSchema: { messageId: z.string() },
+    },
+    (args) =>
+      respond(port, port.markMessageRead({ messageId: args.messageId })),
+  );
+
+  // 16. ask_question — a message that expects a reply, correlated by id
+  server.registerTool(
+    "ask_question",
+    {
+      description:
+        "Ask a teammate a question that expects a reply. Provide a correlationId " +
+        "so the answer can be matched to this question.",
+      inputSchema: {
+        session: sessionSchema,
+        toMemberId: z.string(),
+        body: z.string(),
+        correlationId: z.string(),
+        priority: messagePrioritySchema.optional(),
+      },
+    },
+    (args) => {
+      const req: SendMessageRequest = {
+        session: args.session,
+        kind: "question",
+        toMemberId: args.toMemberId,
+        body: args.body,
+        correlationId: args.correlationId,
+      };
+      if (args.priority !== undefined) req.priority = args.priority;
+      return respond(port, port.sendMessage(req));
+    },
+  );
+
+  // 17. answer_question — reply to a question by its correlationId
+  server.registerTool(
+    "answer_question",
+    {
+      description:
+        "Answer a teammate's question, referencing the same correlationId as the question.",
+      inputSchema: {
+        session: sessionSchema,
+        toMemberId: z.string(),
+        body: z.string(),
+        correlationId: z.string(),
+        priority: messagePrioritySchema.optional(),
+      },
+    },
+    (args) => {
+      const req: SendMessageRequest = {
+        session: args.session,
+        kind: "answer",
+        toMemberId: args.toMemberId,
+        body: args.body,
+        correlationId: args.correlationId,
+      };
+      if (args.priority !== undefined) req.priority = args.priority;
+      return respond(port, port.sendMessage(req));
+    },
+  );
+
+  // 18. list_open_questions
+  server.registerTool(
+    "list_open_questions",
+    {
+      description:
+        "List unanswered questions addressed to this member (the 'wait for the answer' surface).",
+      inputSchema: { session: sessionSchema },
+    },
+    (args) => respond(port, port.listOpenQuestions({ session: args.session })),
   );
 
   return server;
