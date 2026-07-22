@@ -31,6 +31,9 @@ import type {
   CoordinationUpdate,
   DependencyEdge,
   EdgeKind,
+  MessageDto,
+  MessageKind,
+  MessagePriority,
   RiskLevel,
   ScopeKind,
   SessionId,
@@ -275,6 +278,54 @@ export interface ProjectSessionStatusData {
   memberId: string;
 }
 
+// ---- V2 messaging (Phase 1; Req 1.1–1.4) -------------------------------------
+
+/** Send a directed/broadcast message, question, answer, or heads-up. */
+export interface SendMessageRequest {
+  session: SessionRef;
+  kind: MessageKind;
+  /** Required for `direct`/`question`/`answer`; omitted for `broadcast`/`heads_up`. */
+  toMemberId?: string;
+  /** Defaults to `normal` when omitted (Req 1.2). */
+  priority?: MessagePriority;
+  body: string;
+  /** Correlation id linking a `question` to its `answer` (Req 1.3). */
+  correlationId?: string;
+}
+
+export interface SendMessageData {
+  messageId: string;
+  eventRevision: number;
+}
+
+export interface ListMessagesRequest {
+  session: SessionRef;
+}
+
+export interface ListMessagesData {
+  /** Messages visible to the requesting member (sent by or addressed to it). */
+  messages: MessageDto[];
+  /** Count of messages addressed to the member that it has not read (Req 1.4). */
+  unreadCount: number;
+}
+
+export interface MarkMessageReadRequest {
+  messageId: string;
+}
+
+export interface MarkMessageReadData {
+  eventRevision: number;
+}
+
+export interface ListOpenQuestionsRequest {
+  session: SessionRef;
+}
+
+export interface ListOpenQuestionsData {
+  /** Unanswered questions addressed to the requesting member (Req 1.3). */
+  questions: MessageDto[];
+}
+
 /**
  * The interface the CoordinationAgent exposes to the Local_MCP_Server tools
  * (Task 9 implements it against the WSS agent + core-state; tests implement it
@@ -331,4 +382,20 @@ export interface AgentPort {
     req: SubscribeRequest,
     onUpdate?: (update: CoordinationUpdate) => void,
   ): MaybePromise<AgentResult<SubscribeData>>;
+
+  // V2 messaging (Phase 1; Req 1.1–1.4). `sendMessage`/`markMessageRead` are
+  // mutations (OFFLINE_QUEUED while offline); the `list*` reads succeed offline
+  // with possibly-stale data.
+  sendMessage(
+    req: SendMessageRequest,
+  ): MaybePromise<AgentResult<SendMessageData>>;
+  listMessages(
+    req: ListMessagesRequest,
+  ): MaybePromise<AgentResult<ListMessagesData>>;
+  markMessageRead(
+    req: MarkMessageReadRequest,
+  ): MaybePromise<AgentResult<MarkMessageReadData>>;
+  listOpenQuestions(
+    req: ListOpenQuestionsRequest,
+  ): MaybePromise<AgentResult<ListOpenQuestionsData>>;
 }

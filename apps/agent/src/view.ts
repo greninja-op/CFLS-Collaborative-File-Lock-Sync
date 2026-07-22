@@ -19,6 +19,7 @@
 import {
   AgentSyncCache,
   buildRiskMap,
+  MessageRegistry,
   normalizePath,
   resolveMode,
   type RepositoryRulesConfig,
@@ -30,6 +31,7 @@ import type {
   DependencyGraph,
   Lock,
   MemberRef,
+  MessageDto,
   Presence,
   RiskMapEntry,
   SessionId,
@@ -71,10 +73,51 @@ export interface TeamMemberActivity {
  */
 export class AgentView {
   private readonly cache = new AgentSyncCache();
+  /** V2 messaging view (Phase 1), fed by host `message.update` broadcasts. */
+  private readonly messages = new MessageRegistry();
 
   /** Apply a single host broadcast to the view (idempotent by revision). */
   applyUpdate(session: SessionId, update: CoordinationUpdate): void {
     this.cache.applyEvents(session, [update]);
+  }
+
+  // ---- V2 messaging (Phase 1; Req 1.1–1.4) ---------------------------------
+
+  /** Apply a host `message.update` (added/updated) to the message view. */
+  applyMessage(session: SessionId, message: MessageDto): void {
+    this.messages.upsert(session, message);
+  }
+
+  /** Locally mark a message read for `memberId` (also sent to the host). */
+  markMessageReadLocal(
+    session: SessionId,
+    messageId: string,
+    memberId: string,
+  ): void {
+    this.messages.markRead(session, messageId, memberId);
+  }
+
+  /** Messages visible to `memberId` (sent by or addressed to it). */
+  messagesForMember(session: SessionId, memberId: string): MessageDto[] {
+    return this.messages.messagesFor(session, memberId);
+  }
+
+  /** Count of messages addressed to `memberId` that it has not read (Req 1.4). */
+  unreadForMember(session: SessionId, memberId: string): number {
+    return this.messages.unreadCountFor(session, memberId);
+  }
+
+  /** Unanswered questions addressed to `memberId` (Req 1.3). */
+  openQuestionsForMember(session: SessionId, memberId: string): MessageDto[] {
+    return this.messages.openQuestionsFor(session, memberId);
+  }
+
+  /** Restore the message view from a snapshot's messages (reconnect, Req X.2). */
+  loadMessages(
+    session: SessionId,
+    messages: readonly MessageDto[],
+  ): void {
+    this.messages.restore(session, messages);
   }
 
   /** Apply a batch of host broadcasts to the view. */
@@ -88,11 +131,18 @@ export class AgentView {
   /** Apply a reconnect {@link SyncResponse}, converging + clearing staleness. */
   applySync(session: SessionId, response: SyncResponse): void {
     this.cache.applySync(session, response);
+    // A snapshot fallback carries the full message history; restore it so
+    // messages sent while offline are delivered (Req X.2). Incremental syncs
+    // deliver missed messages over the separate message channel instead.
+    if (response.kind === "snapshot") {
+      this.messages.restore(session, response.snapshot.messages ?? []);
+    }
   }
 
   /** Seed the view from a locally-cached snapshot (offline start, Req 35.4). */
   loadSnapshot(session: SessionId, snapshot: SessionStateSnapshot): void {
     this.cache.applySnapshot(session, snapshot);
+    this.messages.restore(session, snapshot.messages ?? []);
   }
 
   /** Mark the view stale on connectivity loss (Req 33.2). */

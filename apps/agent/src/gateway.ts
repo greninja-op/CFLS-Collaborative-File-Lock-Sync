@@ -34,6 +34,8 @@ import type {
   LockAcquirePayload,
   LockReleasePayload,
   MemberRef,
+  MessageReadPayload,
+  MessageSendPayload,
   SessionId,
 } from "@cfls/protocol";
 import type {
@@ -50,7 +52,9 @@ export type MutationEvent =
   | { type: "lock.release"; payload: LockReleasePayload }
   | { type: "intent.declare"; payload: IntentDeclarePayload }
   | { type: "intent.update"; payload: IntentUpdatePayload }
-  | { type: "intent.withdraw"; payload: IntentWithdrawPayload };
+  | { type: "intent.withdraw"; payload: IntentWithdrawPayload }
+  | { type: "message.send"; payload: MessageSendPayload }
+  | { type: "message.read"; payload: MessageReadPayload };
 
 /** Outcome of transmitting a mutation to the host authority. */
 export type TransmitResult =
@@ -103,6 +107,8 @@ export class RealHostGateway extends EventEmitter implements HostGateway {
     this.connection.on("update", (u: CoordinationUpdate) =>
       this.emit("update", u),
     );
+    // Relay V2 message updates (Phase 1) to the port's message view.
+    this.connection.on("message", (m: unknown) => this.emit("message", m));
   }
 
   getConnection(): ConnectionSnapshot {
@@ -382,6 +388,12 @@ export class LocalHostGateway extends EventEmitter implements HostGateway {
       case "intent.update":
         return { updates: [] };
       case "intent.withdraw":
+        return { updates: [] };
+      case "message.send":
+      case "message.read":
+        // Messaging is delivered over the host's separate message channel, not
+        // as CoordinationUpdates. The in-process gateway (used only by fan-in
+        // unit tests) records no coordination updates for these.
         return { updates: [] };
     }
   }

@@ -22,6 +22,7 @@ import {
   BroadcastMessageType,
   ErrorMessageType,
   EventMessageType,
+  MessagingMessageType,
   MESSAGE_FORMAT_VERSION,
   type CoordinationUpdate,
   type ErrorPayload,
@@ -376,6 +377,20 @@ export class HostConnection extends EventEmitter {
       const graph = message.payload?.graph;
       if (graph !== undefined) {
         this.emit("graph", graph);
+      }
+      return;
+    }
+    if (message?.type === MessagingMessageType.UPDATE) {
+      // A V2 message update (Phase 1): { op, message }. Hand it to the agent so
+      // its message view converges.
+      const payload = message.payload;
+      if (
+        payload !== null &&
+        typeof payload === "object" &&
+        typeof payload.message === "object" &&
+        payload.message !== null
+      ) {
+        this.emit("message", payload);
       }
       return;
     }

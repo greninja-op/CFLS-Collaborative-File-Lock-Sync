@@ -257,6 +257,33 @@ export class MessageRegistry {
     );
   }
 
+  /**
+   * Insert or replace a message by `messageId` — the agent-side application of a
+   * host `message.update` broadcast (`op: added` inserts, `op: updated` replaces,
+   * e.g. a question flipping to `answered`). Idempotent: re-applying the same
+   * message id is a no-op beyond replacing its fields. Open-question tracking is
+   * kept in sync.
+   */
+  upsert(session: SessionId, message: MessageDto): void {
+    const state = this.stateFor(session);
+    const copy: MessageDto = { ...message, sender: { ...message.sender } };
+    const existingIndex = state.messages.findIndex(
+      (m) => m.messageId === copy.messageId,
+    );
+    if (existingIndex >= 0) {
+      state.messages[existingIndex] = copy;
+    } else {
+      this.insertOrdered(state, copy);
+    }
+    if (copy.kind === "question" && copy.correlationId !== undefined) {
+      if (copy.answered === true) {
+        state.openQuestions.delete(copy.correlationId);
+      } else {
+        state.openQuestions.set(copy.correlationId, copy.messageId);
+      }
+    }
+  }
+
   /** Every message recorded for a session (ordered by `eventRevision`). */
   allMessages(session: SessionId): readonly MessageDto[] {
     return this.sessions.get(sessionKey(session))?.messages.slice() ?? [];

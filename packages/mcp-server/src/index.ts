@@ -83,6 +83,14 @@ export type {
   TeamActivityFile,
   TeamActivityTask,
   TeamMemberActivity,
+  SendMessageRequest,
+  SendMessageData,
+  ListMessagesRequest,
+  ListMessagesData,
+  MarkMessageReadRequest,
+  MarkMessageReadData,
+  ListOpenQuestionsRequest,
+  ListOpenQuestionsData,
 } from "./port";
 
 // ---- Reference in-memory port backed by core-state (tests) ----

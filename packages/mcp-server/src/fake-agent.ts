@@ -28,6 +28,7 @@ import {
   buildRiskMap,
   IntentRegistry,
   LockRegistry,
+  MessageRegistry,
   normalizePath,
   normalizePathKey,
   PresenceRegistry,
@@ -61,10 +62,18 @@ import type {
   GetRiskMapRequest,
   GetTeamStatusData,
   GetTeamStatusRequest,
+  ListMessagesData,
+  ListMessagesRequest,
+  ListOpenQuestionsData,
+  ListOpenQuestionsRequest,
+  MarkMessageReadData,
+  MarkMessageReadRequest,
   ProjectSessionStatusData,
   ReleaseLockData,
   ReleaseLockRequest,
   RiskPathEntry,
+  SendMessageData,
+  SendMessageRequest,
   SubscribeData,
   SubscribeRequest,
   UpdateIntentData,
@@ -145,10 +154,12 @@ export class CoreStateAgentPort implements AgentPort {
   private readonly locks = new LockRegistry();
   private readonly intents = new IntentRegistry();
   private readonly presence = new PresenceRegistry();
+  private readonly messages = new MessageRegistry();
   private readonly revisions = new RevisionCounter();
 
   private lockSeq = 0;
   private intentSeq = 0;
+  private messageSeq = 0;
   private subscriptionSeq = 0;
   private readonly subscribers = new Map<
     string,
@@ -695,6 +706,87 @@ export class CoreStateAgentPort implements AgentPort {
       this.subscribers.set(subscriptionId, onUpdate);
     }
     return { ok: true, data: { subscriptionId } };
+  }
+
+  // ---- V2 messaging (Phase 1; Req 1.1–1.4) ---------------------------------
+
+  sendMessage(req: SendMessageRequest): AgentResult<SendMessageData> {
+    if (!this.online) {
+      return offlineQueuedResult("send_message");
+    }
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    const eventRevision = this.revisions.next(this.session);
+    const messageId = `msg-${(this.messageSeq += 1)}`;
+    const { message } = this.messages.append({
+      session: this.session,
+      messageId,
+      kind: req.kind,
+      sender: this.self,
+      ...(req.toMemberId !== undefined ? { toMemberId: req.toMemberId } : {}),
+      priority: req.priority ?? "normal",
+      body: req.body,
+      ...(req.correlationId !== undefined
+        ? { correlationId: req.correlationId }
+        : {}),
+      eventRevision,
+      sentAt: new Date(this.now()).toISOString(),
+    });
+    return { ok: true, data: { messageId: message.messageId, eventRevision } };
+  }
+
+  listMessages(req: ListMessagesRequest): AgentResult<ListMessagesData> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    return {
+      ok: true,
+      data: {
+        messages: this.messages.messagesFor(this.session, this.self.memberId),
+        unreadCount: this.messages.unreadCountFor(
+          this.session,
+          this.self.memberId,
+        ),
+      },
+    };
+  }
+
+  markMessageRead(
+    req: MarkMessageReadRequest,
+  ): AgentResult<MarkMessageReadData> {
+    if (!this.online) {
+      return offlineQueuedResult("mark_message_read");
+    }
+    this.messages.markRead(this.session, req.messageId, this.self.memberId);
+    const eventRevision = this.revisions.next(this.session);
+    return { ok: true, data: { eventRevision } };
+  }
+
+  listOpenQuestions(
+    req: ListOpenQuestionsRequest,
+  ): AgentResult<ListOpenQuestionsData> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    return {
+      ok: true,
+      data: {
+        questions: this.messages.openQuestionsFor(
+          this.session,
+          this.self.memberId,
+        ),
+      },
+    };
   }
 
   // ---- Dependency-graph helpers --------------------------------------------

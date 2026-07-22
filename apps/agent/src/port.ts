@@ -23,6 +23,7 @@ import type {
   DependencyEdge,
   DependencyGraph,
   MemberRef,
+  MessageDto,
   RiskMapEntry,
   SessionId,
 } from "@cfls/protocol";
@@ -46,10 +47,18 @@ import type {
   GetRiskMapRequest,
   GetTeamStatusData,
   GetTeamStatusRequest,
+  ListMessagesData,
+  ListMessagesRequest,
+  ListOpenQuestionsData,
+  ListOpenQuestionsRequest,
+  MarkMessageReadData,
+  MarkMessageReadRequest,
   ProjectSessionStatusData,
   ReleaseLockData,
   ReleaseLockRequest,
   RiskPathEntry,
+  SendMessageData,
+  SendMessageRequest,
   StalenessSnapshot,
   SubscribeData,
   SubscribeRequest,
@@ -117,6 +126,12 @@ export class AgentCoordinationPort implements AgentPort {
   private readonly onGatewayUpdate = (update: CoordinationUpdate): void => {
     this.view.applyUpdate(this.session, update);
   };
+  private readonly onGatewayMessage = (payload: {
+    op: "added" | "updated";
+    message: MessageDto;
+  }): void => {
+    this.view.applyMessage(this.session, payload.message);
+  };
 
   constructor(options: AgentPortOptions) {
     this.session = options.session;
@@ -132,6 +147,8 @@ export class AgentCoordinationPort implements AgentPort {
 
     // One shared view fed by every host broadcast (multi-client fan-in, Req 31.1).
     this.gateway.on("update", this.onGatewayUpdate);
+    // V2 messaging (Phase 1): converge the message view from host deliveries.
+    this.gateway.on("message", this.onGatewayMessage);
   }
 
   // ---- Envelope inputs ------------------------------------------------------
@@ -513,9 +530,104 @@ export class AgentCoordinationPort implements AgentPort {
     this.subscriptions.delete(subscriptionId);
   }
 
+  // ---- V2 messaging (Phase 1; Req 1.1–1.4) ---------------------------------
+
+  async sendMessage(
+    req: SendMessageRequest,
+  ): Promise<AgentResult<SendMessageData>> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    const result = await this.gateway.transmit({
+      type: "message.send",
+      payload: {
+        kind: req.kind,
+        ...(req.toMemberId !== undefined
+          ? { toMemberId: req.toMemberId }
+          : {}),
+        ...(req.priority !== undefined ? { priority: req.priority } : {}),
+        body: req.body,
+        ...(req.correlationId !== undefined
+          ? { correlationId: req.correlationId }
+          : {}),
+      },
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+    return {
+      ok: true,
+      data: { messageId: result.eventId, eventRevision: result.eventRevision },
+    };
+  }
+
+  listMessages(req: ListMessagesRequest): AgentResult<ListMessagesData> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    return {
+      ok: true,
+      data: {
+        messages: this.view.messagesForMember(
+          this.session,
+          this.self.memberId,
+        ),
+        unreadCount: this.view.unreadForMember(
+          this.session,
+          this.self.memberId,
+        ),
+      },
+    };
+  }
+
+  async markMessageRead(
+    req: MarkMessageReadRequest,
+  ): Promise<AgentResult<MarkMessageReadData>> {
+    const result = await this.gateway.transmit({
+      type: "message.read",
+      payload: { messageId: req.messageId },
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+    this.view.markMessageReadLocal(
+      this.session,
+      req.messageId,
+      this.self.memberId,
+    );
+    return { ok: true, data: { eventRevision: result.eventRevision } };
+  }
+
+  listOpenQuestions(
+    req: ListOpenQuestionsRequest,
+  ): AgentResult<ListOpenQuestionsData> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    return {
+      ok: true,
+      data: {
+        questions: this.view.openQuestionsForMember(
+          this.session,
+          this.self.memberId,
+        ),
+      },
+    };
+  }
+
   /** Release all gateway listeners owned by this port during agent shutdown. */
   dispose(): void {
     this.gateway.off("update", this.onGatewayUpdate);
+    this.gateway.off("message", this.onGatewayMessage);
     for (const subscriptionId of this.subscriptions.keys()) {
       this.unsubscribeFromCoordinationUpdates(subscriptionId);
     }
