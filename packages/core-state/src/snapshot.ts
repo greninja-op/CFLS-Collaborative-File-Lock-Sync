@@ -36,6 +36,7 @@ import type { LockRegistry } from "./locks";
 import type { MessageRegistry } from "./messaging";
 import type { PresenceRegistry } from "./presence";
 import type { RevisionCounter } from "./revisions";
+import type { TaskRegistry } from "./tasks";
 
 /**
  * The per-session in-memory authorities projected into / restored from a
@@ -54,6 +55,11 @@ export interface SessionRegistries {
    * and restored from the snapshot (Req 1.4, X.2).
    */
   messages?: MessageRegistry;
+  /**
+   * V2 task registry (Phase 2). Optional; when present, tasks are captured in
+   * and restored from the snapshot (Req 2.1, X.2).
+   */
+  tasks?: TaskRegistry;
 }
 
 /**
@@ -100,6 +106,14 @@ export function serializeSessionState(
       .map((message) => ({ ...message, sender: { ...message.sender } }));
   }
 
+  if (registries.tasks !== undefined) {
+    snapshot.tasks = registries.tasks.allTasks(session).map((task) => ({
+      ...task,
+      assignee: { ...task.assignee },
+      assigner: { ...task.assigner },
+    }));
+  }
+
   return snapshot;
 }
 
@@ -131,6 +145,11 @@ function maxPersistedRevision(snapshot: SessionStateSnapshot): number {
       max = message.eventRevision;
     }
   }
+  for (const task of snapshot.tasks ?? []) {
+    if (task.eventRevision > max) {
+      max = task.eventRevision;
+    }
+  }
   return max;
 }
 
@@ -152,6 +171,9 @@ export function restoreSessionState(
   registries.presence.restore(snapshot.session, snapshot.presence);
   if (registries.messages !== undefined) {
     registries.messages.restore(snapshot.session, snapshot.messages ?? []);
+  }
+  if (registries.tasks !== undefined) {
+    registries.tasks.restore(snapshot.session, snapshot.tasks ?? []);
   }
   registries.revisions.resume(snapshot.session, maxPersistedRevision(snapshot));
 }

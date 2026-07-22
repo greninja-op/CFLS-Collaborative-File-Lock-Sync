@@ -27,6 +27,7 @@ import { LockRegistry } from "./locks";
 import { MessageRegistry } from "./messaging";
 import { PresenceRegistry } from "./presence";
 import { RevisionCounter } from "./revisions";
+import { TaskRegistry } from "./tasks";
 import {
   restoreSessionState,
   type SessionRegistries,
@@ -389,5 +390,47 @@ describe("snapshot — V2 messaging round-trip", () => {
   it("omits the messages field entirely when no message registry is provided (V1 back-compat)", () => {
     const snapshot = serializeSessionState(session, fresh());
     expect(snapshot.messages).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V2 Phase 2 — tasks in the snapshot (Req 2.1, X.2)
+// ---------------------------------------------------------------------------
+
+describe("snapshot — V2 tasks round-trip", () => {
+  it("captures and restores tasks, resuming the counter above their revision", () => {
+    const source: SessionRegistries = { ...fresh(), tasks: new TaskRegistry() };
+    const rev = source.revisions.next(session); // 1
+    source.tasks!.assign({
+      session,
+      taskId: "t-1",
+      title: "Add logout",
+      description: "…",
+      assignee: bob,
+      assigner: alice,
+      eventRevision: rev,
+    });
+    source.tasks!.respond({
+      session,
+      taskId: "t-1",
+      requester: bob,
+      accept: true,
+      eventRevision: source.revisions.next(session),
+    });
+
+    const snapshot = serializeSessionState(session, source);
+    expect(snapshot.tasks?.map((t) => t.taskId)).toEqual(["t-1"]);
+
+    const target: SessionRegistries = { ...fresh(), tasks: new TaskRegistry() };
+    restoreSessionState(snapshot, target);
+    expect(target.tasks!.taskListFor(session, "u-bob").map((t) => t.status)).toEqual([
+      "accepted",
+    ]);
+    expect(target.revisions.next(session)).toBeGreaterThan(rev);
+  });
+
+  it("omits the tasks field when no task registry is provided (V1 back-compat)", () => {
+    const snapshot = serializeSessionState(session, fresh());
+    expect(snapshot.tasks).toBeUndefined();
   });
 });

@@ -514,6 +514,13 @@ const sessionStateSnapshotSchema: ObjectSchema = {
       },
       optional: true,
     },
+    tasks: {
+      spec: {
+        kind: "array",
+        items: { kind: "object", schema: taskDtoSchema },
+      },
+      optional: true,
+    },
     highestRevision: { spec: { kind: "number" } },
   },
 };

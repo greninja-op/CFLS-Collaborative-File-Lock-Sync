@@ -486,6 +486,12 @@ export interface SessionStateSnapshot {
    * agent restores it so messages sent while it was offline are delivered.
    */
   messages?: MessageDto[];
+  /**
+   * V2 tasks for the session (Phase 2; Req 2.1, X.2). Optional for wire
+   * back-compatibility; when present, a reconnecting agent restores the task
+   * list and any pending approvals.
+   */
+  tasks?: TaskDto[];
   highestRevision: number;
 }
 
