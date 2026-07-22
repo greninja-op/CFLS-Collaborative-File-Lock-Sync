@@ -36,6 +36,7 @@ import {
   resolveMode,
   RevisionCounter,
   sessionKey,
+  TaskRegistry,
 } from "@cfls/core-state";
 
 import type {
@@ -62,13 +63,21 @@ import type {
   GetRiskMapRequest,
   GetTeamStatusData,
   GetTeamStatusRequest,
+  AssignTaskData,
+  AssignTaskRequest,
   ListMessagesData,
   ListMessagesRequest,
   ListOpenQuestionsData,
   ListOpenQuestionsRequest,
+  ListTasksData,
+  ListTasksRequest,
   MarkMessageReadData,
   MarkMessageReadRequest,
   ProjectSessionStatusData,
+  RespondTaskData,
+  RespondTaskRequest,
+  UpdateTaskProgressData,
+  UpdateTaskProgressRequest,
   ReleaseLockData,
   ReleaseLockRequest,
   RiskPathEntry,
@@ -155,11 +164,13 @@ export class CoreStateAgentPort implements AgentPort {
   private readonly intents = new IntentRegistry();
   private readonly presence = new PresenceRegistry();
   private readonly messages = new MessageRegistry();
+  private readonly tasks = new TaskRegistry();
   private readonly revisions = new RevisionCounter();
 
   private lockSeq = 0;
   private intentSeq = 0;
   private messageSeq = 0;
+  private taskSeq = 0;
   private subscriptionSeq = 0;
   private readonly subscribers = new Map<
     string,
@@ -782,6 +793,90 @@ export class CoreStateAgentPort implements AgentPort {
       ok: true,
       data: {
         questions: this.messages.openQuestionsFor(
+          this.session,
+          this.self.memberId,
+        ),
+      },
+    };
+  }
+
+  // ---- V2 tasks (Phase 2; Req 2.1–2.3) -------------------------------------
+
+  assignTask(req: AssignTaskRequest): AgentResult<AssignTaskData> {
+    if (!this.online) {
+      return offlineQueuedResult("assign_task");
+    }
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    const eventRevision = this.revisions.next(this.session);
+    const taskId = `task-${(this.taskSeq += 1)}`;
+    this.tasks.assign({
+      session: this.session,
+      taskId,
+      title: req.title,
+      description: req.description,
+      assignee: { memberId: req.assigneeMemberId, deviceId: "" },
+      assigner: this.self,
+      eventRevision,
+    });
+    return { ok: true, data: { taskId, eventRevision } };
+  }
+
+  respondTask(req: RespondTaskRequest): AgentResult<RespondTaskData> {
+    if (!this.online) {
+      return offlineQueuedResult("respond_to_task");
+    }
+    const eventRevision = this.revisions.next(this.session);
+    const result = this.tasks.respond({
+      session: this.session,
+      taskId: req.taskId,
+      requester: this.self,
+      accept: req.accept,
+      eventRevision,
+    });
+    if (!result.ok) {
+      return { ok: false, error: { code: result.code, message: result.reason } };
+    }
+    return { ok: true, data: { eventRevision } };
+  }
+
+  updateTaskProgress(
+    req: UpdateTaskProgressRequest,
+  ): AgentResult<UpdateTaskProgressData> {
+    if (!this.online) {
+      return offlineQueuedResult("update_task_progress");
+    }
+    const eventRevision = this.revisions.next(this.session);
+    const result = this.tasks.progress({
+      session: this.session,
+      taskId: req.taskId,
+      requester: this.self,
+      status: req.status,
+      eventRevision,
+    });
+    if (!result.ok) {
+      return { ok: false, error: { code: result.code, message: result.reason } };
+    }
+    return { ok: true, data: { eventRevision } };
+  }
+
+  listTasks(req: ListTasksRequest): AgentResult<ListTasksData> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    return {
+      ok: true,
+      data: {
+        tasks: this.tasks.allTasks(this.session),
+        myTaskList: this.tasks.taskListFor(this.session, this.self.memberId),
+        incomingProposals: this.tasks.incomingProposalsFor(
           this.session,
           this.self.memberId,
         ),

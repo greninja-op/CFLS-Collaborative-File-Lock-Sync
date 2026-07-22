@@ -91,6 +91,14 @@ export type {
   MarkMessageReadData,
   ListOpenQuestionsRequest,
   ListOpenQuestionsData,
+  AssignTaskRequest,
+  AssignTaskData,
+  RespondTaskRequest,
+  RespondTaskData,
+  UpdateTaskProgressRequest,
+  UpdateTaskProgressData,
+  ListTasksRequest,
+  ListTasksData,
 } from "./port";
 
 // ---- Reference in-memory port backed by core-state (tests) ----

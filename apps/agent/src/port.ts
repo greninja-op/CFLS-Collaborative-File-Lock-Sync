@@ -26,6 +26,7 @@ import type {
   MessageDto,
   RiskMapEntry,
   SessionId,
+  TaskDto,
 } from "@cfls/protocol";
 import type {
   AcquireLockData,
@@ -47,13 +48,21 @@ import type {
   GetRiskMapRequest,
   GetTeamStatusData,
   GetTeamStatusRequest,
+  AssignTaskData,
+  AssignTaskRequest,
   ListMessagesData,
   ListMessagesRequest,
   ListOpenQuestionsData,
   ListOpenQuestionsRequest,
+  ListTasksData,
+  ListTasksRequest,
   MarkMessageReadData,
   MarkMessageReadRequest,
   ProjectSessionStatusData,
+  RespondTaskData,
+  RespondTaskRequest,
+  UpdateTaskProgressData,
+  UpdateTaskProgressRequest,
   ReleaseLockData,
   ReleaseLockRequest,
   RiskPathEntry,
@@ -132,6 +141,12 @@ export class AgentCoordinationPort implements AgentPort {
   }): void => {
     this.view.applyMessage(this.session, payload.message);
   };
+  private readonly onGatewayTask = (payload: {
+    op: "added" | "updated";
+    task: TaskDto;
+  }): void => {
+    this.view.applyTask(this.session, payload.task);
+  };
 
   constructor(options: AgentPortOptions) {
     this.session = options.session;
@@ -149,6 +164,8 @@ export class AgentCoordinationPort implements AgentPort {
     this.gateway.on("update", this.onGatewayUpdate);
     // V2 messaging (Phase 1): converge the message view from host deliveries.
     this.gateway.on("message", this.onGatewayMessage);
+    // V2 tasks (Phase 2): converge the task view from host deliveries.
+    this.gateway.on("task", this.onGatewayTask);
   }
 
   // ---- Envelope inputs ------------------------------------------------------
@@ -624,10 +641,88 @@ export class AgentCoordinationPort implements AgentPort {
     };
   }
 
+  // ---- V2 tasks (Phase 2; Req 2.1–2.3) -------------------------------------
+
+  async assignTask(
+    req: AssignTaskRequest,
+  ): Promise<AgentResult<AssignTaskData>> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    const result = await this.gateway.transmit({
+      type: "task.assign",
+      payload: {
+        title: req.title,
+        description: req.description,
+        assigneeMemberId: req.assigneeMemberId,
+      },
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+    return {
+      ok: true,
+      data: { taskId: result.eventId, eventRevision: result.eventRevision },
+    };
+  }
+
+  async respondTask(
+    req: RespondTaskRequest,
+  ): Promise<AgentResult<RespondTaskData>> {
+    const result = await this.gateway.transmit({
+      type: "task.respond",
+      payload: { taskId: req.taskId, accept: req.accept },
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+    return { ok: true, data: { eventRevision: result.eventRevision } };
+  }
+
+  async updateTaskProgress(
+    req: UpdateTaskProgressRequest,
+  ): Promise<AgentResult<UpdateTaskProgressData>> {
+    const result = await this.gateway.transmit({
+      type: "task.progress",
+      payload: { taskId: req.taskId, status: req.status },
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+    return { ok: true, data: { eventRevision: result.eventRevision } };
+  }
+
+  listTasks(req: ListTasksRequest): AgentResult<ListTasksData> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    return {
+      ok: true,
+      data: {
+        tasks: this.view.allTasks(this.session),
+        myTaskList: this.view.taskListForMember(
+          this.session,
+          this.self.memberId,
+        ),
+        incomingProposals: this.view.incomingProposalsForMember(
+          this.session,
+          this.self.memberId,
+        ),
+      },
+    };
+  }
+
   /** Release all gateway listeners owned by this port during agent shutdown. */
   dispose(): void {
     this.gateway.off("update", this.onGatewayUpdate);
     this.gateway.off("message", this.onGatewayMessage);
+    this.gateway.off("task", this.onGatewayTask);
     for (const subscriptionId of this.subscriptions.keys()) {
       this.unsubscribeFromCoordinationUpdates(subscriptionId);
     }

@@ -38,6 +38,10 @@ export const LOCAL_API_METHODS = [
   "ask_question",
   "answer_question",
   "list_open_questions",
+  "assign_task",
+  "respond_to_task",
+  "update_task_progress",
+  "list_tasks",
 ] as const;
 
 export type LocalApiMethod = (typeof LOCAL_API_METHODS)[number];
@@ -173,6 +177,31 @@ export async function dispatchLocalRequest(
       );
     case "list_open_questions":
       return wrap(port.listOpenQuestions({ session: p.session as SessionId }));
+    case "assign_task":
+      return wrap(
+        port.assignTask({
+          session: p.session as SessionId,
+          title: (p.title as string) ?? "",
+          description: (p.description as string) ?? "",
+          assigneeMemberId: (p.assigneeMemberId as string) ?? "",
+        }),
+      );
+    case "respond_to_task":
+      return wrap(
+        port.respondTask({
+          taskId: p.taskId as string,
+          accept: Boolean(p.accept),
+        }),
+      );
+    case "update_task_progress":
+      return wrap(
+        port.updateTaskProgress({
+          taskId: p.taskId as string,
+          status: p.status as "in_progress" | "done",
+        }),
+      );
+    case "list_tasks":
+      return wrap(port.listTasks({ session: p.session as SessionId }));
     default:
       return wrap({
         ok: false,

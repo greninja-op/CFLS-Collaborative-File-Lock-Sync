@@ -23,6 +23,7 @@ import {
   ErrorMessageType,
   EventMessageType,
   MessagingMessageType,
+  TaskMessageType,
   MESSAGE_FORMAT_VERSION,
   type CoordinationUpdate,
   type ErrorPayload,
@@ -391,6 +392,20 @@ export class HostConnection extends EventEmitter {
         payload.message !== null
       ) {
         this.emit("message", payload);
+      }
+      return;
+    }
+    if (message?.type === TaskMessageType.UPDATE) {
+      // A V2 task update (Phase 2): { op, task }. Hand it to the agent so its
+      // task view converges.
+      const payload = message.payload;
+      if (
+        payload !== null &&
+        typeof payload === "object" &&
+        typeof payload.task === "object" &&
+        payload.task !== null
+      ) {
+        this.emit("task", payload);
       }
       return;
     }

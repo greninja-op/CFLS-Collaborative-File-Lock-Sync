@@ -37,6 +37,7 @@ import type {
   RiskLevel,
   ScopeKind,
   SessionId,
+  TaskDto,
 } from "@cfls/protocol";
 
 import type {
@@ -326,6 +327,55 @@ export interface ListOpenQuestionsData {
   questions: MessageDto[];
 }
 
+// ---- V2 tasks (Phase 2; Req 2.1–2.3) ----------------------------------------
+
+/** Assign a task to a member (created in `proposed` status). */
+export interface AssignTaskRequest {
+  session: SessionRef;
+  title: string;
+  description: string;
+  /** The member whose Task_List the task targets. */
+  assigneeMemberId: string;
+}
+
+export interface AssignTaskData {
+  taskId: string;
+  eventRevision: number;
+}
+
+/** Assignee approves or rejects a proposed task (Req 2.2). */
+export interface RespondTaskRequest {
+  taskId: string;
+  accept: boolean;
+}
+
+export interface RespondTaskData {
+  eventRevision: number;
+}
+
+/** Assignee advances an accepted task (Req 2.3). */
+export interface UpdateTaskProgressRequest {
+  taskId: string;
+  status: "in_progress" | "done";
+}
+
+export interface UpdateTaskProgressData {
+  eventRevision: number;
+}
+
+export interface ListTasksRequest {
+  session: SessionRef;
+}
+
+export interface ListTasksData {
+  /** Every task in the session. */
+  tasks: TaskDto[];
+  /** The requesting member's accepted Task_List (accepted/in_progress/done). */
+  myTaskList: TaskDto[];
+  /** Proposed tasks awaiting the requesting member's approval (Req 2.2). */
+  incomingProposals: TaskDto[];
+}
+
 /**
  * The interface the CoordinationAgent exposes to the Local_MCP_Server tools
  * (Task 9 implements it against the WSS agent + core-state; tests implement it
@@ -398,4 +448,17 @@ export interface AgentPort {
   listOpenQuestions(
     req: ListOpenQuestionsRequest,
   ): MaybePromise<AgentResult<ListOpenQuestionsData>>;
+
+  // V2 tasks (Phase 2; Req 2.1–2.3). Assign/respond/progress are mutations
+  // (OFFLINE_QUEUED while offline); `listTasks` reads succeed offline.
+  assignTask(
+    req: AssignTaskRequest,
+  ): MaybePromise<AgentResult<AssignTaskData>>;
+  respondTask(
+    req: RespondTaskRequest,
+  ): MaybePromise<AgentResult<RespondTaskData>>;
+  updateTaskProgress(
+    req: UpdateTaskProgressRequest,
+  ): MaybePromise<AgentResult<UpdateTaskProgressData>>;
+  listTasks(req: ListTasksRequest): MaybePromise<AgentResult<ListTasksData>>;
 }

@@ -37,6 +37,9 @@ import type {
   MessageReadPayload,
   MessageSendPayload,
   SessionId,
+  TaskAssignPayload,
+  TaskProgressPayload,
+  TaskRespondPayload,
 } from "@cfls/protocol";
 import type {
   ConnectionSnapshot,
@@ -54,7 +57,10 @@ export type MutationEvent =
   | { type: "intent.update"; payload: IntentUpdatePayload }
   | { type: "intent.withdraw"; payload: IntentWithdrawPayload }
   | { type: "message.send"; payload: MessageSendPayload }
-  | { type: "message.read"; payload: MessageReadPayload };
+  | { type: "message.read"; payload: MessageReadPayload }
+  | { type: "task.assign"; payload: TaskAssignPayload }
+  | { type: "task.respond"; payload: TaskRespondPayload }
+  | { type: "task.progress"; payload: TaskProgressPayload };
 
 /** Outcome of transmitting a mutation to the host authority. */
 export type TransmitResult =
@@ -109,6 +115,8 @@ export class RealHostGateway extends EventEmitter implements HostGateway {
     );
     // Relay V2 message updates (Phase 1) to the port's message view.
     this.connection.on("message", (m: unknown) => this.emit("message", m));
+    // Relay V2 task updates (Phase 2) to the port's task view.
+    this.connection.on("task", (t: unknown) => this.emit("task", t));
   }
 
   getConnection(): ConnectionSnapshot {
@@ -391,9 +399,12 @@ export class LocalHostGateway extends EventEmitter implements HostGateway {
         return { updates: [] };
       case "message.send":
       case "message.read":
-        // Messaging is delivered over the host's separate message channel, not
-        // as CoordinationUpdates. The in-process gateway (used only by fan-in
-        // unit tests) records no coordination updates for these.
+      case "task.assign":
+      case "task.respond":
+      case "task.progress":
+        // Messaging and tasks are delivered over the host's separate channels,
+        // not as CoordinationUpdates. The in-process gateway (used only by
+        // fan-in unit tests) records no coordination updates for these.
         return { updates: [] };
     }
   }

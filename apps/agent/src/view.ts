@@ -22,6 +22,7 @@ import {
   MessageRegistry,
   normalizePath,
   resolveMode,
+  TaskRegistry,
   type RepositoryRulesConfig,
   type SyncResponse,
 } from "@cfls/core-state";
@@ -36,6 +37,7 @@ import type {
   RiskMapEntry,
   SessionId,
   SessionStateSnapshot,
+  TaskDto,
 } from "@cfls/protocol";
 
 /** A planned-file-creation surfaced in the Risk_Map (design §3.4 #1). */
@@ -75,6 +77,8 @@ export class AgentView {
   private readonly cache = new AgentSyncCache();
   /** V2 messaging view (Phase 1), fed by host `message.update` broadcasts. */
   private readonly messages = new MessageRegistry();
+  /** V2 task view (Phase 2), fed by host `task.update` broadcasts. */
+  private readonly tasks = new TaskRegistry();
 
   /** Apply a single host broadcast to the view (idempotent by revision). */
   applyUpdate(session: SessionId, update: CoordinationUpdate): void {
@@ -120,6 +124,31 @@ export class AgentView {
     this.messages.restore(session, messages);
   }
 
+  // ---- V2 tasks (Phase 2; Req 2.1–2.3) -------------------------------------
+
+  /** Apply a host `task.update` (added/updated) to the task view. */
+  applyTask(session: SessionId, task: TaskDto): void {
+    this.tasks.upsert(session, task);
+  }
+
+  /** Every task in the session (ordered by eventRevision). */
+  allTasks(session: SessionId): TaskDto[] {
+    return this.tasks.allTasks(session);
+  }
+
+  /** `memberId`'s accepted Task_List (accepted/in_progress/done). */
+  taskListForMember(session: SessionId, memberId: string): TaskDto[] {
+    return this.tasks.taskListFor(session, memberId);
+  }
+
+  /** Proposed tasks awaiting `memberId`'s approval (Req 2.2). */
+  incomingProposalsForMember(
+    session: SessionId,
+    memberId: string,
+  ): TaskDto[] {
+    return this.tasks.incomingProposalsFor(session, memberId);
+  }
+
   /** Apply a batch of host broadcasts to the view. */
   applyUpdates(
     session: SessionId,
@@ -136,6 +165,7 @@ export class AgentView {
     // deliver missed messages over the separate message channel instead.
     if (response.kind === "snapshot") {
       this.messages.restore(session, response.snapshot.messages ?? []);
+      this.tasks.restore(session, response.snapshot.tasks ?? []);
     }
   }
 
@@ -143,6 +173,7 @@ export class AgentView {
   loadSnapshot(session: SessionId, snapshot: SessionStateSnapshot): void {
     this.cache.applySnapshot(session, snapshot);
     this.messages.restore(session, snapshot.messages ?? []);
+    this.tasks.restore(session, snapshot.tasks ?? []);
   }
 
   /** Mark the view stale on connectivity loss (Req 33.2). */

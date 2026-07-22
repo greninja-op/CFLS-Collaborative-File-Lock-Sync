@@ -186,6 +186,18 @@ export class TaskRegistry {
     return { ok: true, task };
   }
 
+  /**
+   * Insert or replace a task by `taskId` — the agent-side application of a host
+   * `task.update` broadcast. Idempotent; keeps the latest authoritative state.
+   */
+  upsert(session: SessionId, task: TaskDto): void {
+    this.tasksFor(session).set(task.taskId, {
+      ...task,
+      assignee: { ...task.assignee },
+      assigner: { ...task.assigner },
+    });
+  }
+
   /** A single task by id, or `undefined`. */
   get(session: SessionId, taskId: string): TaskDto | undefined {
     const task = this.sessions.get(sessionKey(session))?.get(taskId);
