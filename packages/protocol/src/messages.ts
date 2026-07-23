@@ -27,6 +27,8 @@ import type {
   MessageKind,
   MessagePriority,
   TaskDto,
+  LivenessState,
+  NotificationDto,
 } from "./models";
 import type { ErrorCode } from "./errors";
 
@@ -162,6 +164,16 @@ export const TaskMessageType = {
   UPDATE: "task.update",
 } as const;
 
+/** V2 notifications, liveness & wake message types (Phase 3; Req 3.1–3.3). */
+export const PresenceLivenessMessageType = {
+  /** H→C: a member's active/idle/gone liveness changed. */
+  LIVENESS_UPDATE: "liveness.update",
+  /** C→H: ask an idle member to resume (delivered at its next action). */
+  WAKE_REQUEST: "wake.request",
+  /** H→C: a severity-tagged notification for a recipient. */
+  NOTIFY_PUSH: "notify.push",
+} as const;
+
 /** Error message type (§11.1, §11.2). */
 export const ErrorMessageType = {
   /** H→C: typed error carrying an ErrorCode. */
@@ -190,6 +202,7 @@ export const MessageType = {
   // TaskMessageType is likewise spread before BroadcastMessageType so the shared
   // `UPDATE` key still resolves to `coordination.update` in this convenience map.
   ...TaskMessageType,
+  ...PresenceLivenessMessageType,
   ...BroadcastMessageType,
   ...EventMessageType,
   ...ErrorMessageType,
@@ -209,6 +222,7 @@ export type MessageTypeName =
   | (typeof EventMessageType)[keyof typeof EventMessageType]
   | (typeof MessagingMessageType)[keyof typeof MessagingMessageType]
   | (typeof TaskMessageType)[keyof typeof TaskMessageType]
+  | (typeof PresenceLivenessMessageType)[keyof typeof PresenceLivenessMessageType]
   | (typeof ErrorMessageType)[keyof typeof ErrorMessageType];
 
 /**
@@ -235,6 +249,7 @@ export const MESSAGE_TYPES: readonly MessageTypeName[] = [
   ...Object.values(EventMessageType),
   ...Object.values(MessagingMessageType),
   ...Object.values(TaskMessageType),
+  ...Object.values(PresenceLivenessMessageType),
   ...Object.values(ErrorMessageType),
 ] as MessageTypeName[];
 
@@ -621,6 +636,28 @@ export interface TaskUpdatePayload {
 }
 
 // ---------------------------------------------------------------------------
+// V2 notifications, liveness & wake payloads (Phase 3; Req 3.1-3.3)
+// ---------------------------------------------------------------------------
+
+/** `liveness.update` (H→C) — a member's liveness changed (Req 3.1). */
+export interface LivenessUpdatePayload {
+  memberId: string;
+  state: LivenessState;
+  eventRevision: number;
+}
+
+/** `wake.request` (C→H) — ask an idle member to resume (Req 3.3). */
+export interface WakeRequestPayload {
+  /** The member to wake. */
+  targetMemberId: string;
+  /** Optional short team-text reason. */
+  reason?: string;
+}
+
+/** `notify.push` (H→C) — a severity-tagged notification for a recipient (Req 3.2). */
+export type NotifyPushPayload = NotificationDto;
+
+// ---------------------------------------------------------------------------
 // Type-level payload map — associates each message type with its payload
 // ---------------------------------------------------------------------------
 
@@ -682,6 +719,10 @@ export interface MessagePayloadMap {
   [TaskMessageType.PROGRESS]: TaskProgressPayload;
   [TaskMessageType.WITHDRAW]: TaskWithdrawPayload;
   [TaskMessageType.UPDATE]: TaskUpdatePayload;
+
+  [PresenceLivenessMessageType.LIVENESS_UPDATE]: LivenessUpdatePayload;
+  [PresenceLivenessMessageType.WAKE_REQUEST]: WakeRequestPayload;
+  [PresenceLivenessMessageType.NOTIFY_PUSH]: NotifyPushPayload;
 
   [ErrorMessageType.ERROR]: ErrorPayload;
 }

@@ -329,3 +329,41 @@ export interface TaskDto {
   /** Authoritative Event_Revision of the latest change to the task (Req 2.1). */
   eventRevision: number;
 }
+
+// ---- V2 Collaboration Layer: Notifications & Liveness (Phase 3; idea.md §6) ----
+
+/**
+ * A member's availability (Req 3.1; idea.md §6 Liveness): `active` (recently
+ * acting), `idle` (connected but quiet), or `gone` (no live host connection).
+ */
+export type LivenessState = "active" | "idle" | "gone";
+
+/** Severity of a {@link NotificationDto}, used for alerting (Req 3.2). */
+export type NotifySeverity = "info" | "warn" | "urgent";
+
+/** What produced a notification (Req 3.2). */
+export type NotifySource =
+  | "message"
+  | "task"
+  | "question"
+  | "wake"
+  | "conflict";
+
+/**
+ * A surfaced alert for a human (Req 3.2). Carries only coordination metadata —
+ * a severity, the producing source, and a reference id (messageId/taskId/etc.);
+ * never source content. The client renders it and (for high severity) may play
+ * a sound cue.
+ */
+export interface NotificationDto {
+  notificationId: string;
+  /** The member this notification is for. */
+  toMemberId: string;
+  severity: NotifySeverity;
+  source: NotifySource;
+  /** The id of the producing entity (messageId, taskId, wakeId, path, …). */
+  refId: string;
+  /** Short team-text summary line. */
+  summary: string;
+  eventRevision: number;
+}

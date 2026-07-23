@@ -556,3 +556,62 @@ describe("V2 task payload validation", () => {
     expect(result.ok).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// V2 notifications, liveness & wake payload validation (Phase 3; Req 3.1-3.3)
+// ---------------------------------------------------------------------------
+
+describe("V2 liveness/notify/wake payload validation", () => {
+  it("accepts a valid liveness.update payload", () => {
+    const result = validatePayload("liveness.update", {
+      memberId: "bob",
+      state: "idle",
+      eventRevision: 4,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a liveness.update with an out-of-range state", () => {
+    const result = validatePayload("liveness.update", {
+      memberId: "bob",
+      state: "away",
+      eventRevision: 4,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("FORMAT_ERROR");
+  });
+
+  it("accepts a wake.request with and without a reason", () => {
+    expect(validatePayload("wake.request", { targetMemberId: "carol" }).ok).toBe(true);
+    expect(
+      validatePayload("wake.request", { targetMemberId: "carol", reason: "PR is blocked" }).ok,
+    ).toBe(true);
+  });
+
+  it("accepts a valid notify.push payload", () => {
+    const result = validatePayload("notify.push", {
+      notificationId: "n-1",
+      toMemberId: "bob",
+      severity: "urgent",
+      source: "task",
+      refId: "t-1",
+      summary: "Alice assigned you a task",
+      eventRevision: 9,
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a notify.push with an out-of-range severity", () => {
+    const result = validatePayload("notify.push", {
+      notificationId: "n-1",
+      toMemberId: "bob",
+      severity: "critical",
+      source: "task",
+      refId: "t-1",
+      summary: "x",
+      eventRevision: 9,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("FORMAT_ERROR");
+  });
+});

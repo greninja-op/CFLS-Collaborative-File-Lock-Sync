@@ -43,6 +43,10 @@ export type {
   MessageDto,
   TaskStatus,
   TaskDto,
+  LivenessState,
+  NotifySeverity,
+  NotifySource,
+  NotificationDto,
 } from "./models";
 
 // ---- Error codes (design §11.1) ----
@@ -78,6 +82,7 @@ export {
   EventMessageType,
   MessagingMessageType,
   TaskMessageType,
+  PresenceLivenessMessageType,
   ErrorMessageType,
   MessageType,
   MESSAGE_TYPES,
@@ -132,6 +137,9 @@ export type {
   TaskProgressPayload,
   TaskWithdrawPayload,
   TaskUpdatePayload,
+  LivenessUpdatePayload,
+  WakeRequestPayload,
+  NotifyPushPayload,
   ErrorPayload,
 } from "./messages";
 

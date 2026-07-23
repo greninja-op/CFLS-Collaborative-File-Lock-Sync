@@ -246,6 +246,15 @@ const TASK_STATUSES = [
   "done",
   "withdrawn",
 ] as const;
+const LIVENESS_STATES = ["active", "idle", "gone"] as const;
+const NOTIFY_SEVERITIES = ["info", "warn", "urgent"] as const;
+const NOTIFY_SOURCES = [
+  "message",
+  "task",
+  "question",
+  "wake",
+  "conflict",
+] as const;
 
 const sessionIdSchema: ObjectSchema = {
   name: "SessionId",
@@ -852,6 +861,35 @@ export const PAYLOAD_SCHEMAS: Record<MessageTypeName, ObjectSchema> = {
     fields: {
       op: { spec: { kind: "enum", values: ["added", "updated", "removed"] } },
       task: { spec: { kind: "object", schema: taskDtoSchema } },
+    },
+  },
+
+  // ---- V2 notifications, liveness & wake (Phase 3; Req 3.1-3.3) ----
+  "liveness.update": {
+    name: "LivenessUpdatePayload",
+    fields: {
+      memberId: { spec: { kind: "string" } },
+      state: { spec: { kind: "enum", values: LIVENESS_STATES } },
+      eventRevision: { spec: { kind: "number" } },
+    },
+  },
+  "wake.request": {
+    name: "WakeRequestPayload",
+    fields: {
+      targetMemberId: { spec: { kind: "string" } },
+      reason: { spec: { kind: "string" }, optional: true },
+    },
+  },
+  "notify.push": {
+    name: "NotifyPushPayload",
+    fields: {
+      notificationId: { spec: { kind: "string" } },
+      toMemberId: { spec: { kind: "string" } },
+      severity: { spec: { kind: "enum", values: NOTIFY_SEVERITIES } },
+      source: { spec: { kind: "enum", values: NOTIFY_SOURCES } },
+      refId: { spec: { kind: "string" } },
+      summary: { spec: { kind: "string" } },
+      eventRevision: { spec: { kind: "number" } },
     },
   },
 
