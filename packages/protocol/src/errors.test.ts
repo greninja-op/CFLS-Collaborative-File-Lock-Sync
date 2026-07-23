@@ -27,6 +27,7 @@ import {
   MessagingMessageType,
   TaskMessageType,
   PresenceLivenessMessageType,
+  LunaMessageType,
   ErrorMessageType,
   MessageType,
   MESSAGE_TYPES,
@@ -165,6 +166,7 @@ const ALL_GROUPS = [
   MessagingMessageType,
   TaskMessageType,
   PresenceLivenessMessageType,
+  LunaMessageType,
   ErrorMessageType,
 ];
 
@@ -177,10 +179,10 @@ describe("MESSAGE_TYPES catalog", () => {
     }
   });
 
-  it("contains exactly the 44 catalog message types", () => {
+  it("contains exactly the 46 catalog message types", () => {
     const expected = ALL_GROUPS.flatMap((group) => Object.values(group));
     expect([...MESSAGE_TYPES].sort()).toEqual([...expected].sort());
-    expect(MESSAGE_TYPES.length).toBe(44);
+    expect(MESSAGE_TYPES.length).toBe(46);
   });
 
   it("has no duplicate entries", () => {

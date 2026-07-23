@@ -367,3 +367,32 @@ export interface NotificationDto {
   summary: string;
   eventRevision: number;
 }
+
+// ---- V2 Collaboration Layer: Luna orchestrator (Phase 4; idea.md §5, §6) ----
+
+/**
+ * A direction a human gives Luna, the central orchestrator (Req 4.2–4.4;
+ * idea.md §5). Luna only routes/assigns what a human directs — it never
+ * autonomously carves a feature into subtasks (idea.md §9).
+ */
+export type LunaAction = "assign" | "arbitrate" | "answer" | "summarize";
+
+/** A request directed to Luna (Req 4.2–4.5). */
+export interface LunaRequestDto {
+  action: LunaAction;
+  /** The human/agent's plain-language prompt (team text; never source content). */
+  prompt: string;
+  /** Optional reference id the action concerns (a scope, taskId, questionId, …). */
+  refId?: string;
+}
+
+/** Luna's structured reply (Req 4.2–4.4). */
+export interface LunaReplyDto {
+  action: LunaAction;
+  /** Plain-language result Luna produced (a decision, an answer, or a summary). */
+  summary: string;
+  /** Set when the action produced a Task (e.g. `assign`). */
+  producedTaskId?: string;
+  /** Set when the action produced a Message (e.g. an `answer` or arbitration notice). */
+  producedMessageId?: string;
+}

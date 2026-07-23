@@ -615,3 +615,35 @@ describe("V2 liveness/notify/wake payload validation", () => {
     if (!result.ok) expect(result.error.code).toBe("FORMAT_ERROR");
   });
 });
+
+// ---------------------------------------------------------------------------
+// V2 Luna orchestrator payload validation (Phase 4; Req 4.1-4.5)
+// ---------------------------------------------------------------------------
+
+describe("V2 luna payload validation", () => {
+  it("accepts a valid luna.request payload", () => {
+    const result = validatePayload("luna.request", {
+      action: "assign",
+      prompt: "tell bob to do the logout flow",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a luna.request with an out-of-range action", () => {
+    const result = validatePayload("luna.request", {
+      action: "delegate",
+      prompt: "x",
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe("FORMAT_ERROR");
+  });
+
+  it("accepts a luna.reply with an optional produced id", () => {
+    const result = validatePayload("luna.reply", {
+      action: "assign",
+      summary: "Assigned to bob",
+      producedTaskId: "t-1",
+    });
+    expect(result.ok).toBe(true);
+  });
+});

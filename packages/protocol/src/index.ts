@@ -47,6 +47,9 @@ export type {
   NotifySeverity,
   NotifySource,
   NotificationDto,
+  LunaAction,
+  LunaRequestDto,
+  LunaReplyDto,
 } from "./models";
 
 // ---- Error codes (design §11.1) ----
@@ -83,6 +86,7 @@ export {
   MessagingMessageType,
   TaskMessageType,
   PresenceLivenessMessageType,
+  LunaMessageType,
   ErrorMessageType,
   MessageType,
   MESSAGE_TYPES,
@@ -140,6 +144,8 @@ export type {
   LivenessUpdatePayload,
   WakeRequestPayload,
   NotifyPushPayload,
+  LunaRequestPayload,
+  LunaReplyPayload,
   ErrorPayload,
 } from "./messages";
 

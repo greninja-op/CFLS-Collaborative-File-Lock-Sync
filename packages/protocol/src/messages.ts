@@ -29,6 +29,8 @@ import type {
   TaskDto,
   LivenessState,
   NotificationDto,
+  LunaRequestDto,
+  LunaReplyDto,
 } from "./models";
 import type { ErrorCode } from "./errors";
 // NotificationDto is referenced by SessionStateSnapshot and NotifyPushPayload.
@@ -175,6 +177,19 @@ export const PresenceLivenessMessageType = {
   NOTIFY_PUSH: "notify.push",
 } as const;
 
+/**
+ * V2 Luna orchestrator message types (Phase 4; Req 4.1–4.5). The `ASK`/`REPLY`
+ * key names avoid colliding with the shared `REQUEST` key (`sync.request`) in
+ * the flattened {@link MessageType} convenience map; the wire strings are
+ * `luna.request` / `luna.reply`.
+ */
+export const LunaMessageType = {
+  /** C→H: a human directs Luna to assign/arbitrate/answer/summarize. */
+  ASK: "luna.request",
+  /** H→C: Luna's structured reply to the requester. */
+  REPLY: "luna.reply",
+} as const;
+
 /** Error message type (§11.1, §11.2). */
 export const ErrorMessageType = {
   /** H→C: typed error carrying an ErrorCode. */
@@ -204,6 +219,7 @@ export const MessageType = {
   // `UPDATE` key still resolves to `coordination.update` in this convenience map.
   ...TaskMessageType,
   ...PresenceLivenessMessageType,
+  ...LunaMessageType,
   ...BroadcastMessageType,
   ...EventMessageType,
   ...ErrorMessageType,
@@ -224,6 +240,7 @@ export type MessageTypeName =
   | (typeof MessagingMessageType)[keyof typeof MessagingMessageType]
   | (typeof TaskMessageType)[keyof typeof TaskMessageType]
   | (typeof PresenceLivenessMessageType)[keyof typeof PresenceLivenessMessageType]
+  | (typeof LunaMessageType)[keyof typeof LunaMessageType]
   | (typeof ErrorMessageType)[keyof typeof ErrorMessageType];
 
 /**
@@ -251,6 +268,7 @@ export const MESSAGE_TYPES: readonly MessageTypeName[] = [
   ...Object.values(MessagingMessageType),
   ...Object.values(TaskMessageType),
   ...Object.values(PresenceLivenessMessageType),
+  ...Object.values(LunaMessageType),
   ...Object.values(ErrorMessageType),
 ] as MessageTypeName[];
 
@@ -664,6 +682,16 @@ export interface WakeRequestPayload {
 export type NotifyPushPayload = NotificationDto;
 
 // ---------------------------------------------------------------------------
+// V2 Luna orchestrator payloads (Phase 4; Req 4.1-4.5)
+// ---------------------------------------------------------------------------
+
+/** `luna.request` (C→H) — a human directs Luna. */
+export type LunaRequestPayload = LunaRequestDto;
+
+/** `luna.reply` (H→C) — Luna's structured reply. */
+export type LunaReplyPayload = LunaReplyDto;
+
+// ---------------------------------------------------------------------------
 // Type-level payload map — associates each message type with its payload
 // ---------------------------------------------------------------------------
 
@@ -729,6 +757,9 @@ export interface MessagePayloadMap {
   [PresenceLivenessMessageType.LIVENESS_UPDATE]: LivenessUpdatePayload;
   [PresenceLivenessMessageType.WAKE_REQUEST]: WakeRequestPayload;
   [PresenceLivenessMessageType.NOTIFY_PUSH]: NotifyPushPayload;
+
+  [LunaMessageType.ASK]: LunaRequestPayload;
+  [LunaMessageType.REPLY]: LunaReplyPayload;
 
   [ErrorMessageType.ERROR]: ErrorPayload;
 }

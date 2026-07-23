@@ -255,6 +255,7 @@ const NOTIFY_SOURCES = [
   "wake",
   "conflict",
 ] as const;
+const LUNA_ACTIONS = ["assign", "arbitrate", "answer", "summarize"] as const;
 
 const sessionIdSchema: ObjectSchema = {
   name: "SessionId",
@@ -910,6 +911,25 @@ export const PAYLOAD_SCHEMAS: Record<MessageTypeName, ObjectSchema> = {
       refId: { spec: { kind: "string" } },
       summary: { spec: { kind: "string" } },
       eventRevision: { spec: { kind: "number" } },
+    },
+  },
+
+  // ---- V2 Luna orchestrator (Phase 4; Req 4.1-4.5) ----
+  "luna.request": {
+    name: "LunaRequestPayload",
+    fields: {
+      action: { spec: { kind: "enum", values: LUNA_ACTIONS } },
+      prompt: { spec: { kind: "string" } },
+      refId: { spec: { kind: "string" }, optional: true },
+    },
+  },
+  "luna.reply": {
+    name: "LunaReplyPayload",
+    fields: {
+      action: { spec: { kind: "enum", values: LUNA_ACTIONS } },
+      summary: { spec: { kind: "string" } },
+      producedTaskId: { spec: { kind: "string" }, optional: true },
+      producedMessageId: { spec: { kind: "string" }, optional: true },
     },
   },
 
