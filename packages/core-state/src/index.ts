@@ -167,6 +167,16 @@ export type {
   TaskResult,
 } from "./tasks";
 
+// ---- V2 Phase 3 — Liveness & notifications (Req 3.1–3.3; idea.md §6) ----
+export {
+  LivenessTracker,
+  notificationSeverity,
+  buildNotification,
+  memberIdOf,
+  DEFAULT_ACTIVE_WINDOW_MS,
+} from "./liveness";
+export type { BuildNotificationInput } from "./liveness";
+
 // ---- Coalescing & deduplication within the burst window (task 4.22; Req 34; §8.5) ----
 export {
   Coalescer,
