@@ -114,8 +114,7 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
 - [x] Phase 1 — Messaging (COMPLETE: tasks 1.1–1.12; changed packages all green)
 - [x] Phase 2 — Tasks & approvals (COMPLETE: tasks 2.1–2.11; changed packages green)
 - [x] Phase 3 — Notifications, liveness & wake (COMPLETE: tasks 3.1–3.9; changed packages green)
-- [ ] Phase 3 — Notifications, liveness & wake
-- [ ] Phase 4 — Luna orchestrator
+- [x] Phase 4 — Luna orchestrator (COMPLETE: tasks 4.1–4.9; changed packages green)
 - [ ] Phase 5 — Live diffs (opt-in)
 
 ### Task log
@@ -172,3 +171,26 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
   prompts) — but note `description`/`prompt`/`note` are already not name-blocked;
   only `body`/`text`/`content`/`diff`/`patch` etc. are. Live diffs (P5) will need
   the same value-scan treatment for `patch`.
+- PHASE 4 COMPLETE (tasks 4.1–4.9). Luna orchestrator. protocol `luna.request`/
+  `luna.reply` (LunaMessageType keys ASK/REPLY, wire strings `luna.request`/
+  `luna.reply` — avoids flattened-map collision with sync.request). core-state
+  `orchestrator.ts`: `LunaBrain` interface + deterministic `RulesLunaBrain`
+  (assign/arbitrate/answer/summarize) + optional inert `LlmLunaBrain`. Host
+  `LunaService` uses reserved LUNA_MEMBER = {memberId:"luna",deviceId:"luna"};
+  handles luna.request → emits task.assign/message.send + luna.reply; rules-based
+  default, no external service/key. Agent `askLuna` port method uses optional
+  `gateway.askLuna?` (RealHostGateway → connection.requestLuna); returns
+  OFFLINE_QUEUED when the gateway can't reach Luna. MCP tool `ask_luna`
+  (action/prompt/refId) added to TOOL_NAMES. Extension view-model adds optional
+  `luna?: AskLunaData` snapshot → `lunaLastReply` view (read-only summary).
+  Counts: protocol 84, core-state 344, host 75, mcp 36, extension 68.
+- FIX (p4/4.9): LivenessTracker.recordActivity now records the FIRST activity even
+  at epoch 0 (was `?? 0` + strict `>`, which dropped atMs===0). Stabilizes the
+  flaky liveness property 19 counterexample [true,0,0]. Real code fix, not a test
+  change. Agent's local-api "deduplicates subscriptions … disposes on close" is
+  still the known pre-existing close-timing flake (NOT a V2 regression).
+- NEXT: Phase 5 — Live diffs (opt-in), tasks 5.1–5.9, then Final 6.1–6.3. Live
+  diffs are the ONLY source-derived feature: opt-in team-shared config flag
+  (`.coordination/config.json` `liveDiffs`) default OFF; host value-scans `patch`
+  for secrets/absolute/excluded paths like message `body`; agent computes local
+  git-diff of Authorized_Folder only when enabled.

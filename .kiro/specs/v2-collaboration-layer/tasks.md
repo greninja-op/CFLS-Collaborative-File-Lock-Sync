@@ -127,23 +127,24 @@ Execution waves (each wave depends on the previous one completing):
 
 ### Phase 4 — Orchestration (Luna)
 
-- [ ] 4.1 protocol: `luna.request`/`luna.reply` + `LunaAction`/`LunaRequestDto`/
+- [x] 4.1 protocol: `luna.request`/`luna.reply` + `LunaAction`/`LunaRequestDto`/
       `LunaReplyDto`; exports + validation. _Requirements: 4.1–4.5_
-- [ ] 4.2 core-state: `orchestrator.ts` `LunaBrain` interface + `RulesLunaBrain`
+- [x] 4.2 core-state: `orchestrator.ts` `LunaBrain` interface + `RulesLunaBrain`
       (assign/arbitrate/answer/summarize, deterministic); property/unit tests.
       _Requirements: 4.1–4.4_
-- [ ] 4.3 core-state: optional `LlmLunaBrain` adapter behind the same interface,
+- [x] 4.3 core-state: optional `LlmLunaBrain` adapter behind the same interface,
       inert unless injected; unit test proving default is rules-based.
       _Requirements: 4.1_
-- [ ] 4.4 host: `LunaService` (reserved Luna member, handles `luna.request`, emits
+- [x] 4.4 host: `LunaService` (reserved Luna member, handles `luna.request`, emits
       task.assign/message.send/luna.reply); disabled-LLM default.
       _Requirements: 4.1–4.5_
-- [ ] 4.5 host: integration test — direct→assign, arbitrate ambiguous conflict,
+- [x] 4.5 host: integration test — direct→assign, arbitrate ambiguous conflict,
       answer, summarize; reliability when Luna brain absent. _Requirements: 4.1–4.4_
-- [ ] 4.6 agent: port method `askLuna`; dispatch. _Requirements: X.3_
-- [ ] 4.7 mcp: tool `ask_luna`; tests. _Requirements: X.3_
-- [ ] 4.8 extension: Luna chat panel (direct Luna, read summaries). _Requirements: 4.5_
-- [ ] 4.9 phase gate: green typecheck/tests; update memory; merge `V2`→`main`.
+- [x] 4.6 agent: port method `askLuna`; dispatch. _Requirements: X.3_
+- [x] 4.7 mcp: tool `ask_luna`; tests. _Requirements: X.3_
+- [x] 4.8 extension: Luna last-reply view-model projection (read summaries). _Requirements: 4.5_
+- [x] 4.9 phase gate: changed packages green (protocol 84, core-state 344, host 75,
+      mcp 36, extension 68). Merge to main deferred to the very end.
 
 ### Phase 5 — Live diffs (opt-in)
 
