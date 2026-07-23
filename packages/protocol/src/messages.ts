@@ -551,6 +551,13 @@ export interface SessionStateSnapshot {
    * present, a reconnecting agent restores its notifications and pending wakes.
    */
   notifications?: NotificationDto[];
+  /**
+   * V2 opt-in Live_Diffs for the session (Phase 5; Req 5.1–5.3, X.2). Optional
+   * and present only when Live_Diff sharing is enabled; when present, a
+   * reconnecting agent restores the currently-shared diffs. This is the only
+   * snapshot field that carries source-derived content.
+   */
+  diffs?: LiveDiffDto[];
   highestRevision: number;
 }
 

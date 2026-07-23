@@ -32,6 +32,7 @@
 import type { SessionId, SessionStateSnapshot } from "@cfls/protocol";
 
 import type { IntentRegistry } from "./intents";
+import type { DiffRegistry } from "./diffs";
 import type { LockRegistry } from "./locks";
 import type { MessageRegistry } from "./messaging";
 import type { NotificationRegistry } from "./notifications";
@@ -66,6 +67,12 @@ export interface SessionRegistries {
    * are captured in and restored from the snapshot (Req 3.2, X.2).
    */
   notifications?: NotificationRegistry;
+  /**
+   * V2 live-diff registry (Phase 5). Optional and used only when Live_Diff
+   * sharing is enabled; when present, currently-shared diffs are captured in and
+   * restored from the snapshot (Req 5.1–5.3, X.2).
+   */
+  diffs?: DiffRegistry;
 }
 
 /**
@@ -124,6 +131,12 @@ export function serializeSessionState(
     snapshot.notifications = registries.notifications.allNotifications(session);
   }
 
+  if (registries.diffs !== undefined) {
+    snapshot.diffs = registries.diffs
+      .allDiffs(session)
+      .map((diff) => ({ ...diff, member: { ...diff.member } }));
+  }
+
   return snapshot;
 }
 
@@ -165,6 +178,11 @@ function maxPersistedRevision(snapshot: SessionStateSnapshot): number {
       max = notification.eventRevision;
     }
   }
+  for (const diff of snapshot.diffs ?? []) {
+    if (diff.eventRevision > max) {
+      max = diff.eventRevision;
+    }
+  }
   return max;
 }
 
@@ -195,6 +213,9 @@ export function restoreSessionState(
       snapshot.session,
       snapshot.notifications ?? [],
     );
+  }
+  if (registries.diffs !== undefined) {
+    registries.diffs.restore(snapshot.session, snapshot.diffs ?? []);
   }
   registries.revisions.resume(snapshot.session, maxPersistedRevision(snapshot));
 }

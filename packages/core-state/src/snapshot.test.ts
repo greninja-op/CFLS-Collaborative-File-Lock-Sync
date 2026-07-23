@@ -22,6 +22,7 @@ import type {
   SessionId,
 } from "@cfls/protocol";
 
+import { DiffRegistry } from "./diffs";
 import { IntentRegistry } from "./intents";
 import { LockRegistry } from "./locks";
 import { MessageRegistry } from "./messaging";
@@ -432,5 +433,35 @@ describe("snapshot — V2 tasks round-trip", () => {
   it("omits the tasks field when no task registry is provided (V1 back-compat)", () => {
     const snapshot = serializeSessionState(session, fresh());
     expect(snapshot.tasks).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// V2 Phase 5 — live diffs in the snapshot (Req 5.1–5.3, X.2)
+// ---------------------------------------------------------------------------
+
+describe("snapshot — V2 live-diffs round-trip", () => {
+  it("captures and restores shared diffs, resuming the counter above their revision", () => {
+    const source: SessionRegistries = { ...fresh(), diffs: new DiffRegistry() };
+    const rev = source.revisions.next(session); // 1
+    source.diffs!.share(session, {
+      path: "src/api.ts",
+      member: alice,
+      patch: "@@ -1 +1 @@\n-old\n+new",
+      eventRevision: rev,
+    });
+
+    const snapshot = serializeSessionState(session, source);
+    expect(snapshot.diffs?.map((d) => d.path)).toEqual(["src/api.ts"]);
+
+    const target: SessionRegistries = { ...fresh(), diffs: new DiffRegistry() };
+    restoreSessionState(snapshot, target);
+    expect(target.diffs!.get(session, "u-alice", "src/api.ts")?.patch).toContain("+new");
+    expect(target.revisions.next(session)).toBeGreaterThan(rev);
+  });
+
+  it("omits the diffs field when no diff registry is provided (opt-in off)", () => {
+    const snapshot = serializeSessionState(session, fresh());
+    expect(snapshot.diffs).toBeUndefined();
   });
 });

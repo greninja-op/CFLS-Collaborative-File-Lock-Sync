@@ -189,6 +189,9 @@ export type {
   LlmCompletion,
 } from "./orchestrator";
 
+// ---- V2 Phase 5 — Live diffs (opt-in) (Req 5.1–5.3; idea.md §6) ----
+export { DiffRegistry, diffMemberId } from "./diffs";
+
 // ---- Coalescing & deduplication within the burst window (task 4.22; Req 34; §8.5) ----
 export {
   Coalescer,
