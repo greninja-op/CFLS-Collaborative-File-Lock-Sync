@@ -50,6 +50,8 @@ import type {
   GetRiskMapRequest,
   GetTeamStatusData,
   GetTeamStatusRequest,
+  AskLunaData,
+  AskLunaRequest,
   AssignTaskData,
   AssignTaskRequest,
   GetLivenessData,
@@ -790,6 +792,38 @@ export class AgentCoordinationPort implements AgentPort {
         ),
       },
     };
+  }
+
+  // ---- V2 Luna orchestrator (Phase 4; Req 4.1–4.5) -------------------------
+
+  async askLuna(req: AskLunaRequest): Promise<AgentResult<AskLunaData>> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    // Only the real WSS gateway orchestrates Luna; when absent (in-process
+    // fan-in gateway or offline), surface an OFFLINE_QUEUED-style failure.
+    if (this.gateway.askLuna === undefined) {
+      return {
+        ok: false,
+        error: {
+          code: "OFFLINE_QUEUED",
+          message:
+            "The CoordinationAgent cannot reach Luna (no orchestrator on this connection).",
+        },
+      };
+    }
+    const result = await this.gateway.askLuna({
+      action: req.action,
+      prompt: req.prompt,
+      ...(req.refId !== undefined ? { refId: req.refId } : {}),
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+    return { ok: true, data: result.reply };
   }
 
   /** Release all gateway listeners owned by this port during agent shutdown. */

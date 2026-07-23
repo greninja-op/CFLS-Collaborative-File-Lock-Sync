@@ -105,6 +105,8 @@ export type {
   WakeData,
   GetNotificationsRequest,
   GetNotificationsData,
+  AskLunaRequest,
+  AskLunaData,
 } from "./port";
 
 // ---- Reference in-memory port backed by core-state (tests) ----

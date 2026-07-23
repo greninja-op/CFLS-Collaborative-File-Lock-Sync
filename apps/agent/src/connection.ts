@@ -29,6 +29,8 @@ import {
   type CoordinationUpdate,
   type ErrorPayload,
   type EventAppliedPayload,
+  type LunaReplyDto,
+  type LunaRequestPayload,
   type MessagePayloadMap,
   type MessageTypeName,
   type ParticipantsUpdatePayload,
@@ -692,6 +694,36 @@ export class HostConnection extends EventEmitter {
       this.highestRevision = snapshot.highestRevision;
     }
     return { kind: "snapshot", snapshot };
+  }
+
+  /**
+   * Send a `luna.request` and await Luna's `luna.reply` (Phase 4; Req 4.2–4.5).
+   * The waiter is registered before the frame is written so a fast reply cannot
+   * race past it. Returns the reply, or an offline/timeout error.
+   */
+  async requestLuna(
+    payload: LunaRequestPayload,
+    timeoutMs = 6000,
+  ): Promise<
+    { ok: true; reply: LunaReplyDto } | { ok: false; message: string }
+  > {
+    if (this.state !== "online" || this.ws === undefined) {
+      return { ok: false, message: "Agent offline; Luna is unavailable." };
+    }
+    const replyPromise = this.waitFor(
+      (m) => m?.type === "luna.reply",
+      timeoutMs,
+    );
+    const sent = this.send("luna.request", payload);
+    if (!sent.ok) {
+      return { ok: false, message: sent.message };
+    }
+    try {
+      const message = await replyPromise;
+      return { ok: true, reply: message.payload as LunaReplyDto };
+    } catch {
+      return { ok: false, message: "Luna did not reply in time." };
+    }
   }
 
   /**

@@ -12,6 +12,7 @@ import {
   type McpEnvelope,
 } from "@cfls/mcp-server";
 import type {
+  LunaAction,
   MessageKind,
   MessagePriority,
   ScopeKind,
@@ -45,6 +46,7 @@ export const LOCAL_API_METHODS = [
   "get_liveness",
   "wake_member",
   "get_notifications",
+  "ask_luna",
 ] as const;
 
 export type LocalApiMethod = (typeof LOCAL_API_METHODS)[number];
@@ -217,6 +219,15 @@ export async function dispatchLocalRequest(
       );
     case "get_notifications":
       return wrap(port.getNotifications({ session: p.session as SessionId }));
+    case "ask_luna":
+      return wrap(
+        port.askLuna({
+          session: p.session as SessionId,
+          action: p.action as LunaAction,
+          prompt: (p.prompt as string) ?? "",
+          ...(p.refId !== undefined ? { refId: p.refId as string } : {}),
+        }),
+      );
     default:
       return wrap({
         ok: false,

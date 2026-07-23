@@ -33,6 +33,8 @@ import type {
   IntentWithdrawPayload,
   LockAcquirePayload,
   LockReleasePayload,
+  LunaReplyDto,
+  LunaRequestPayload,
   MemberRef,
   MessageReadPayload,
   MessageSendPayload,
@@ -87,6 +89,14 @@ export interface HostGateway extends EventEmitter {
   online(): boolean;
   /** Forward a mutation to the host; `OFFLINE_QUEUED` while offline (Req 4.8). */
   transmit(event: MutationEvent): Promise<TransmitResult>;
+  /**
+   * Direct a request to Luna and await its reply (Phase 4; Req 4.2–4.5).
+   * Optional: only the real WSS gateway implements it; the in-process fan-in
+   * gateway used by unit tests does not orchestrate Luna.
+   */
+  askLuna?(
+    payload: LunaRequestPayload,
+  ): Promise<{ ok: true; reply: LunaReplyDto } | { ok: false; error: EnvelopeError }>;
 }
 
 function offlineError(type: string): TransmitResult {
@@ -160,6 +170,30 @@ export class RealHostGateway extends EventEmitter implements HostGateway {
         ? { lockConflict: result.acknowledgement.lockConflict }
         : {}),
     };
+  }
+
+  async askLuna(
+    payload: LunaRequestPayload,
+  ): Promise<
+    { ok: true; reply: LunaReplyDto } | { ok: false; error: EnvelopeError }
+  > {
+    if (!this.connection.isOnline()) {
+      return {
+        ok: false,
+        error: {
+          code: "OFFLINE_QUEUED",
+          message: "The CoordinationAgent is offline; Luna is unavailable.",
+        },
+      };
+    }
+    const result = await this.connection.requestLuna(payload);
+    if (!result.ok) {
+      return {
+        ok: false,
+        error: { code: "STORAGE_ERROR", message: result.message },
+      };
+    }
+    return { ok: true, reply: result.reply };
   }
 }
 

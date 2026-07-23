@@ -38,6 +38,7 @@ import {
   type RepositoryRulesConfig,
   resolveMode,
   RevisionCounter,
+  RulesLunaBrain,
   sessionKey,
   TaskRegistry,
 } from "@cfls/core-state";
@@ -80,6 +81,8 @@ import type {
   ListTasksRequest,
   MarkMessageReadData,
   MarkMessageReadRequest,
+  AskLunaData,
+  AskLunaRequest,
   ProjectSessionStatusData,
   WakeData,
   WakeRequest,
@@ -176,6 +179,7 @@ export class CoreStateAgentPort implements AgentPort {
   private readonly tasks = new TaskRegistry();
   private readonly liveness = new LivenessTracker();
   private readonly notificationsRegistry = new NotificationRegistry();
+  private readonly luna = new RulesLunaBrain();
   private readonly revisions = new RevisionCounter();
 
   private lockSeq = 0;
@@ -960,6 +964,38 @@ export class CoreStateAgentPort implements AgentPort {
           this.self.memberId,
         ),
       },
+    };
+  }
+
+  // ---- V2 Luna orchestrator (Phase 4; Req 4.1–4.5) -------------------------
+
+  askLuna(req: AskLunaRequest): AgentResult<AskLunaData> {
+    if (!this.online) {
+      return offlineQueuedResult("ask_luna");
+    }
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    const decision = this.luna.decide(
+      {
+        action: req.action,
+        prompt: req.prompt,
+        ...(req.refId !== undefined ? { refId: req.refId } : {}),
+      },
+      {
+        session: this.session,
+        requester: this.self,
+        members: [...this.connectedMembers, this.self.memberId],
+        liveness: [{ memberId: this.self.memberId, state: "active" }],
+        tasks: this.tasks.allTasks(this.session),
+      },
+    );
+    return {
+      ok: true,
+      data: { action: decision.action, summary: decision.summary },
     };
   }
 

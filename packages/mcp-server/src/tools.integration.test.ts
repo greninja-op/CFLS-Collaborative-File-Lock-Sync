@@ -537,4 +537,27 @@ describe("V2 liveness/notification/wake tools (Phase 3; Req 3.1–3.3)", () => {
     expect(woke.ok).toBe(false);
     expect(woke.error?.code).toBe("OFFLINE_QUEUED");
   });
+
+  it("ask_luna returns a rules-based reply for the requested action (Req 4.2–4.4)", async () => {
+    harness = await connectHarness();
+    const reply = await harness.call<{ action: string; summary: string }>(
+      "ask_luna",
+      { session, action: "summarize", prompt: "What is the team doing?" },
+    );
+    expect(reply.ok).toBe(true);
+    expect(reply.data?.action).toBe("summarize");
+    expect(typeof reply.data?.summary).toBe("string");
+    expect((reply.data?.summary ?? "").length).toBeGreaterThan(0);
+  });
+
+  it("returns OFFLINE_QUEUED for ask_luna while offline (Req 4.8)", async () => {
+    harness = await connectHarness(false);
+    const reply = await harness.call("ask_luna", {
+      session,
+      action: "answer",
+      prompt: "Who owns the parser?",
+    });
+    expect(reply.ok).toBe(false);
+    expect(reply.error?.code).toBe("OFFLINE_QUEUED");
+  });
 });

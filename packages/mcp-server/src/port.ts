@@ -32,6 +32,8 @@ import type {
   DependencyEdge,
   EdgeKind,
   LivenessState,
+  LunaAction,
+  LunaReplyDto,
   MessageDto,
   MessageKind,
   MessagePriority,
@@ -407,6 +409,19 @@ export interface GetNotificationsData {
   notifications: NotificationDto[];
 }
 
+// ---- V2 Luna orchestrator (Phase 4; Req 4.1–4.5) ----------------------------
+
+/** Direct Luna to assign / arbitrate / answer / summarize (Req 4.2–4.4). */
+export interface AskLunaRequest {
+  session: SessionRef;
+  action: LunaAction;
+  prompt: string;
+  refId?: string;
+}
+
+/** Luna's reply, returned to the caller (Req 4.2–4.4). */
+export type AskLunaData = LunaReplyDto;
+
 /**
  * The interface the CoordinationAgent exposes to the Local_MCP_Server tools
  * (Task 9 implements it against the WSS agent + core-state; tests implement it
@@ -502,4 +517,7 @@ export interface AgentPort {
   getNotifications(
     req: GetNotificationsRequest,
   ): MaybePromise<AgentResult<GetNotificationsData>>;
+
+  // V2 Luna orchestrator (Phase 4; Req 4.1–4.5).
+  askLuna(req: AskLunaRequest): MaybePromise<AgentResult<AskLunaData>>;
 }

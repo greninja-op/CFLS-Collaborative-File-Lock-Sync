@@ -58,6 +58,8 @@ export const TOOL_NAMES = [
   "get_liveness",
   "wake_member",
   "get_notifications",
+  // V2 Phase 4 — Luna orchestrator (Req 4.1–4.5).
+  "ask_luna",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -96,6 +98,12 @@ const messageKindSchema = z.enum([
   "question",
   "answer",
   "heads_up",
+]);
+const lunaActionSchema = z.enum([
+  "assign",
+  "arbitrate",
+  "answer",
+  "summarize",
 ]);
 
 /** Serialise an envelope as both structured content and a JSON text block. */
@@ -619,6 +627,35 @@ export function registerTools(server: McpServer, port: AgentPort): McpServer {
       inputSchema: { session: sessionSchema },
     },
     (args) => respond(port, port.getNotifications({ session: args.session })),
+  );
+
+  // ---- V2 Phase 4 — Luna orchestrator (Req 4.1–4.5) ------------------------
+
+  // 26. ask_luna
+  server.registerTool(
+    "ask_luna",
+    {
+      description:
+        "Ask Luna, the coordination orchestrator, to assign work, arbitrate an " +
+        "ambiguous conflict, answer a cross-agent question, or summarize team " +
+        "activity in plain language. The prompt is team text — never source content.",
+      inputSchema: {
+        session: sessionSchema,
+        action: lunaActionSchema,
+        prompt: z.string(),
+        refId: z.string().optional(),
+      },
+    },
+    (args) =>
+      respond(
+        port,
+        port.askLuna({
+          session: args.session,
+          action: args.action,
+          prompt: args.prompt,
+          ...(args.refId !== undefined ? { refId: args.refId } : {}),
+        }),
+      ),
   );
 
   return server;
