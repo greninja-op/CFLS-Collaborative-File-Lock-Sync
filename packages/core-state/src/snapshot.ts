@@ -34,6 +34,7 @@ import type { SessionId, SessionStateSnapshot } from "@cfls/protocol";
 import type { IntentRegistry } from "./intents";
 import type { LockRegistry } from "./locks";
 import type { MessageRegistry } from "./messaging";
+import type { NotificationRegistry } from "./notifications";
 import type { PresenceRegistry } from "./presence";
 import type { RevisionCounter } from "./revisions";
 import type { TaskRegistry } from "./tasks";
@@ -60,6 +61,11 @@ export interface SessionRegistries {
    * and restored from the snapshot (Req 2.1, X.2).
    */
   tasks?: TaskRegistry;
+  /**
+   * V2 notification registry (Phase 3). Optional; when present, notifications
+   * are captured in and restored from the snapshot (Req 3.2, X.2).
+   */
+  notifications?: NotificationRegistry;
 }
 
 /**
@@ -114,6 +120,10 @@ export function serializeSessionState(
     }));
   }
 
+  if (registries.notifications !== undefined) {
+    snapshot.notifications = registries.notifications.allNotifications(session);
+  }
+
   return snapshot;
 }
 
@@ -150,6 +160,11 @@ function maxPersistedRevision(snapshot: SessionStateSnapshot): number {
       max = task.eventRevision;
     }
   }
+  for (const notification of snapshot.notifications ?? []) {
+    if (notification.eventRevision > max) {
+      max = notification.eventRevision;
+    }
+  }
   return max;
 }
 
@@ -174,6 +189,12 @@ export function restoreSessionState(
   }
   if (registries.tasks !== undefined) {
     registries.tasks.restore(snapshot.session, snapshot.tasks ?? []);
+  }
+  if (registries.notifications !== undefined) {
+    registries.notifications.restore(
+      snapshot.session,
+      snapshot.notifications ?? [],
+    );
   }
   registries.revisions.resume(snapshot.session, maxPersistedRevision(snapshot));
 }

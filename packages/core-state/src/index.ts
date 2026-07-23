@@ -176,6 +176,7 @@ export {
   DEFAULT_ACTIVE_WINDOW_MS,
 } from "./liveness";
 export type { BuildNotificationInput } from "./liveness";
+export { NotificationRegistry } from "./notifications";
 
 // ---- Coalescing & deduplication within the burst window (task 4.22; Req 34; §8.5) ----
 export {

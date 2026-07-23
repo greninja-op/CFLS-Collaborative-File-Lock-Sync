@@ -31,6 +31,7 @@ import type {
   NotificationDto,
 } from "./models";
 import type { ErrorCode } from "./errors";
+// NotificationDto is referenced by SessionStateSnapshot and NotifyPushPayload.
 
 // ---------------------------------------------------------------------------
 // Message-type constants (design §4.3)
@@ -507,6 +508,11 @@ export interface SessionStateSnapshot {
    * list and any pending approvals.
    */
   tasks?: TaskDto[];
+  /**
+   * V2 notifications for the session (Phase 3; Req 3.2, X.2). Optional; when
+   * present, a reconnecting agent restores its notifications and pending wakes.
+   */
+  notifications?: NotificationDto[];
   highestRevision: number;
 }
 

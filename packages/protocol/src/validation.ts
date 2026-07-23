@@ -489,6 +489,19 @@ const taskDtoSchema: ObjectSchema = {
   },
 };
 
+const notificationDtoSchema: ObjectSchema = {
+  name: "NotificationDto",
+  fields: {
+    notificationId: { spec: { kind: "string" } },
+    toMemberId: { spec: { kind: "string" } },
+    severity: { spec: { kind: "enum", values: NOTIFY_SEVERITIES } },
+    source: { spec: { kind: "enum", values: NOTIFY_SOURCES } },
+    refId: { spec: { kind: "string" } },
+    summary: { spec: { kind: "string" } },
+    eventRevision: { spec: { kind: "number" } },
+  },
+};
+
 const eventAppliedLockConflictSchema: ObjectSchema = {
   name: "EventAppliedLockConflict",
   fields: {
@@ -527,6 +540,13 @@ const sessionStateSnapshotSchema: ObjectSchema = {
       spec: {
         kind: "array",
         items: { kind: "object", schema: taskDtoSchema },
+      },
+      optional: true,
+    },
+    notifications: {
+      spec: {
+        kind: "array",
+        items: { kind: "object", schema: notificationDtoSchema },
       },
       optional: true,
     },
