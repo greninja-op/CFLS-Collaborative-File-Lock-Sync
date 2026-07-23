@@ -19,6 +19,7 @@
 import {
   AgentSyncCache,
   buildRiskMap,
+  DiffRegistry,
   MessageRegistry,
   NotificationRegistry,
   normalizePath,
@@ -31,6 +32,7 @@ import type {
   CoordinationUpdate,
   DeclaredIntent,
   DependencyGraph,
+  LiveDiffDto,
   LivenessState,
   Lock,
   MemberRef,
@@ -84,6 +86,8 @@ export class AgentView {
   private readonly tasks = new TaskRegistry();
   /** V2 notification view (Phase 3), fed by host `notify.push`. */
   private readonly notifications = new NotificationRegistry();
+  /** V2 live-diff view (Phase 5), fed by host `diff.update` broadcasts. */
+  private readonly diffs = new DiffRegistry();
   /** V2 liveness view (Phase 3): `session_key` → memberId → state. */
   private readonly liveness = new Map<string, Map<string, LivenessState>>();
 
@@ -200,6 +204,22 @@ export class AgentView {
     return this.notifications.forMember(session, memberId);
   }
 
+  // ---- V2 live diffs (Phase 5; Req 5.1–5.3) --------------------------------
+
+  /** Apply a host `diff.update` (shared/removed) to the live-diff view. */
+  applyDiff(session: SessionId, op: "shared" | "removed", diff: LiveDiffDto): void {
+    if (op === "removed") {
+      this.diffs.remove(session, diff.member.memberId, diff.path);
+      return;
+    }
+    this.diffs.share(session, diff);
+  }
+
+  /** Every currently-shared Live_Diff in the session (Req 5.5). */
+  allDiffs(session: SessionId): LiveDiffDto[] {
+    return this.diffs.allDiffs(session);
+  }
+
   /** Apply a batch of host broadcasts to the view. */
   applyUpdates(
     session: SessionId,
@@ -218,6 +238,7 @@ export class AgentView {
       this.messages.restore(session, response.snapshot.messages ?? []);
       this.tasks.restore(session, response.snapshot.tasks ?? []);
       this.notifications.restore(session, response.snapshot.notifications ?? []);
+      this.diffs.restore(session, response.snapshot.diffs ?? []);
     }
   }
 
@@ -227,6 +248,7 @@ export class AgentView {
     this.messages.restore(session, snapshot.messages ?? []);
     this.tasks.restore(session, snapshot.tasks ?? []);
     this.notifications.restore(session, snapshot.notifications ?? []);
+    this.diffs.restore(session, snapshot.diffs ?? []);
   }
 
   /** Mark the view stale on connectivity loss (Req 33.2). */

@@ -33,6 +33,7 @@ import type {
   IntentWithdrawPayload,
   LockAcquirePayload,
   LockReleasePayload,
+  DiffSharePayload,
   LunaReplyDto,
   LunaRequestPayload,
   MemberRef,
@@ -64,7 +65,8 @@ export type MutationEvent =
   | { type: "task.assign"; payload: TaskAssignPayload }
   | { type: "task.respond"; payload: TaskRespondPayload }
   | { type: "task.progress"; payload: TaskProgressPayload }
-  | { type: "wake.request"; payload: WakeRequestPayload };
+  | { type: "wake.request"; payload: WakeRequestPayload }
+  | { type: "diff.share"; payload: DiffSharePayload };
 
 /** Outcome of transmitting a mutation to the host authority. */
 export type TransmitResult =
@@ -134,6 +136,8 @@ export class RealHostGateway extends EventEmitter implements HostGateway {
     this.connection.on("notification", (n: unknown) =>
       this.emit("notification", n),
     );
+    // Relay V2 live-diff updates (Phase 5) to the port's diff view.
+    this.connection.on("diff", (d: unknown) => this.emit("diff", d));
   }
 
   getConnection(): ConnectionSnapshot {
@@ -444,9 +448,10 @@ export class LocalHostGateway extends EventEmitter implements HostGateway {
       case "task.respond":
       case "task.progress":
       case "wake.request":
-        // Messaging, tasks, and wakes are delivered over the host's separate
-        // channels, not as CoordinationUpdates. The in-process gateway (used
-        // only by fan-in unit tests) records no coordination updates for these.
+      case "diff.share":
+        // Messaging, tasks, wakes, and live diffs are delivered over the host's
+        // separate channels, not as CoordinationUpdates. The in-process gateway
+        // (used only by fan-in unit tests) records no coordination updates here.
         return { updates: [] };
     }
   }

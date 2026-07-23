@@ -47,6 +47,8 @@ export const LOCAL_API_METHODS = [
   "wake_member",
   "get_notifications",
   "ask_luna",
+  "share_diff",
+  "list_diffs",
 ] as const;
 
 export type LocalApiMethod = (typeof LOCAL_API_METHODS)[number];
@@ -228,6 +230,16 @@ export async function dispatchLocalRequest(
           ...(p.refId !== undefined ? { refId: p.refId as string } : {}),
         }),
       );
+    case "share_diff":
+      return wrap(
+        port.shareDiff({
+          session: p.session as SessionId,
+          path: (p.path as string) ?? "",
+          ...(p.patch !== undefined ? { patch: p.patch as string } : {}),
+        }),
+      );
+    case "list_diffs":
+      return wrap(port.listDiffs({ session: p.session as SessionId }));
     default:
       return wrap({
         ok: false,

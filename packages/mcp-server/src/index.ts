@@ -107,6 +107,10 @@ export type {
   GetNotificationsData,
   AskLunaRequest,
   AskLunaData,
+  ShareDiffRequest,
+  ShareDiffData,
+  ListDiffsRequest,
+  ListDiffsData,
 } from "./port";
 
 // ---- Reference in-memory port backed by core-state (tests) ----

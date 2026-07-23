@@ -22,6 +22,7 @@ import type {
   CoordinationUpdate,
   DependencyEdge,
   DependencyGraph,
+  LiveDiffDto,
   LivenessState,
   MemberRef,
   MessageDto,
@@ -52,6 +53,10 @@ import type {
   GetTeamStatusRequest,
   AskLunaData,
   AskLunaRequest,
+  ShareDiffData,
+  ShareDiffRequest,
+  ListDiffsData,
+  ListDiffsRequest,
   AssignTaskData,
   AssignTaskRequest,
   GetLivenessData,
@@ -121,6 +126,13 @@ export interface AgentPortOptions {
   manualConfig?: boolean;
   connectedMembers?: string[];
   offlineMembers?: string[];
+  /**
+   * Optional local diff provider for `share_diff` (Phase 5; Req 5.2). When the
+   * caller omits an explicit `patch`, the agent computes the current change diff
+   * for the path locally (e.g. `git diff -- <path>` in the Authorized_Folder).
+   * Absent ⇒ an omitted patch shares nothing (clears any prior diff).
+   */
+  localDiff?: (path: string) => string | Promise<string>;
 }
 
 /** The agent's real, host-backed {@link AgentPort} (design §3.2, §3.4). */
@@ -136,6 +148,9 @@ export class AgentCoordinationPort implements AgentPort {
   private readonly manualConfig: boolean;
   private connectedMembers: string[];
   private offlineMembers: string[];
+  private readonly localDiff:
+    | ((path: string) => string | Promise<string>)
+    | undefined;
 
   private subscriptionSeq = 0;
   private readonly subscriptions = new Map<
@@ -168,6 +183,12 @@ export class AgentCoordinationPort implements AgentPort {
   ): void => {
     this.view.applyNotification(this.session, payload);
   };
+  private readonly onGatewayDiff = (payload: {
+    op: "shared" | "removed";
+    diff: LiveDiffDto;
+  }): void => {
+    this.view.applyDiff(this.session, payload.op, payload.diff);
+  };
 
   constructor(options: AgentPortOptions) {
     this.session = options.session;
@@ -180,6 +201,7 @@ export class AgentCoordinationPort implements AgentPort {
     this.manualConfig = options.manualConfig ?? false;
     this.connectedMembers = options.connectedMembers ?? [options.self.memberId];
     this.offlineMembers = options.offlineMembers ?? [];
+    this.localDiff = options.localDiff;
 
     // One shared view fed by every host broadcast (multi-client fan-in, Req 31.1).
     this.gateway.on("update", this.onGatewayUpdate);
@@ -190,6 +212,8 @@ export class AgentCoordinationPort implements AgentPort {
     // V2 liveness + notifications (Phase 3): converge those views.
     this.gateway.on("liveness", this.onGatewayLiveness);
     this.gateway.on("notification", this.onGatewayNotification);
+    // V2 live diffs (Phase 5): converge the diff view from host deliveries.
+    this.gateway.on("diff", this.onGatewayDiff);
   }
 
   // ---- Envelope inputs ------------------------------------------------------
@@ -826,6 +850,52 @@ export class AgentCoordinationPort implements AgentPort {
     return { ok: true, data: result.reply };
   }
 
+  // ---- V2 live diffs (Phase 5; Req 5.1–5.5) --------------------------------
+
+  async shareDiff(req: ShareDiffRequest): Promise<AgentResult<ShareDiffData>> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    // Prefer an explicit patch; otherwise compute the local git diff for the
+    // path when a provider is configured, else share nothing (clears the diff).
+    // The provider only runs while online so an offline share never does I/O.
+    let patch = req.patch;
+    if (
+      patch === undefined &&
+      this.localDiff !== undefined &&
+      this.gateway.online()
+    ) {
+      patch = await this.localDiff(req.path);
+    }
+    const result = await this.gateway.transmit({
+      type: "diff.share",
+      payload: { path: req.path, patch: patch ?? "" },
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+    return {
+      ok: true,
+      data: {
+        eventRevision: result.eventRevision,
+        shared: (patch ?? "").length > 0,
+      },
+    };
+  }
+
+  listDiffs(req: ListDiffsRequest): AgentResult<ListDiffsData> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    return { ok: true, data: { diffs: this.view.allDiffs(this.session) } };
+  }
+
   /** Release all gateway listeners owned by this port during agent shutdown. */
   dispose(): void {
     this.gateway.off("update", this.onGatewayUpdate);
@@ -833,6 +903,7 @@ export class AgentCoordinationPort implements AgentPort {
     this.gateway.off("task", this.onGatewayTask);
     this.gateway.off("liveness", this.onGatewayLiveness);
     this.gateway.off("notification", this.onGatewayNotification);
+    this.gateway.off("diff", this.onGatewayDiff);
     for (const subscriptionId of this.subscriptions.keys()) {
       this.unsubscribeFromCoordinationUpdates(subscriptionId);
     }

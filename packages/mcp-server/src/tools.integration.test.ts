@@ -560,4 +560,43 @@ describe("V2 liveness/notification/wake tools (Phase 3; Req 3.1–3.3)", () => {
     expect(reply.ok).toBe(false);
     expect(reply.error?.code).toBe("OFFLINE_QUEUED");
   });
+
+  it("share_diff stores a diff that list_diffs then returns (Req 5.1–5.5)", async () => {
+    harness = await connectHarness();
+    const shared = await harness.call<{ eventRevision: number; shared: boolean }>(
+      "share_diff",
+      { session, path: "src/api.ts", patch: "@@ -1 +1 @@\n-old\n+new" },
+    );
+    expect(shared.ok).toBe(true);
+    expect(shared.data?.shared).toBe(true);
+
+    const listed = await harness.call<{
+      diffs: Array<{ path: string; patch: string }>;
+    }>("list_diffs", { session });
+    expect(listed.ok).toBe(true);
+    expect(listed.data?.diffs.map((d) => d.path)).toEqual(["src/api.ts"]);
+
+    // An empty patch clears the shared diff (Req 5.2, 5.3).
+    const cleared = await harness.call<{ shared: boolean }>("share_diff", {
+      session,
+      path: "src/api.ts",
+      patch: "",
+    });
+    expect(cleared.data?.shared).toBe(false);
+    const after = await harness.call<{ diffs: unknown[] }>("list_diffs", {
+      session,
+    });
+    expect(after.data?.diffs).toEqual([]);
+  });
+
+  it("returns OFFLINE_QUEUED for share_diff while offline (Req 4.8)", async () => {
+    harness = await connectHarness(false);
+    const shared = await harness.call("share_diff", {
+      session,
+      path: "src/api.ts",
+      patch: "x",
+    });
+    expect(shared.ok).toBe(false);
+    expect(shared.error?.code).toBe("OFFLINE_QUEUED");
+  });
 });

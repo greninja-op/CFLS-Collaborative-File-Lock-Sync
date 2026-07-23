@@ -27,6 +27,7 @@ import {
   ALL_SOFT_CONFIG,
   buildRiskMap,
   buildNotification,
+  DiffRegistry,
   IntentRegistry,
   LivenessTracker,
   LockRegistry,
@@ -83,6 +84,10 @@ import type {
   MarkMessageReadRequest,
   AskLunaData,
   AskLunaRequest,
+  ShareDiffData,
+  ShareDiffRequest,
+  ListDiffsData,
+  ListDiffsRequest,
   ProjectSessionStatusData,
   WakeData,
   WakeRequest,
@@ -180,6 +185,7 @@ export class CoreStateAgentPort implements AgentPort {
   private readonly liveness = new LivenessTracker();
   private readonly notificationsRegistry = new NotificationRegistry();
   private readonly luna = new RulesLunaBrain();
+  private readonly diffs = new DiffRegistry();
   private readonly revisions = new RevisionCounter();
 
   private lockSeq = 0;
@@ -997,6 +1003,39 @@ export class CoreStateAgentPort implements AgentPort {
       ok: true,
       data: { action: decision.action, summary: decision.summary },
     };
+  }
+
+  // ---- V2 live diffs (Phase 5; Req 5.1–5.5) --------------------------------
+
+  shareDiff(req: ShareDiffRequest): AgentResult<ShareDiffData> {
+    if (!this.online) {
+      return offlineQueuedResult("share_diff");
+    }
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    const eventRevision = this.revisions.next(this.session);
+    const patch = req.patch ?? "";
+    const op = this.diffs.share(this.session, {
+      path: normalizePath(req.path),
+      member: this.self,
+      patch,
+      eventRevision,
+    });
+    return { ok: true, data: { eventRevision, shared: op === "shared" } };
+  }
+
+  listDiffs(req: ListDiffsRequest): AgentResult<ListDiffsData> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    return { ok: true, data: { diffs: this.diffs.allDiffs(this.session) } };
   }
 
   // ---- Dependency-graph helpers --------------------------------------------

@@ -31,6 +31,7 @@ import type {
   CoordinationUpdate,
   DependencyEdge,
   EdgeKind,
+  LiveDiffDto,
   LivenessState,
   LunaAction,
   LunaReplyDto,
@@ -422,6 +423,36 @@ export interface AskLunaRequest {
 /** Luna's reply, returned to the caller (Req 4.2–4.4). */
 export type AskLunaData = LunaReplyDto;
 
+// ---- V2 live diffs (Phase 5; Req 5.1–5.5) -----------------------------------
+
+/**
+ * Share (or clear) the current change diff for a path (opt-in) (Req 5.1–5.3).
+ * An empty/omitted `patch` clears any previously shared diff. When `patch` is
+ * omitted the agent computes a local git diff of the path in the
+ * Authorized_Folder; a client may also pass an explicit `patch`.
+ */
+export interface ShareDiffRequest {
+  session: SessionRef;
+  path: string;
+  /** Explicit unified-diff text; omitted ⇒ the agent computes it locally. */
+  patch?: string;
+}
+
+export interface ShareDiffData {
+  eventRevision: number;
+  /** True when a diff was shared; false when the share cleared/was empty. */
+  shared: boolean;
+}
+
+export interface ListDiffsRequest {
+  session: SessionRef;
+}
+
+export interface ListDiffsData {
+  /** Every currently-shared Live_Diff visible to the team (read-only) (Req 5.5). */
+  diffs: LiveDiffDto[];
+}
+
 /**
  * The interface the CoordinationAgent exposes to the Local_MCP_Server tools
  * (Task 9 implements it against the WSS agent + core-state; tests implement it
@@ -520,4 +551,13 @@ export interface AgentPort {
 
   // V2 Luna orchestrator (Phase 4; Req 4.1–4.5).
   askLuna(req: AskLunaRequest): MaybePromise<AgentResult<AskLunaData>>;
+
+  // V2 live diffs (Phase 5; Req 5.1–5.5). `shareDiff` is a mutation
+  // (OFFLINE_QUEUED while offline); `listDiffs` reads succeed offline.
+  shareDiff(
+    req: ShareDiffRequest,
+  ): MaybePromise<AgentResult<ShareDiffData>>;
+  listDiffs(
+    req: ListDiffsRequest,
+  ): MaybePromise<AgentResult<ListDiffsData>>;
 }

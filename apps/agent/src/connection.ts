@@ -20,6 +20,7 @@ import { randomUUID, randomBytes } from "node:crypto";
 import {
   buildEnvelope,
   BroadcastMessageType,
+  DiffMessageType,
   ErrorMessageType,
   EventMessageType,
   MessagingMessageType,
@@ -432,6 +433,20 @@ export class HostConnection extends EventEmitter {
         typeof payload.notificationId === "string"
       ) {
         this.emit("notification", payload);
+      }
+      return;
+    }
+    if (message?.type === DiffMessageType.UPDATE) {
+      // A V2 live-diff update (Phase 5): { op, diff }. Hand it to the agent so
+      // its diff view converges.
+      const payload = message.payload;
+      if (
+        payload !== null &&
+        typeof payload === "object" &&
+        typeof payload.diff === "object" &&
+        payload.diff !== null
+      ) {
+        this.emit("diff", payload);
       }
       return;
     }

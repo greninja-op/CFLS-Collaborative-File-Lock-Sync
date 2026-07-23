@@ -60,6 +60,9 @@ export const TOOL_NAMES = [
   "get_notifications",
   // V2 Phase 4 — Luna orchestrator (Req 4.1–4.5).
   "ask_luna",
+  // V2 Phase 5 — live diffs, opt-in (Req 5.1–5.5).
+  "share_diff",
+  "list_diffs",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -656,6 +659,45 @@ export function registerTools(server: McpServer, port: AgentPort): McpServer {
           ...(args.refId !== undefined ? { refId: args.refId } : {}),
         }),
       ),
+  );
+
+  // ---- V2 Phase 5 — live diffs, opt-in (Req 5.1–5.5) -----------------------
+
+  // 27. share_diff
+  server.registerTool(
+    "share_diff",
+    {
+      description:
+        "Share your current change diff for a path with the team (opt-in; only " +
+        "works when the team enabled liveDiffs). Omit patch to clear a shared " +
+        "diff. This is the only tool that shares source-derived content.",
+      inputSchema: {
+        session: sessionSchema,
+        path: z.string(),
+        patch: z.string().optional(),
+      },
+    },
+    (args) =>
+      respond(
+        port,
+        port.shareDiff({
+          session: args.session,
+          path: args.path,
+          ...(args.patch !== undefined ? { patch: args.patch } : {}),
+        }),
+      ),
+  );
+
+  // 28. list_diffs
+  server.registerTool(
+    "list_diffs",
+    {
+      description:
+        "List the team's currently-shared Live_Diffs (read-only; empty unless " +
+        "the team enabled liveDiffs). Never applied to your files automatically.",
+      inputSchema: { session: sessionSchema },
+    },
+    (args) => respond(port, port.listDiffs({ session: args.session })),
   );
 
   return server;
