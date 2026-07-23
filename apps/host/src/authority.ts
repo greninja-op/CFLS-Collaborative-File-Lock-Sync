@@ -17,11 +17,14 @@ import {
   ExpiryEngine,
   IngestGate,
   IntentRegistry,
+  LivenessTracker,
   LockRegistry,
   MessageRegistry,
+  NotificationRegistry,
   PresenceRegistry,
   RevisionCounter,
   TaskRegistry,
+  buildNotification,
   checkInboundMinimization,
   findMinimizationViolations,
   normalizePath,
@@ -55,9 +58,12 @@ import {
   type EventEnvelope,
   type MemberRef,
   type MembershipRegistryEntry,
+  type LivenessState,
   type MessageDto,
   type MessageReadPayload,
   type MessageSendPayload,
+  type NotificationDto,
+  type WakeRequestPayload,
   type TaskAssignPayload,
   type TaskDto,
   type TaskProgressPayload,
@@ -127,6 +133,13 @@ export interface TaskBroadcast {
   task: TaskDto;
 }
 
+/** A liveness change to broadcast (Phase 3; Req 3.1). */
+export interface LivenessBroadcast {
+  memberId: string;
+  state: LivenessState;
+  eventRevision: number;
+}
+
 /** Outcome of ingesting a single coordination event. */
 export interface IngestOutcome {
   accepted: boolean;
@@ -142,6 +155,8 @@ export interface IngestOutcome {
   messageUpdates?: MessageBroadcast[];
   /** V2 task updates to broadcast to the session (Phase 2; Req 2.1). */
   taskUpdates?: TaskBroadcast[];
+  /** V2 notifications to deliver to their target member (Phase 3; Req 3.2, 3.3). */
+  notifications?: NotificationDto[];
 }
 
 /** Effects that must be committed with the event rather than during apply. */
@@ -167,6 +182,11 @@ export class CoordinationAuthority {
   private readonly presence = new PresenceRegistry();
   private readonly messages = new MessageRegistry();
   private readonly tasks = new TaskRegistry();
+  private readonly notificationsRegistry = new NotificationRegistry();
+  private readonly liveness = new LivenessTracker();
+  /** `session_key` → last broadcast liveness state per member (change detection). */
+  private readonly lastLiveness = new Map<string, Map<string, LivenessState>>();
+  private notificationSeq = 0;
   private readonly revisions: RevisionCounter;
   private readonly eventLog = new CoordinationEventLog();
   private readonly gate: IngestGate;
@@ -215,6 +235,8 @@ export class CoordinationAuthority {
       messages: this.messages,
       // Tasks likewise persist via the snapshot (Req 2.1, X.2).
       tasks: this.tasks,
+      // Notifications likewise persist via the snapshot (Req 3.2, X.2).
+      notifications: this.notificationsRegistry,
     };
 
     // Reseed the replay guard from persisted per-device counters (Req 7.5).
@@ -535,6 +557,7 @@ export class CoordinationAuthority {
     } = {};
     const messageUpdates: MessageBroadcast[] = [];
     const taskUpdates: TaskBroadcast[] = [];
+    const notifications: NotificationDto[] = [];
 
     let result: IngestResult;
     try {
@@ -551,6 +574,7 @@ export class CoordinationAuthority {
             effects,
             messageUpdates,
             taskUpdates,
+            notifications,
           ),
       );
     } catch {
@@ -664,6 +688,9 @@ export class CoordinationAuthority {
       this.eventLog.append(envelope.session, update);
     }
 
+    // The member just acted, so refresh its liveness activity (Req 3.1).
+    this.liveness.recordActivity(envelope.session, member.memberId, Date.now());
+
     return {
       accepted: true,
       eventRevision,
@@ -673,6 +700,7 @@ export class CoordinationAuthority {
       broadcasts,
       ...(messageUpdates.length > 0 ? { messageUpdates } : {}),
       ...(taskUpdates.length > 0 ? { taskUpdates } : {}),
+      ...(notifications.length > 0 ? { notifications } : {}),
     };
   }
 
@@ -693,9 +721,36 @@ export class CoordinationAuthority {
     effects: MutationEffects,
     messageUpdates: MessageBroadcast[],
     taskUpdates: TaskBroadcast[],
+    notifications: NotificationDto[],
   ): { code: ErrorCode; reason: string } | undefined {
     const session = envelope.session;
     const now = new Date().toISOString();
+
+    // Emit a notification to `toMemberId` unless it is the acting member's own
+    // action (Req 3.2.3). Recorded durably (via snapshot) and returned for live
+    // delivery. Each notification gets its own fresh Event_Revision.
+    const emitNotification = (
+      toMemberId: string,
+      source: NotificationDto["source"],
+      refId: string,
+      summary: string,
+      priority?: "fyi" | "normal" | "urgent",
+    ): void => {
+      if (toMemberId === "" || toMemberId === member.memberId) {
+        return;
+      }
+      const notification = buildNotification({
+        notificationId: `${envelope.eventId}-n${(this.notificationSeq += 1)}`,
+        toMemberId,
+        source,
+        refId,
+        summary,
+        eventRevision: this.revisions.next(session),
+        ...(priority !== undefined ? { priority } : {}),
+      });
+      this.notificationsRegistry.add(session, notification);
+      notifications.push(notification);
+    };
 
     switch (envelope.type) {
       case "presence.report": {
@@ -1043,6 +1098,26 @@ export class CoordinationAuthority {
           message: result.message,
           audience: messageAudience(result.message),
         });
+        // Notify the recipient for questions and urgent directed messages
+        // (Req 3.2). Broadcasts alert via the message priority on the client.
+        if (result.message.toMemberId !== undefined) {
+          if (result.message.kind === "question") {
+            emitNotification(
+              result.message.toMemberId,
+              "question",
+              result.message.messageId,
+              `${member.memberId} asked you a question`,
+            );
+          } else if (result.message.priority === "urgent") {
+            emitNotification(
+              result.message.toMemberId,
+              "message",
+              result.message.messageId,
+              `Urgent message from ${member.memberId}`,
+              "urgent",
+            );
+          }
+        }
         // An answer flips its correlated question to `answered`; surface the
         // updated question to that question's audience so the asker sees it.
         if (result.answeredQuestion !== undefined) {
@@ -1080,6 +1155,13 @@ export class CoordinationAuthority {
           return { code: result.code, reason: result.reason };
         }
         taskUpdates.push({ op: "added", task: result.task });
+        // Notify the assignee of the incoming task awaiting approval (Req 3.2).
+        emitNotification(
+          result.task.assignee.memberId,
+          "task",
+          result.task.taskId,
+          `${member.memberId} assigned you: ${result.task.title}`,
+        );
         audits.push({
           member,
           action: "create",
@@ -1155,6 +1237,21 @@ export class CoordinationAuthority {
           eventRevision,
           time: now,
         });
+        return undefined;
+      }
+
+      case "wake.request": {
+        const payload = envelope.payload as WakeRequestPayload;
+        // A wake is delivered as a notification to the target (Req 3.3); it is
+        // surfaced at the target's next action rather than interrupting it.
+        emitNotification(
+          payload.targetMemberId,
+          "wake",
+          payload.targetMemberId,
+          payload.reason !== undefined && payload.reason.length > 0
+            ? `${member.memberId}: ${payload.reason}`
+            : `${member.memberId} asked you to resume`,
+        );
         return undefined;
       }
 
@@ -1728,6 +1825,82 @@ export class CoordinationAuthority {
     return this.tasks
       .allTasks(session)
       .filter((task) => task.eventRevision > fromRevision);
+  }
+
+  // -------------------------------------------------------------------------
+  // Liveness & notifications (Phase 3; Req 3.1–3.3)
+  // -------------------------------------------------------------------------
+
+  /** Set the live member roster used for liveness derivation (Req 3.1). */
+  setLiveRoster(session: SessionId, connectedMemberIds: Iterable<string>): void {
+    this.liveness.setConnected(session, connectedMemberIds);
+  }
+
+  /** Record that a member acted (heartbeat/auth), refreshing its liveness (Req 3.1). */
+  recordMemberActivity(
+    session: SessionId,
+    memberId: string,
+    atMs: number = Date.now(),
+  ): void {
+    this.liveness.recordActivity(session, memberId, atMs);
+  }
+
+  /** Current liveness state of every known member (Req 3.1). */
+  livenessStates(
+    session: SessionId,
+    nowMs: number = Date.now(),
+  ): { memberId: string; state: LivenessState }[] {
+    return this.liveness.states(session, nowMs);
+  }
+
+  /**
+   * Members whose derived liveness changed since the last call (Req 3.1). The
+   * server broadcasts a `liveness.update` for each. The advisory `eventRevision`
+   * is the session's current highest revision (liveness is derived, not an
+   * ordered coordination event, so it is applied by memberId, not by revision).
+   */
+  livenessChanges(
+    session: SessionId,
+    nowMs: number = Date.now(),
+  ): LivenessBroadcast[] {
+    const key = sessionKey(session);
+    const previous = this.lastLiveness.get(key) ?? new Map<string, LivenessState>();
+    const current = new Map<string, LivenessState>();
+    const changes: LivenessBroadcast[] = [];
+    const revision = this.revisions.highest(session);
+    for (const { memberId, state } of this.liveness.states(session, nowMs)) {
+      current.set(memberId, state);
+      if (previous.get(memberId) !== state) {
+        changes.push({ memberId, state, eventRevision: revision });
+      }
+    }
+    // A member that dropped out of the roster entirely becomes 'gone'.
+    for (const [memberId, prevState] of previous) {
+      if (!current.has(memberId) && prevState !== "gone") {
+        changes.push({ memberId, state: "gone", eventRevision: revision });
+        current.set(memberId, "gone");
+      }
+    }
+    this.lastLiveness.set(key, current);
+    return changes;
+  }
+
+  /**
+   * Notifications for `memberId` with an Event_Revision greater than
+   * `fromRevision` (Phase 3; Req 3.2, X.2). The server resends these on
+   * reconnect so notifications raised while the member was offline are delivered.
+   */
+  notificationsSince(
+    session: SessionId,
+    fromRevision: number,
+    memberId: string,
+  ): NotificationDto[] {
+    return this.notificationsRegistry.since(session, memberId, fromRevision);
+  }
+
+  /** All notifications addressed to `memberId` (for a get_notifications query). */
+  notificationsFor(session: SessionId, memberId: string): NotificationDto[] {
+    return this.notificationsRegistry.forMember(session, memberId);
   }
 
   /**

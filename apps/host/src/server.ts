@@ -27,11 +27,13 @@ import {
   HeartbeatMessageType,
   MessagingMessageType,
   TaskMessageType,
+  PresenceLivenessMessageType,
   SyncMessageType,
   type AuthHelloPayload,
   type AuthResponsePayload,
   type CoordinationUpdate,
   type MessageDto,
+  type NotificationDto,
   type SessionId,
   type SyncRequestPayload,
   type TaskDto,
@@ -301,6 +303,8 @@ export class CoordinationServer {
       this.bySession.delete(key);
     }
     this.broadcastParticipants(session);
+    // A disconnect changes the live roster; refresh + broadcast liveness (Req 3.1).
+    this.updateLiveness(session);
   }
 
   private handleMessage(conn: Connection, raw: string): void {
@@ -365,6 +369,11 @@ export class CoordinationServer {
       conn.pendingHello = undefined;
       conn.pendingNonce = undefined;
       this.subscribe(conn, result.principal.session);
+      // A freshly authenticated member is active; refresh + broadcast liveness.
+      this.authority.recordMemberActivity(
+        result.principal.session,
+        result.principal.memberId,
+      );
       // Authentication itself proves the device is live. Record it immediately
       // so work created before the first periodic agent heartbeat still has an
       // expiry baseline if the process exits abruptly.
@@ -380,6 +389,8 @@ export class CoordinationServer {
       // current roster after auth so idle teammates are visible to MCP clients
       // and the editor panel, and peers see the new live member immediately.
       this.broadcastParticipants(result.principal.session);
+      // Refresh + broadcast liveness now that a new member is connected (Req 3.1).
+      this.updateLiveness(result.principal.session);
       // Hand the freshly-connected agent the current metadata-only
       // Dependency_Graph so it can compute indirect risk immediately, sharing
       // one graph across the whole session (Req 19, 20).
@@ -423,6 +434,12 @@ export class CoordinationServer {
     // Heartbeat and sync are serviced on the authenticated connection (Req 9, 26).
     if (type === HeartbeatMessageType.PING) {
       this.authority.recordHeartbeat(principal.session, principal.deviceId);
+      // A heartbeat is member activity for liveness (Req 3.1).
+      this.authority.recordMemberActivity(
+        principal.session,
+        principal.memberId,
+      );
+      this.updateLiveness(principal.session);
       this.send(conn, {
         type: HeartbeatMessageType.ACK,
         payload: { serverTime: new Date().toISOString() },
@@ -466,6 +483,17 @@ export class CoordinationServer {
             payload: { op: "updated", task },
           });
         }
+        // Deliver notifications raised while this member was offline (Req 3.2, X.2).
+        for (const notification of this.authority.notificationsSince(
+          principal.session,
+          payload.fromRevision,
+          principal.memberId,
+        )) {
+          this.send(conn, {
+            type: PresenceLivenessMessageType.NOTIFY_PUSH,
+            payload: notification,
+          });
+        }
       } else {
         this.send(conn, {
           type: SyncMessageType.SNAPSHOT,
@@ -497,6 +525,12 @@ export class CoordinationServer {
     for (const taskUpdate of outcome.taskUpdates ?? []) {
       this.deliverTask(principal.session, taskUpdate);
     }
+    // Deliver V2 notifications to their target member (Phase 3; Req 3.2, 3.3).
+    for (const notification of outcome.notifications ?? []) {
+      this.deliverNotification(principal.session, notification);
+    }
+    // Any accepted event is member activity; refresh liveness (Req 3.1).
+    this.updateLiveness(principal.session);
     // A dependency-graph upload updates the shared graph: fan the merged graph
     // out to every OTHER connection in the session (Req 19.4, 20.1).
     if (
@@ -635,6 +669,61 @@ export class CoordinationServer {
     }
   }
 
+  /**
+   * Deliver a V2 notification only to its target member's connections
+   * (Phase 3; Req 3.2, 3.3).
+   */
+  private deliverNotification(
+    session: SessionId,
+    notification: NotificationDto,
+  ): void {
+    const set = this.bySession.get(sessionKey(session));
+    if (set === undefined) return;
+    for (const conn of set) {
+      if (conn.principal?.memberId !== notification.toMemberId) continue;
+      this.send(conn, {
+        type: PresenceLivenessMessageType.NOTIFY_PUSH,
+        payload: notification,
+      });
+    }
+  }
+
+  /** The set of member ids with a live authenticated connection in the session. */
+  private connectedMemberIds(session: SessionId): string[] {
+    const set = this.bySession.get(sessionKey(session));
+    const members = new Set<string>();
+    for (const conn of set ?? []) {
+      if (conn.principal !== undefined) members.add(conn.principal.memberId);
+    }
+    return [...members];
+  }
+
+  /**
+   * Refresh the authority's live roster and broadcast any liveness changes to
+   * the session (Phase 3; Req 3.1).
+   */
+  private updateLiveness(session: SessionId): void {
+    this.authority.setLiveRoster(session, this.connectedMemberIds(session));
+    for (const change of this.authority.livenessChanges(session)) {
+      this.broadcastLiveness(session, change);
+    }
+  }
+
+  /** Broadcast a single liveness change to every connection in the session. */
+  private broadcastLiveness(
+    session: SessionId,
+    change: { memberId: string; state: string; eventRevision: number },
+  ): void {
+    const set = this.bySession.get(sessionKey(session));
+    if (set === undefined) return;
+    for (const conn of set) {
+      this.send(conn, {
+        type: PresenceLivenessMessageType.LIVENESS_UPDATE,
+        payload: change,
+      });
+    }
+  }
+
   // -------------------------------------------------------------------------
   // Expiry sweep (Req 26)
   // -------------------------------------------------------------------------
@@ -649,6 +738,9 @@ export class CoordinationServer {
         for (const update of removals) {
           this.broadcast(session, update);
         }
+        // Periodically re-derive liveness so active→idle transitions are
+        // broadcast even without new events (Req 3.1).
+        this.updateLiveness(session);
       }
     }, interval);
     // Do not keep the process alive solely for the sweep timer.
