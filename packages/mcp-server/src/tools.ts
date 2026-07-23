@@ -54,6 +54,10 @@ export const TOOL_NAMES = [
   "respond_to_task",
   "update_task_progress",
   "list_tasks",
+  // V2 Phase 3 — liveness, notifications & wake (Req 3.1–3.3).
+  "get_liveness",
+  "wake_member",
+  "get_notifications",
 ] as const;
 
 export type ToolName = (typeof TOOL_NAMES)[number];
@@ -566,6 +570,55 @@ export function registerTools(server: McpServer, port: AgentPort): McpServer {
       inputSchema: { session: sessionSchema },
     },
     (args) => respond(port, port.listTasks({ session: args.session })),
+  );
+
+  // ---- V2 Phase 3 — liveness, notifications & wake (Req 3.1–3.3) -----------
+
+  // 23. get_liveness
+  server.registerTool(
+    "get_liveness",
+    {
+      description:
+        "Return each team member's liveness: active, idle, or gone (Req 3.1).",
+      inputSchema: { session: sessionSchema },
+    },
+    (args) => respond(port, port.getLiveness({ session: args.session })),
+  );
+
+  // 24. wake_member
+  server.registerTool(
+    "wake_member",
+    {
+      description:
+        "Ask an idle teammate to resume. Delivered at the target's next action, " +
+        "never as a mid-turn interrupt.",
+      inputSchema: {
+        session: sessionSchema,
+        targetMemberId: z.string(),
+        reason: z.string().optional(),
+      },
+    },
+    (args) =>
+      respond(
+        port,
+        port.wake({
+          session: args.session,
+          targetMemberId: args.targetMemberId,
+          ...(args.reason !== undefined ? { reason: args.reason } : {}),
+        }),
+      ),
+  );
+
+  // 25. get_notifications
+  server.registerTool(
+    "get_notifications",
+    {
+      description:
+        "Return this member's notifications (incoming tasks, questions, urgent " +
+        "messages, wakes), with severity.",
+      inputSchema: { session: sessionSchema },
+    },
+    (args) => respond(port, port.getNotifications({ session: args.session })),
   );
 
   return server;

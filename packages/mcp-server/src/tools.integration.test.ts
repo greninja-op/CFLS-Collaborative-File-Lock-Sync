@@ -491,3 +491,50 @@ describe("V2 task tools (Phase 2; Req 2.1–2.3)", () => {
     expect(assigned.error?.code).toBe("OFFLINE_QUEUED");
   });
 });
+
+describe("V2 liveness/notification/wake tools (Phase 3; Req 3.1–3.3)", () => {
+  let harness: Harness;
+
+  afterEach(async () => {
+    await harness.close();
+  });
+
+  it("returns liveness for the session", async () => {
+    harness = await connectHarness();
+    const live = await harness.call<{
+      members: Array<{ memberId: string; state: string }>;
+    }>("get_liveness", { session });
+    expect(live.ok).toBe(true);
+    // self (u-1) is connected + just acted → active.
+    expect(live.data?.members.find((m) => m.memberId === "u-1")?.state).toBe("active");
+  });
+
+  it("records a wake as a notification the target can read", async () => {
+    // self is u-1; wake u-1 so the same fake surfaces it via get_notifications.
+    harness = await connectHarness();
+    const woke = await harness.call<{ targetMemberId: string }>("wake_member", {
+      session,
+      targetMemberId: "u-1",
+      reason: "PR blocked",
+    });
+    expect(woke.ok).toBe(true);
+
+    const notifs = await harness.call<{
+      notifications: Array<{ source: string; severity: string; summary: string }>;
+    }>("get_notifications", { session });
+    expect(notifs.ok).toBe(true);
+    const wake = notifs.data?.notifications.find((n) => n.source === "wake");
+    expect(wake?.severity).toBe("urgent");
+    expect(wake?.summary).toContain("PR blocked");
+  });
+
+  it("returns OFFLINE_QUEUED for wake_member while offline (Req 4.8)", async () => {
+    harness = await connectHarness(false);
+    const woke = await harness.call("wake_member", {
+      session,
+      targetMemberId: "u-2",
+    });
+    expect(woke.ok).toBe(false);
+    expect(woke.error?.code).toBe("OFFLINE_QUEUED");
+  });
+});
