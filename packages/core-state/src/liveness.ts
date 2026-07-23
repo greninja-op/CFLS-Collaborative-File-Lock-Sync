@@ -63,9 +63,10 @@ export class LivenessTracker {
   /** Record that `memberId` acted at `atMs` (a heartbeat, edit, or event). */
   recordActivity(session: SessionId, memberId: string, atMs: number): void {
     const state = this.stateFor(session);
-    const prior = state.lastActivity.get(memberId) ?? 0;
-    // Only advance forward so out-of-order timestamps never rewind activity.
-    if (atMs > prior) {
+    const prior = state.lastActivity.get(memberId);
+    // Record the first activity (even at epoch 0) and otherwise only advance
+    // forward, so out-of-order timestamps never rewind activity.
+    if (prior === undefined || atMs > prior) {
       state.lastActivity.set(memberId, atMs);
     }
   }
