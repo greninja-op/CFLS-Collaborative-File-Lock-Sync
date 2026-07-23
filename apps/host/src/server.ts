@@ -23,6 +23,7 @@ import {
   BroadcastMessageType,
   DependencyMessageType,
   ErrorMessageType,
+  DiffMessageType,
   EventMessageType,
   HeartbeatMessageType,
   MessagingMessageType,
@@ -46,6 +47,7 @@ import {
   CoordinationAuthority,
   type AuthPrincipal,
   type AuthorityOptions,
+  type DiffBroadcast,
 } from "./authority";
 import type { HostConfig } from "./config";
 import { buildDashboardState, renderDashboardHtml } from "./dashboard";
@@ -495,6 +497,17 @@ export class CoordinationServer {
             payload: notification,
           });
         }
+        // Deliver Live_Diffs shared while this member was offline (Phase 5;
+        // Req 5.1–5.3, X.2). Empty unless the team enabled the opt-in.
+        for (const diff of this.authority.diffsSince(
+          principal.session,
+          payload.fromRevision,
+        )) {
+          this.send(conn, {
+            type: DiffMessageType.UPDATE,
+            payload: { op: "shared", diff },
+          });
+        }
       } else {
         this.send(conn, {
           type: SyncMessageType.SNAPSHOT,
@@ -529,6 +542,11 @@ export class CoordinationServer {
     // Deliver V2 notifications to their target member (Phase 3; Req 3.2, 3.3).
     for (const notification of outcome.notifications ?? []) {
       this.deliverNotification(principal.session, notification);
+    }
+    // Broadcast V2 live-diff updates to the whole trusted session (Phase 5;
+    // Req 5.1–5.3) — shared with authorized members only.
+    for (const diffUpdate of outcome.diffUpdates ?? []) {
+      this.deliverDiff(principal.session, diffUpdate);
     }
     // Return Luna's reply to the requester (Phase 4; Req 4.2–4.5).
     if (outcome.lunaReply !== undefined) {
@@ -673,6 +691,23 @@ export class CoordinationServer {
       this.send(conn, {
         type: TaskMessageType.UPDATE,
         payload: { op: update.op, task: update.task },
+      });
+    }
+  }
+
+  /**
+   * Broadcast a V2 live-diff update to every connection in the session (Phase 5;
+   * Req 5.1–5.3) — Live_Diffs are shared with authorized members only, i.e. the
+   * whole trusted session.
+   */
+  private deliverDiff(session: SessionId, update: DiffBroadcast): void {
+    const set = this.bySession.get(sessionKey(session));
+    if (set === undefined) return;
+    for (const conn of set) {
+      if (conn.principal === undefined) continue;
+      this.send(conn, {
+        type: DiffMessageType.UPDATE,
+        payload: { op: update.op, diff: update.diff },
       });
     }
   }

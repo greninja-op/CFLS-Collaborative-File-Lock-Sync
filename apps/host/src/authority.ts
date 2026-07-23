@@ -14,6 +14,7 @@
 
 import {
   CoordinationEventLog,
+  DiffRegistry,
   ExpiryEngine,
   IngestGate,
   IntentRegistry,
@@ -60,6 +61,8 @@ import {
   type EventEnvelope,
   type MemberRef,
   type MembershipRegistryEntry,
+  type DiffSharePayload,
+  type LiveDiffDto,
   type LivenessState,
   type LunaReplyDto,
   type LunaRequestPayload,
@@ -147,6 +150,16 @@ export interface LivenessBroadcast {
   eventRevision: number;
 }
 
+/**
+ * A V2 live-diff update to deliver to session participants (Phase 5; Req 5.1–5.3).
+ * Live_Diffs are shared with authorized members only — i.e. every member of the
+ * trusted session — so a diff update is delivered to the whole session.
+ */
+export interface DiffBroadcast {
+  op: "shared" | "removed";
+  diff: LiveDiffDto;
+}
+
 /** Outcome of ingesting a single coordination event. */
 export interface IngestOutcome {
   accepted: boolean;
@@ -166,6 +179,8 @@ export interface IngestOutcome {
   notifications?: NotificationDto[];
   /** V2 Luna reply to return to the requester (Phase 4; Req 4.2–4.5). */
   lunaReply?: LunaReplyDto;
+  /** V2 live-diff updates to deliver to the session (Phase 5; Req 5.1–5.3). */
+  diffUpdates?: DiffBroadcast[];
 }
 
 /** Effects that must be committed with the event rather than during apply. */
@@ -177,6 +192,13 @@ interface MutationEffects {
 export interface AuthorityOptions {
   /** Heartbeat/expiry tuning (Req 26). */
   expiry?: ExpiryConfigInput;
+  /**
+   * Opt-in Live_Diff sharing (Phase 5; Req 5.1, 5.4). Off by default so the host
+   * behaves exactly as V1 (metadata only); when a team enables `liveDiffs` in
+   * `.coordination/config.json`, the CLI passes `true` here and `diff.share`
+   * events are accepted, data-minimized, and broadcast to the session.
+   */
+  liveDiffsEnabled?: boolean;
 }
 
 /** The result of one `sync.request` (Req 9). */
@@ -192,6 +214,7 @@ export class CoordinationAuthority {
   private readonly messages = new MessageRegistry();
   private readonly tasks = new TaskRegistry();
   private readonly notificationsRegistry = new NotificationRegistry();
+  private readonly diffs = new DiffRegistry();
   private readonly liveness = new LivenessTracker();
   /**
    * The default, deterministic Luna brain (Phase 4; Req 4.1). It requires no
@@ -202,6 +225,8 @@ export class CoordinationAuthority {
   /** `session_key` → last broadcast liveness state per member (change detection). */
   private readonly lastLiveness = new Map<string, Map<string, LivenessState>>();
   private notificationSeq = 0;
+  /** Whether opt-in Live_Diff sharing is enabled for this host (Phase 5; Req 5.1). */
+  private readonly liveDiffsEnabled: boolean;
   private readonly revisions: RevisionCounter;
   private readonly eventLog = new CoordinationEventLog();
   private readonly gate: IngestGate;
@@ -232,6 +257,7 @@ export class CoordinationAuthority {
     private readonly store: Store,
     options: AuthorityOptions = {},
   ) {
+    this.liveDiffsEnabled = options.liveDiffsEnabled ?? false;
     this.revisions = new RevisionCounter();
     this.expiry = new ExpiryEngine(
       this.locks,
@@ -252,6 +278,9 @@ export class CoordinationAuthority {
       tasks: this.tasks,
       // Notifications likewise persist via the snapshot (Req 3.2, X.2).
       notifications: this.notificationsRegistry,
+      // Live diffs persist via the snapshot only when the opt-in is enabled; the
+      // registry stays empty and unused otherwise (Phase 5; Req 5.1, 5.4, X.2).
+      ...(this.liveDiffsEnabled ? { diffs: this.diffs } : {}),
     };
 
     // Reseed the replay guard from persisted per-device counters (Req 7.5).
@@ -574,6 +603,7 @@ export class CoordinationAuthority {
     const taskUpdates: TaskBroadcast[] = [];
     const notifications: NotificationDto[] = [];
     const lunaOut: { reply?: LunaReplyDto } = {};
+    const diffUpdates: DiffBroadcast[] = [];
 
     let result: IngestResult;
     try {
@@ -592,6 +622,7 @@ export class CoordinationAuthority {
             taskUpdates,
             notifications,
             lunaOut,
+            diffUpdates,
           ),
       );
     } catch {
@@ -719,6 +750,7 @@ export class CoordinationAuthority {
       ...(taskUpdates.length > 0 ? { taskUpdates } : {}),
       ...(notifications.length > 0 ? { notifications } : {}),
       ...(lunaOut.reply !== undefined ? { lunaReply: lunaOut.reply } : {}),
+      ...(diffUpdates.length > 0 ? { diffUpdates } : {}),
     };
   }
 
@@ -741,6 +773,7 @@ export class CoordinationAuthority {
     taskUpdates: TaskBroadcast[],
     notifications: NotificationDto[],
     lunaOut: { reply?: LunaReplyDto },
+    diffUpdates: DiffBroadcast[],
   ): { code: ErrorCode; reason: string } | undefined {
     const session = envelope.session;
     const now = new Date().toISOString();
@@ -1349,6 +1382,43 @@ export class CoordinationAuthority {
         return undefined;
       }
 
+      case "diff.share": {
+        // Opt-in Live_Diff sharing (Phase 5; Req 5.1–5.4). When the team has not
+        // enabled it, reject so the host behaves exactly as V1 (metadata only).
+        if (!this.liveDiffsEnabled) {
+          return {
+            code: "AUTH_NOT_AUTHORIZED",
+            reason:
+              "Live_Diff sharing is disabled for this team; enable liveDiffs in .coordination/config.json to share diffs.",
+          };
+        }
+        const payload = envelope.payload as DiffSharePayload;
+        const path = normalizePath(payload.path);
+        const diff: LiveDiffDto = {
+          path,
+          member,
+          patch: payload.patch,
+          eventRevision,
+        };
+        const op = this.diffs.share(session, diff);
+        // Broadcast the authoritative diff (or its removal) to the whole trusted
+        // session — authorized members only (Req 5.2). On removal the stored diff
+        // is gone, so echo the request's (empty-patch) diff for the update.
+        const shared =
+          op === "shared"
+            ? (this.diffs.get(session, member.memberId, path) ?? diff)
+            : diff;
+        diffUpdates.push({ op, diff: shared });
+        audits.push({
+          member,
+          action: op === "shared" ? "update" : "withdraw",
+          targetScope: `diff:${path}`,
+          eventRevision,
+          time: now,
+        });
+        return undefined;
+      }
+
       default:
         // Any remaining message types are accepted and recorded but produce no
         // coordination broadcast.
@@ -1841,6 +1911,26 @@ export class CoordinationAuthority {
       const check = checkInboundMinimization(rest);
       return check.ok ? undefined : check.error;
     }
+    if (envelope.type === "diff.share") {
+      // A Live_Diff `patch` is opt-in source-derived team content (Phase 5;
+      // Req 5.1, 5.3). It is allowed by field name only when the feature is
+      // enabled, but its value is still scanned for secrets/absolute/out-of-tree/
+      // excluded paths so credentials are never shared even inside a diff.
+      const payload = envelope.payload as DiffSharePayload;
+      const patchViolations = findMinimizationViolations(payload.patch);
+      if (patchViolations.length > 0) {
+        return {
+          code: "FORMAT_ERROR",
+          message: `data-minimization violation in live diff patch: ${patchViolations[0]!.message}`,
+        };
+      }
+      // Check the rest of the envelope (without the free-text patch) normally.
+      const { patch: _patch, ...restPayload } = payload;
+      void _patch;
+      const rest = { ...envelope, payload: restPayload };
+      const check = checkInboundMinimization(rest);
+      return check.ok ? undefined : check.error;
+    }
     const check = checkInboundMinimization(envelope);
     return check.ok ? undefined : check.error;
   }
@@ -1919,6 +2009,25 @@ export class CoordinationAuthority {
     return this.tasks
       .allTasks(session)
       .filter((task) => task.eventRevision > fromRevision);
+  }
+
+  /**
+   * Currently-shared Live_Diffs with an Event_Revision greater than
+   * `fromRevision` (Phase 5; Req 5.1–5.3, X.2). Empty unless the opt-in is
+   * enabled. The server resends these as `diff.update` to a reconnecting member
+   * so diffs shared while it was offline are delivered over the parallel diff
+   * channel (incremental `sync.events` carries only CoordinationUpdates).
+   */
+  diffsSince(session: SessionId, fromRevision: number): LiveDiffDto[] {
+    if (!this.liveDiffsEnabled) {
+      return [];
+    }
+    return this.diffs.since(session, fromRevision);
+  }
+
+  /** All currently-shared Live_Diffs for a session (for a list_diffs query). */
+  allDiffs(session: SessionId): LiveDiffDto[] {
+    return this.liveDiffsEnabled ? this.diffs.allDiffs(session) : [];
   }
 
   // -------------------------------------------------------------------------
