@@ -211,7 +211,14 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
   (read); dispatch share_diff/list_diffs. MCP tools share_diff/list_diffs (28 tools).
   Extension view-model `liveDiffs` read-only projection (never auto-applies).
   Counts: protocol 89, core-state 352, host 78, mcp 38, extension 70, cli cfg green.
-- ALL 5 PHASES COMPLETE. NEXT: Final tasks 6.1 (extend multi-agent simulation with
-  message→task→approval→Luna(→diff) scenario), 6.2 (docs/README honest V2 update),
-  6.3 (final green + merge V2→main with a REGULAR merge, never squash, preserving
-  every commit's author date).
+- ALL 5 PHASES + FINAL COMPLETE. 6.1 simulation scenario 11 (message→task→approval
+  →Luna→live-diff, agentCount 2, liveDiffs on) green. 6.2 README + docs/features.md
+  document V2 honestly (MCP tool groups + opt-in live diffs). 6.3 full `pnpm -r build`
+  green; merging V2→main with a REGULAR merge (never squash) to preserve every
+  commit's author date on the contribution graph.
+- FINAL COUNTS: protocol 89, core-state 352, host 78, mcp 38, extension 70, cli
+  config-files green, simulation scenario 11 green. Known pre-existing flaky tests
+  (NOT V2): agent local-api "deduplicates subscriptions… disposes on close" +
+  connection.integration editor-TTL races; cli config-files Windows perms +
+  mcp-bridge reconnect; simulation only under full parallel load. Verify changed
+  packages in isolation.

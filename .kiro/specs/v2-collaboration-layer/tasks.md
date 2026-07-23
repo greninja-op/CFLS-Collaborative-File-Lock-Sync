@@ -166,11 +166,11 @@ Execution waves (each wave depends on the previous one completing):
 
 ### Final
 
-- [ ] 6.1 extend the multi-agent simulation with a full
-      message→task→approval→Luna(→optional diff) scenario. _Requirements: X.3, X.4_
-- [ ] 6.2 update docs (`docs/`, `README`) to describe V2 features honestly.
+- [x] 6.1 extend the multi-agent simulation with a full
+      message→task→approval→Luna(→optional diff) scenario (scenario 11). _Requirements: X.3, X.4_
+- [x] 6.2 update docs (`docs/`, `README`) to describe V2 features honestly.
       _Requirements: X.4_
-- [ ] 6.3 final green typecheck/tests; final merge `V2`→`main`.
+- [x] 6.3 final green build/tests; final merge `V2`→`main` (regular merge, all commits preserved).
 
 ## Notes
 
