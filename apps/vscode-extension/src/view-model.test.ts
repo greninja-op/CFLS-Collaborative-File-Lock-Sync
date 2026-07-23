@@ -505,3 +505,41 @@ describe("view-model — V2 Luna projection (Phase 4; Req 4.5)", () => {
     expect(vm.lunaLastReply).toBeNull();
   });
 });
+
+describe("view-model — V2 live-diff projection (Phase 5; Req 5.5)", () => {
+  const emptyRisk: GetRiskMapData = {
+    paths: [],
+    plannedFileCreations: [],
+    highestRevision: 0,
+  };
+
+  it("projects shared Live_Diffs read-only with member and patch", () => {
+    const vm = buildCoordinationViewModel({
+      riskMap: emptyRisk,
+      diffs: {
+        diffs: [
+          {
+            path: "src/api.ts",
+            member: { memberId: "alice", deviceId: "d-1" },
+            patch: "@@ -1 +1 @@\n-old\n+new",
+            eventRevision: 3,
+          },
+        ],
+      },
+      connection: online,
+      staleness: fresh,
+    });
+    expect(vm.liveDiffs).toEqual([
+      { path: "src/api.ts", memberId: "alice", patch: "@@ -1 +1 @@\n-old\n+new" },
+    ]);
+  });
+
+  it("defaults to no live diffs when the opt-in is off / data absent", () => {
+    const vm = buildCoordinationViewModel({
+      riskMap: emptyRisk,
+      connection: online,
+      staleness: fresh,
+    });
+    expect(vm.liveDiffs).toEqual([]);
+  });
+});

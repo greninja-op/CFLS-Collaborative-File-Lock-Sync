@@ -22,6 +22,7 @@ import type {
   GetNotificationsData,
   GetRiskMapData,
   GetTeamStatusData,
+  ListDiffsData,
   ListMessagesData,
   ListTasksData,
   RiskEdge,
@@ -138,6 +139,17 @@ export interface NotificationView {
 }
 
 /**
+ * A shared Live_Diff rendered for the extension's read-only diff view (V2
+ * Phase 5; Req 5.5). It is display-only — the extension NEVER applies a received
+ * diff to the recipient's files automatically. Empty unless the team opted in.
+ */
+export interface LiveDiffView {
+  path: string;
+  memberId: string;
+  patch: string;
+}
+
+/**
  * Luna's most recent reply, rendered for the extension's Luna panel (V2 Phase 4;
  * Req 4.5). Read-only summary of a decision, answer, or team summary.
  */
@@ -170,6 +182,8 @@ export interface CoordinationViewModel {
   urgentNotificationCount: number;
   /** Luna's most recent reply, or null when Luna has not been asked (V2 Phase 4; Req 4.5). */
   lunaLastReply: LunaReplyView | null;
+  /** Read-only shared Live_Diffs; empty unless the team opted in (V2 Phase 5; Req 5.5). */
+  liveDiffs: LiveDiffView[];
   /** True while the local agent is in Offline_State (Req 3.6, 33.3). */
   offline: boolean;
   /** True when served coordination data may be stale (Req 33.2, 33.3). */
@@ -201,6 +215,8 @@ export interface CoordinationSnapshot {
   notifications?: GetNotificationsData;
   /** Optional last Luna reply from `ask_luna` (V2 Phase 4; Req 4.5). */
   luna?: AskLunaData;
+  /** Optional shared Live_Diffs from `list_diffs` (V2 Phase 5; Req 5.5). */
+  diffs?: ListDiffsData;
   /** Known from the local Repository_Session before activity is available. */
   teamId?: string;
   connection: ConnectionSnapshot;
@@ -481,6 +497,11 @@ export function buildCoordinationViewModel(
             producedMessageId: snapshot.luna.producedMessageId ?? null,
           }
         : null,
+    liveDiffs: (snapshot.diffs?.diffs ?? []).map((d) => ({
+      path: d.path,
+      memberId: d.member.memberId,
+      patch: d.patch,
+    })),
     offline,
     stale,
     secondsSinceSync: snapshot.staleness.secondsSinceSync,
