@@ -23,8 +23,10 @@ import {
   NotificationRegistry,
   PresenceRegistry,
   RevisionCounter,
+  RulesLunaBrain,
   TaskRegistry,
   buildNotification,
+  type LunaContext,
   checkInboundMinimization,
   findMinimizationViolations,
   normalizePath,
@@ -59,6 +61,8 @@ import {
   type MemberRef,
   type MembershipRegistryEntry,
   type LivenessState,
+  type LunaReplyDto,
+  type LunaRequestPayload,
   type MessageDto,
   type MessageReadPayload,
   type MessageSendPayload,
@@ -133,6 +137,9 @@ export interface TaskBroadcast {
   task: TaskDto;
 }
 
+/** The reserved Luna orchestrator member identity (Phase 4; idea.md §5). */
+const LUNA_MEMBER: MemberRef = { memberId: "luna", deviceId: "luna" };
+
 /** A liveness change to broadcast (Phase 3; Req 3.1). */
 export interface LivenessBroadcast {
   memberId: string;
@@ -157,6 +164,8 @@ export interface IngestOutcome {
   taskUpdates?: TaskBroadcast[];
   /** V2 notifications to deliver to their target member (Phase 3; Req 3.2, 3.3). */
   notifications?: NotificationDto[];
+  /** V2 Luna reply to return to the requester (Phase 4; Req 4.2–4.5). */
+  lunaReply?: LunaReplyDto;
 }
 
 /** Effects that must be committed with the event rather than during apply. */
@@ -184,6 +193,12 @@ export class CoordinationAuthority {
   private readonly tasks = new TaskRegistry();
   private readonly notificationsRegistry = new NotificationRegistry();
   private readonly liveness = new LivenessTracker();
+  /**
+   * The default, deterministic Luna brain (Phase 4; Req 4.1). It requires no
+   * external service. An optional LLM-backed brain is future/advanced wiring and
+   * is off by default, keeping the sync ingest path key-free (Req 4.1.3, 4.1.4).
+   */
+  private readonly luna = new RulesLunaBrain();
   /** `session_key` → last broadcast liveness state per member (change detection). */
   private readonly lastLiveness = new Map<string, Map<string, LivenessState>>();
   private notificationSeq = 0;
@@ -558,6 +573,7 @@ export class CoordinationAuthority {
     const messageUpdates: MessageBroadcast[] = [];
     const taskUpdates: TaskBroadcast[] = [];
     const notifications: NotificationDto[] = [];
+    const lunaOut: { reply?: LunaReplyDto } = {};
 
     let result: IngestResult;
     try {
@@ -575,6 +591,7 @@ export class CoordinationAuthority {
             messageUpdates,
             taskUpdates,
             notifications,
+            lunaOut,
           ),
       );
     } catch {
@@ -701,6 +718,7 @@ export class CoordinationAuthority {
       ...(messageUpdates.length > 0 ? { messageUpdates } : {}),
       ...(taskUpdates.length > 0 ? { taskUpdates } : {}),
       ...(notifications.length > 0 ? { notifications } : {}),
+      ...(lunaOut.reply !== undefined ? { lunaReply: lunaOut.reply } : {}),
     };
   }
 
@@ -722,6 +740,7 @@ export class CoordinationAuthority {
     messageUpdates: MessageBroadcast[],
     taskUpdates: TaskBroadcast[],
     notifications: NotificationDto[],
+    lunaOut: { reply?: LunaReplyDto },
   ): { code: ErrorCode; reason: string } | undefined {
     const session = envelope.session;
     const now = new Date().toISOString();
@@ -1252,6 +1271,81 @@ export class CoordinationAuthority {
             ? `${member.memberId}: ${payload.reason}`
             : `${member.memberId} asked you to resume`,
         );
+        return undefined;
+      }
+
+      case "luna.request": {
+        const payload = envelope.payload as LunaRequestPayload;
+        const context: LunaContext = {
+          session,
+          requester: member,
+          members: this.sessionMemberIds(session),
+          liveness: this.liveness.states(session, Date.now()),
+          tasks: this.tasks.allTasks(session),
+        };
+        // The default Luna brain is synchronous and deterministic (Req 4.1).
+        const decision = this.luna.decide(payload, context);
+        const reply: LunaReplyDto = {
+          action: decision.action,
+          summary: decision.summary,
+        };
+
+        // Luna routes an assignment as a proposed Task assigned by Luna (Req 4.2).
+        if (decision.assignment !== undefined) {
+          const taskId = `${envelope.eventId}-luna-task`;
+          const taskRev = this.revisions.next(session);
+          const assigned = this.tasks.assign({
+            session,
+            taskId,
+            title: decision.assignment.title,
+            description: decision.assignment.description,
+            assignee: {
+              memberId: decision.assignment.assigneeMemberId,
+              deviceId: "",
+            },
+            assigner: LUNA_MEMBER,
+            eventRevision: taskRev,
+          });
+          if (assigned.ok) {
+            taskUpdates.push({ op: "added", task: assigned.task });
+            reply.producedTaskId = taskId;
+            emitNotification(
+              decision.assignment.assigneeMemberId,
+              "task",
+              taskId,
+              `Luna assigned you: ${decision.assignment.title}`,
+            );
+          }
+        }
+
+        // Luna communicates arbitration/answers as a Message from Luna (Req 4.3, 4.4).
+        if (decision.message !== undefined) {
+          const messageId = `${envelope.eventId}-luna-msg`;
+          const msgRev = this.revisions.next(session);
+          const kind =
+            decision.message.toMemberId !== undefined ? "direct" : "broadcast";
+          const appended = this.messages.append({
+            session,
+            messageId,
+            kind,
+            sender: LUNA_MEMBER,
+            ...(decision.message.toMemberId !== undefined
+              ? { toMemberId: decision.message.toMemberId }
+              : {}),
+            priority: "normal",
+            body: decision.message.body,
+            eventRevision: msgRev,
+            sentAt: now,
+          });
+          messageUpdates.push({
+            op: "added",
+            message: appended.message,
+            audience: messageAudience(appended.message),
+          });
+          reply.producedMessageId = messageId;
+        }
+
+        lunaOut.reply = reply;
         return undefined;
       }
 
@@ -1901,6 +1995,17 @@ export class CoordinationAuthority {
   /** All notifications addressed to `memberId` (for a get_notifications query). */
   notificationsFor(session: SessionId, memberId: string): NotificationDto[] {
     return this.notificationsRegistry.forMember(session, memberId);
+  }
+
+  /** The admitted, non-revoked member ids for a session (for Luna context). */
+  private sessionMemberIds(session: SessionId): string[] {
+    const seen = new Set<string>();
+    for (const entry of this.membershipBySession.get(sessionKey(session)) ?? []) {
+      if (entry.invitationValid && !entry.revoked) {
+        seen.add(entry.memberId);
+      }
+    }
+    return [...seen].sort((a, b) => a.localeCompare(b));
   }
 
   /**

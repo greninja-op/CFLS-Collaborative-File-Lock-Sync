@@ -28,6 +28,7 @@ import {
   MessagingMessageType,
   TaskMessageType,
   PresenceLivenessMessageType,
+  LunaMessageType,
   SyncMessageType,
   type AuthHelloPayload,
   type AuthResponsePayload,
@@ -528,6 +529,13 @@ export class CoordinationServer {
     // Deliver V2 notifications to their target member (Phase 3; Req 3.2, 3.3).
     for (const notification of outcome.notifications ?? []) {
       this.deliverNotification(principal.session, notification);
+    }
+    // Return Luna's reply to the requester (Phase 4; Req 4.2–4.5).
+    if (outcome.lunaReply !== undefined) {
+      this.send(conn, {
+        type: LunaMessageType.REPLY,
+        payload: outcome.lunaReply,
+      });
     }
     // Any accepted event is member activity; refresh liveness (Req 3.1).
     this.updateLiveness(principal.session);
