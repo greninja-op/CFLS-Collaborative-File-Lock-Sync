@@ -17,6 +17,8 @@
 import type {
   ConnectionSnapshot,
   ConnectionStatusData,
+  GetLivenessData,
+  GetNotificationsData,
   GetRiskMapData,
   GetTeamStatusData,
   ListMessagesData,
@@ -28,8 +30,11 @@ import type {
   TeamMemberActivity,
 } from "@cfls/mcp-server";
 import type {
+  LivenessState,
   MessageKind,
   MessagePriority,
+  NotifySeverity,
+  NotifySource,
   RiskLevel,
   TaskStatus,
 } from "@cfls/protocol";
@@ -90,6 +95,8 @@ export interface TeamPanelMember {
   tasks: TeamActivityTask[];
   /** Null for a roster-only, currently idle member. */
   lastEventRevision: number | null;
+  /** Fine-grained liveness (active/idle/gone) when known, else null (Req 3.1). */
+  liveness: LivenessState | null;
 }
 
 /**
@@ -119,6 +126,15 @@ export interface TaskView {
   status: TaskStatus;
 }
 
+/** A rendered notification for the extension (V2 Phase 3; Req 3.2). */
+export interface NotificationView {
+  notificationId: string;
+  severity: NotifySeverity;
+  source: NotifySource;
+  summary: string;
+  refId: string;
+}
+
 /** The full rendered coordination view for a Repository_Session. */
 export interface CoordinationViewModel {
   paths: PathView[];
@@ -133,6 +149,10 @@ export interface CoordinationViewModel {
   incomingTasks: TaskView[];
   /** All tasks in the session. */
   allTasks: TaskView[];
+  /** This member's notifications, oldest first (V2 Phase 3; Req 3.2). */
+  notifications: NotificationView[];
+  /** Count of urgent notifications (drives a sound cue) (Req 3.2). */
+  urgentNotificationCount: number;
   /** True while the local agent is in Offline_State (Req 3.6, 33.3). */
   offline: boolean;
   /** True when served coordination data may be stale (Req 33.2, 33.3). */
@@ -158,6 +178,10 @@ export interface CoordinationSnapshot {
   messages?: ListMessagesData;
   /** Optional task projection from `list_tasks` (V2 Phase 2). */
   tasks?: ListTasksData;
+  /** Optional liveness projection from `get_liveness` (V2 Phase 3). */
+  liveness?: GetLivenessData;
+  /** Optional notifications projection from `get_notifications` (V2 Phase 3). */
+  notifications?: GetNotificationsData;
   /** Known from the local Repository_Session before activity is available. */
   teamId?: string;
   connection: ConnectionSnapshot;
@@ -246,7 +270,12 @@ function mergeTeamMembers(
   teamStatus: GetTeamStatusData | undefined,
   connectionStatus: ConnectionStatusData | undefined,
   forceOffline: boolean,
+  liveness: GetLivenessData | undefined,
 ): TeamPanelMember[] {
+  const livenessByMember = new Map<string, LivenessState>();
+  for (const entry of liveness?.members ?? []) {
+    livenessByMember.set(entry.memberId, entry.state);
+  }
   const activityByMember = new Map<string, TeamMemberActivity>();
   for (const activity of teamStatus?.members ?? []) {
     if (activity.memberId !== "") {
@@ -301,6 +330,7 @@ function mergeTeamMembers(
         files: activity?.files ?? [],
         tasks: activity?.tasks ?? [],
         lastEventRevision: activity?.lastEventRevision ?? null,
+        liveness: livenessByMember.get(memberId) ?? null,
       };
     })
     .sort(
@@ -413,6 +443,16 @@ export function buildCoordinationViewModel(
     myTasks: (snapshot.tasks?.myTaskList ?? []).map(toTaskView),
     incomingTasks: (snapshot.tasks?.incomingProposals ?? []).map(toTaskView),
     allTasks: (snapshot.tasks?.tasks ?? []).map(toTaskView),
+    notifications: (snapshot.notifications?.notifications ?? []).map((n) => ({
+      notificationId: n.notificationId,
+      severity: n.severity,
+      source: n.source,
+      summary: n.summary,
+      refId: n.refId,
+    })),
+    urgentNotificationCount: (snapshot.notifications?.notifications ?? []).filter(
+      (n) => n.severity === "urgent",
+    ).length,
     offline,
     stale,
     secondsSinceSync: snapshot.staleness.secondsSinceSync,
@@ -422,6 +462,7 @@ export function buildCoordinationViewModel(
       snapshot.teamStatus,
       snapshot.connectionStatus,
       offline,
+      snapshot.liveness,
     ),
   };
 }

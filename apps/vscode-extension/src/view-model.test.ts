@@ -191,6 +191,7 @@ describe("offline / stale indicator (Req 3.6, 33.3)", () => {
         ...teamStatus.members[0],
         connectionState: "unknown",
         activityKnown: true,
+        liveness: null,
       },
     ]);
     expect(vm.offline).toBe(false);
@@ -403,5 +404,68 @@ describe("view-model — V2 tasks projection (Phase 2; Req 2.1–2.3)", () => {
     expect(vm.myTasks).toEqual([]);
     expect(vm.incomingTasks).toEqual([]);
     expect(vm.allTasks).toEqual([]);
+  });
+});
+
+describe("view-model — V2 liveness & notifications projection (Phase 3; Req 3.1–3.3)", () => {
+  const emptyRisk: GetRiskMapData = {
+    paths: [],
+    plannedFileCreations: [],
+    highestRevision: 0,
+  };
+
+  it("attaches fine-grained liveness to team members", () => {
+    const vm = buildCoordinationViewModel({
+      riskMap: emptyRisk,
+      connectionStatus: {
+        status: "online",
+        participants: { connected: ["alice", "bob"], offline: [] },
+        manualCoordinationRequired: false,
+      },
+      liveness: {
+        members: [
+          { memberId: "alice", state: "active" },
+          { memberId: "bob", state: "idle" },
+        ],
+      },
+      connection: online,
+      staleness: fresh,
+    });
+    const bob = vm.members.find((m) => m.memberId === "bob");
+    expect(bob?.liveness).toBe("idle");
+    const alice = vm.members.find((m) => m.memberId === "alice");
+    expect(alice?.liveness).toBe("active");
+  });
+
+  it("projects notifications and counts urgent ones", () => {
+    const vm = buildCoordinationViewModel({
+      riskMap: emptyRisk,
+      notifications: {
+        notifications: [
+          { notificationId: "n1", toMemberId: "me", severity: "warn", source: "task", refId: "t-1", summary: "task", eventRevision: 1 },
+          { notificationId: "n2", toMemberId: "me", severity: "urgent", source: "wake", refId: "me", summary: "wake", eventRevision: 2 },
+        ],
+      },
+      connection: online,
+      staleness: fresh,
+    });
+    expect(vm.notifications.map((n) => n.notificationId)).toEqual(["n1", "n2"]);
+    expect(vm.urgentNotificationCount).toBe(1);
+  });
+
+  it("defaults to empty notifications and null liveness when absent", () => {
+    const vm = buildCoordinationViewModel({
+      riskMap: emptyRisk,
+      connectionStatus: {
+        status: "online",
+        participants: { connected: ["alice"], offline: [] },
+        manualCoordinationRequired: false,
+      },
+      connection: online,
+      staleness: fresh,
+    });
+    expect(vm.notifications).toEqual([]);
+    expect(vm.urgentNotificationCount).toBe(0);
+    expect(vm.members.find((m) => m.memberId === "alice")?.liveness).toBeNull();
   });
 });
