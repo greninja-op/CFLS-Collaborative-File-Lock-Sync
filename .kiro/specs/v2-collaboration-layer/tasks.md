@@ -148,21 +148,21 @@ Execution waves (each wave depends on the previous one completing):
 
 ### Phase 5 — Live diffs (opt-in)
 
-- [ ] 5.1 protocol: `diff.share`/`diff.update` + `LiveDiffDto`; exports + validation.
+- [x] 5.1 protocol: `diff.share`/`diff.update` + `LiveDiffDto`; exports + validation.
       _Requirements: 5.1–5.5_
-- [ ] 5.2 core-state: `diffs.ts` `DiffRegistry` (store latest per member/path when
-      enabled; drop on stop/exclusion); tests. _Requirements: 5.2, 5.3_
-- [ ] 5.3 config: team-shared opt-in flag (`.coordination/config.json` `liveDiffs`),
+- [x] 5.2 core-state: `diffs.ts` `DiffRegistry` (store latest per member/path when
+      enabled; drop on stop/exclusion) + snapshot persistence; tests. _Requirements: 5.2, 5.3_
+- [x] 5.3 config: team-shared opt-in flag (`.coordination/config.json` `liveDiffs`),
       default OFF; parse + tests. _Requirements: 5.1, 5.4_
-- [ ] 5.4 host: `live_diffs` table + apply-branch (gated, data-minimized, no
-      excluded paths). _Requirements: 5.1–5.3_
-- [ ] 5.5 agent: local git-diff of the Authorized_Folder when enabled; `shareDiff`/
-      `listDiffs` port methods + dispatch. _Requirements: 5.2, 5.3_
-- [ ] 5.6 mcp: tools `share_diff`, `list_diffs`; tests. _Requirements: X.3_
-- [ ] 5.7 extension: read-only live-diff view (never auto-applies). _Requirements: 5.5_
-- [ ] 5.8 host/integration test — enabled vs disabled behavior parity with V1.
-      _Requirements: 5.4_
-- [ ] 5.9 phase gate: green typecheck/tests; update memory; merge `V2`→`main`.
+- [x] 5.4 host: apply-branch (gated by opt-in, patch value-scanned, no excluded
+      paths) + broadcast + reconnect resend; CLI passes the flag. _Requirements: 5.1–5.3_
+- [x] 5.5 agent: local git-diff provider hook when enabled; `shareDiff`/
+      `listDiffs` port methods + dispatch + diff view relay. _Requirements: 5.2, 5.3_
+- [x] 5.6 mcp: tools `share_diff`, `list_diffs`; tests. _Requirements: X.3_
+- [x] 5.7 extension: read-only live-diff view-model projection (never auto-applies). _Requirements: 5.5_
+- [x] 5.8 host/integration test — enabled vs disabled behavior parity with V1. _Requirements: 5.4_
+- [x] 5.9 phase gate: changed packages green (protocol 89, core-state 352, host 78,
+      mcp 38, extension 70, cli config-files green). Merge to main deferred to the end.
 
 ### Final
 

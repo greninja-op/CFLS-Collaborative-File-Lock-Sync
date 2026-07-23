@@ -115,7 +115,7 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
 - [x] Phase 2 — Tasks & approvals (COMPLETE: tasks 2.1–2.11; changed packages green)
 - [x] Phase 3 — Notifications, liveness & wake (COMPLETE: tasks 3.1–3.9; changed packages green)
 - [x] Phase 4 — Luna orchestrator (COMPLETE: tasks 4.1–4.9; changed packages green)
-- [ ] Phase 5 — Live diffs (opt-in)
+- [x] Phase 5 — Live diffs (opt-in) (COMPLETE: tasks 5.1–5.9; changed packages green)
 
 ### Task log
 - (append: `YYYY-MM-DD  V2(phaseN/taskX)  <commit hash>  <summary>`)
@@ -194,3 +194,24 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
   (`.coordination/config.json` `liveDiffs`) default OFF; host value-scans `patch`
   for secrets/absolute/excluded paths like message `body`; agent computes local
   git-diff of Authorized_Folder only when enabled.
+- PHASE 5 COMPLETE (tasks 5.1–5.9). Live diffs — the ONLY source-derived,
+  opt-in feature. protocol `diff.share`(C→H)/`diff.update`(H→C) + `LiveDiffDto`;
+  DiffMessageType spread before Broadcast (shared UPDATE key); catalog now 48
+  (errors.test.ts). core-state `DiffRegistry` stores latest per (member,path);
+  empty patch clears; persists via snapshot (SessionStateSnapshot.diffs?).
+  Team opt-in: `.coordination/config.json` `liveDiffs.enabled` (default OFF) via
+  cli `readLiveDiffsConfig`; `cfls host` passes `liveDiffsEnabled` into
+  AuthorityOptions (ServerOptions extends AuthorityOptions). Host apply-branch
+  rejects diff.share with AUTH_NOT_AUTHORIZED when disabled (V1 parity); when
+  enabled, value-scans `patch` via findMinimizationViolations (like message body),
+  stores, broadcasts diff.update to whole session, resends diffsSince on reconnect.
+  Agent: gateway MutationEvent + `diff.share`; connection emits "diff" from
+  diff.update; AgentView.applyDiff/allDiffs (DiffRegistry); port shareDiff (mutation,
+  optional localDiff provider computes git diff when patch omitted+online) / listDiffs
+  (read); dispatch share_diff/list_diffs. MCP tools share_diff/list_diffs (28 tools).
+  Extension view-model `liveDiffs` read-only projection (never auto-applies).
+  Counts: protocol 89, core-state 352, host 78, mcp 38, extension 70, cli cfg green.
+- ALL 5 PHASES COMPLETE. NEXT: Final tasks 6.1 (extend multi-agent simulation with
+  message→task→approval→Luna(→diff) scenario), 6.2 (docs/README honest V2 update),
+  6.3 (final green + merge V2→main with a REGULAR merge, never squash, preserving
+  every commit's author date).
