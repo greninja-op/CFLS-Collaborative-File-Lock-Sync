@@ -469,3 +469,39 @@ describe("view-model — V2 liveness & notifications projection (Phase 3; Req 3.
     expect(vm.members.find((m) => m.memberId === "alice")?.liveness).toBeNull();
   });
 });
+
+describe("view-model — V2 Luna projection (Phase 4; Req 4.5)", () => {
+  const emptyRisk: GetRiskMapData = {
+    paths: [],
+    plannedFileCreations: [],
+    highestRevision: 0,
+  };
+
+  it("projects Luna's last reply with any produced task/message ids", () => {
+    const vm = buildCoordinationViewModel({
+      riskMap: emptyRisk,
+      luna: {
+        action: "assign",
+        summary: "Assigned the parser work to bob.",
+        producedTaskId: "task-7",
+      },
+      connection: online,
+      staleness: fresh,
+    });
+    expect(vm.lunaLastReply).toEqual({
+      action: "assign",
+      summary: "Assigned the parser work to bob.",
+      producedTaskId: "task-7",
+      producedMessageId: null,
+    });
+  });
+
+  it("defaults lunaLastReply to null when Luna has not been asked", () => {
+    const vm = buildCoordinationViewModel({
+      riskMap: emptyRisk,
+      connection: online,
+      staleness: fresh,
+    });
+    expect(vm.lunaLastReply).toBeNull();
+  });
+});

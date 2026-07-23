@@ -15,6 +15,7 @@
  */
 
 import type {
+  AskLunaData,
   ConnectionSnapshot,
   ConnectionStatusData,
   GetLivenessData,
@@ -31,6 +32,7 @@ import type {
 } from "@cfls/mcp-server";
 import type {
   LivenessState,
+  LunaAction,
   MessageKind,
   MessagePriority,
   NotifySeverity,
@@ -135,6 +137,19 @@ export interface NotificationView {
   refId: string;
 }
 
+/**
+ * Luna's most recent reply, rendered for the extension's Luna panel (V2 Phase 4;
+ * Req 4.5). Read-only summary of a decision, answer, or team summary.
+ */
+export interface LunaReplyView {
+  action: LunaAction;
+  summary: string;
+  /** The task Luna produced (e.g. from an `assign`), when any. */
+  producedTaskId: string | null;
+  /** The message Luna produced (e.g. an `answer`/arbitration notice), when any. */
+  producedMessageId: string | null;
+}
+
 /** The full rendered coordination view for a Repository_Session. */
 export interface CoordinationViewModel {
   paths: PathView[];
@@ -153,6 +168,8 @@ export interface CoordinationViewModel {
   notifications: NotificationView[];
   /** Count of urgent notifications (drives a sound cue) (Req 3.2). */
   urgentNotificationCount: number;
+  /** Luna's most recent reply, or null when Luna has not been asked (V2 Phase 4; Req 4.5). */
+  lunaLastReply: LunaReplyView | null;
   /** True while the local agent is in Offline_State (Req 3.6, 33.3). */
   offline: boolean;
   /** True when served coordination data may be stale (Req 33.2, 33.3). */
@@ -182,6 +199,8 @@ export interface CoordinationSnapshot {
   liveness?: GetLivenessData;
   /** Optional notifications projection from `get_notifications` (V2 Phase 3). */
   notifications?: GetNotificationsData;
+  /** Optional last Luna reply from `ask_luna` (V2 Phase 4; Req 4.5). */
+  luna?: AskLunaData;
   /** Known from the local Repository_Session before activity is available. */
   teamId?: string;
   connection: ConnectionSnapshot;
@@ -453,6 +472,15 @@ export function buildCoordinationViewModel(
     urgentNotificationCount: (snapshot.notifications?.notifications ?? []).filter(
       (n) => n.severity === "urgent",
     ).length,
+    lunaLastReply:
+      snapshot.luna !== undefined
+        ? {
+            action: snapshot.luna.action,
+            summary: snapshot.luna.summary,
+            producedTaskId: snapshot.luna.producedTaskId ?? null,
+            producedMessageId: snapshot.luna.producedMessageId ?? null,
+          }
+        : null,
     offline,
     stale,
     secondsSinceSync: snapshot.staleness.secondsSinceSync,
