@@ -50,6 +50,7 @@ export type {
   LunaAction,
   LunaRequestDto,
   LunaReplyDto,
+  LiveDiffDto,
 } from "./models";
 
 // ---- Error codes (design §11.1) ----
@@ -87,6 +88,7 @@ export {
   TaskMessageType,
   PresenceLivenessMessageType,
   LunaMessageType,
+  DiffMessageType,
   ErrorMessageType,
   MessageType,
   MESSAGE_TYPES,
@@ -146,6 +148,8 @@ export type {
   NotifyPushPayload,
   LunaRequestPayload,
   LunaReplyPayload,
+  DiffSharePayload,
+  DiffUpdatePayload,
   ErrorPayload,
 } from "./messages";
 

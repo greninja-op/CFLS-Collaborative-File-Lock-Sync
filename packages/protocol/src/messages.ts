@@ -31,6 +31,7 @@ import type {
   NotificationDto,
   LunaRequestDto,
   LunaReplyDto,
+  LiveDiffDto,
 } from "./models";
 import type { ErrorCode } from "./errors";
 // NotificationDto is referenced by SessionStateSnapshot and NotifyPushPayload.
@@ -190,6 +191,18 @@ export const LunaMessageType = {
   REPLY: "luna.reply",
 } as const;
 
+/**
+ * V2 live-diff message types (Phase 5; Req 5.1–5.5). Opt-in, off by default —
+ * the only V2 family that moves source-derived content. `diff.share` /
+ * `diff.update`.
+ */
+export const DiffMessageType = {
+  /** C→H: (opt-in) share the current change diff for a path. */
+  SHARE: "diff.share",
+  /** H→C: broadcast a shared Live_Diff or its removal. */
+  UPDATE: "diff.update",
+} as const;
+
 /** Error message type (§11.1, §11.2). */
 export const ErrorMessageType = {
   /** H→C: typed error carrying an ErrorCode. */
@@ -220,6 +233,11 @@ export const MessageType = {
   ...TaskMessageType,
   ...PresenceLivenessMessageType,
   ...LunaMessageType,
+  // DiffMessageType is spread before BroadcastMessageType so its shared `UPDATE`
+  // key still resolves to `coordination.update` in this convenience map (the
+  // diff `UPDATE` is `diff.update`; consumers use the DiffMessageType const
+  // directly). MESSAGE_TYPES below is the lossless catalog with every wire string.
+  ...DiffMessageType,
   ...BroadcastMessageType,
   ...EventMessageType,
   ...ErrorMessageType,
@@ -241,6 +259,7 @@ export type MessageTypeName =
   | (typeof TaskMessageType)[keyof typeof TaskMessageType]
   | (typeof PresenceLivenessMessageType)[keyof typeof PresenceLivenessMessageType]
   | (typeof LunaMessageType)[keyof typeof LunaMessageType]
+  | (typeof DiffMessageType)[keyof typeof DiffMessageType]
   | (typeof ErrorMessageType)[keyof typeof ErrorMessageType];
 
 /**
@@ -269,6 +288,7 @@ export const MESSAGE_TYPES: readonly MessageTypeName[] = [
   ...Object.values(TaskMessageType),
   ...Object.values(PresenceLivenessMessageType),
   ...Object.values(LunaMessageType),
+  ...Object.values(DiffMessageType),
   ...Object.values(ErrorMessageType),
 ] as MessageTypeName[];
 
@@ -692,6 +712,27 @@ export type LunaRequestPayload = LunaRequestDto;
 export type LunaReplyPayload = LunaReplyDto;
 
 // ---------------------------------------------------------------------------
+// V2 live-diff payloads (Phase 5; Req 5.1-5.5)
+// ---------------------------------------------------------------------------
+
+/**
+ * `diff.share` (C→H) — (opt-in) share the current change diff for a path. The
+ * host stamps member=sender and eventRevision. An empty `patch` clears any
+ * previously shared diff for the path.
+ */
+export interface DiffSharePayload {
+  path: string;
+  /** Unified-diff text, data-minimized; empty string removes the shared diff. */
+  patch: string;
+}
+
+/** `diff.update` (H→C) — the authoritative shared Live_Diff, or its removal. */
+export interface DiffUpdatePayload {
+  op: "shared" | "removed";
+  diff: LiveDiffDto;
+}
+
+// ---------------------------------------------------------------------------
 // Type-level payload map — associates each message type with its payload
 // ---------------------------------------------------------------------------
 
@@ -760,6 +801,9 @@ export interface MessagePayloadMap {
 
   [LunaMessageType.ASK]: LunaRequestPayload;
   [LunaMessageType.REPLY]: LunaReplyPayload;
+
+  [DiffMessageType.SHARE]: DiffSharePayload;
+  [DiffMessageType.UPDATE]: DiffUpdatePayload;
 
   [ErrorMessageType.ERROR]: ErrorPayload;
 }

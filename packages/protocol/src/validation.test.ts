@@ -647,3 +647,49 @@ describe("V2 luna payload validation", () => {
     expect(result.ok).toBe(true);
   });
 });
+
+describe("V2 live-diff payload validation (Phase 5; Req 5.1–5.5)", () => {
+  it("accepts a valid diff.share payload", () => {
+    const result = validatePayload("diff.share", {
+      path: "src/api.ts",
+      patch: "@@ -1 +1 @@\n-old\n+new",
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("accepts a diff.share with an empty patch (removes the shared diff)", () => {
+    const result = validatePayload("diff.share", { path: "src/api.ts", patch: "" });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a diff.share missing the patch field", () => {
+    const result = validatePayload("diff.share", { path: "src/api.ts" });
+    expect(result.ok).toBe(false);
+  });
+
+  it("accepts a diff.update carrying a LiveDiffDto", () => {
+    const result = validatePayload("diff.update", {
+      op: "shared",
+      diff: {
+        path: "src/api.ts",
+        member: { memberId: "m-1", deviceId: "d-1" },
+        patch: "@@ -1 +1 @@\n-old\n+new",
+        eventRevision: 7,
+      },
+    });
+    expect(result.ok).toBe(true);
+  });
+
+  it("rejects a diff.update with an out-of-range op", () => {
+    const result = validatePayload("diff.update", {
+      op: "deleted",
+      diff: {
+        path: "src/api.ts",
+        member: { memberId: "m-1", deviceId: "d-1" },
+        patch: "",
+        eventRevision: 7,
+      },
+    });
+    expect(result.ok).toBe(false);
+  });
+});

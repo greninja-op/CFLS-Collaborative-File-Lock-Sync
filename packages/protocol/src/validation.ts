@@ -503,6 +503,16 @@ const notificationDtoSchema: ObjectSchema = {
   },
 };
 
+const liveDiffSchema: ObjectSchema = {
+  name: "LiveDiffDto",
+  fields: {
+    path: { spec: { kind: "string" } },
+    member: { spec: { kind: "object", schema: memberRefSchema } },
+    patch: { spec: { kind: "string" } },
+    eventRevision: { spec: { kind: "number" } },
+  },
+};
+
 const eventAppliedLockConflictSchema: ObjectSchema = {
   name: "EventAppliedLockConflict",
   fields: {
@@ -930,6 +940,22 @@ export const PAYLOAD_SCHEMAS: Record<MessageTypeName, ObjectSchema> = {
       summary: { spec: { kind: "string" } },
       producedTaskId: { spec: { kind: "string" }, optional: true },
       producedMessageId: { spec: { kind: "string" }, optional: true },
+    },
+  },
+
+  // ---- V2 live diffs (Phase 5; Req 5.1-5.5) ----
+  "diff.share": {
+    name: "DiffSharePayload",
+    fields: {
+      path: { spec: { kind: "string" } },
+      patch: { spec: { kind: "string" } },
+    },
+  },
+  "diff.update": {
+    name: "DiffUpdatePayload",
+    fields: {
+      op: { spec: { kind: "enum", values: ["shared", "removed"] } },
+      diff: { spec: { kind: "object", schema: liveDiffSchema } },
     },
   },
 

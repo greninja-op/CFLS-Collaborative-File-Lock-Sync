@@ -396,3 +396,20 @@ export interface LunaReplyDto {
   /** Set when the action produced a Message (e.g. an `answer` or arbitration notice). */
   producedMessageId?: string;
 }
+
+/**
+ * An opt-in, team-only Live_Diff: a member's current change diff for a path,
+ * shared live with authorized members (V2 Phase 5; Req 5.1–5.5). This is the
+ * ONLY V2 payload that carries source-derived content, so it is off by default,
+ * gated by team config, and data-minimized (never secrets/excluded paths).
+ */
+export interface LiveDiffDto {
+  /** The repository-relative path the diff concerns. */
+  path: string;
+  /** The Team_Member/device that shared the diff. */
+  member: MemberRef;
+  /** Unified-diff text, data-minimized; present only when Live_Diff is enabled. */
+  patch: string;
+  /** Authoritative Event_Revision of the latest change to this diff (Req 5.1). */
+  eventRevision: number;
+}
