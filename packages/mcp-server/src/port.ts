@@ -31,9 +31,11 @@ import type {
   CoordinationUpdate,
   DependencyEdge,
   EdgeKind,
+  LivenessState,
   MessageDto,
   MessageKind,
   MessagePriority,
+  NotificationDto,
   RiskLevel,
   ScopeKind,
   SessionId,
@@ -376,6 +378,35 @@ export interface ListTasksData {
   incomingProposals: TaskDto[];
 }
 
+// ---- V2 liveness, notifications & wake (Phase 3; Req 3.1–3.3) ---------------
+
+export interface GetLivenessRequest {
+  session: SessionRef;
+}
+
+export interface GetLivenessData {
+  members: { memberId: string; state: LivenessState }[];
+}
+
+/** Ask an idle member to resume (delivered at its next action) (Req 3.3). */
+export interface WakeRequest {
+  session: SessionRef;
+  targetMemberId: string;
+  reason?: string;
+}
+
+export interface WakeData {
+  targetMemberId: string;
+}
+
+export interface GetNotificationsRequest {
+  session: SessionRef;
+}
+
+export interface GetNotificationsData {
+  notifications: NotificationDto[];
+}
+
 /**
  * The interface the CoordinationAgent exposes to the Local_MCP_Server tools
  * (Task 9 implements it against the WSS agent + core-state; tests implement it
@@ -461,4 +492,14 @@ export interface AgentPort {
     req: UpdateTaskProgressRequest,
   ): MaybePromise<AgentResult<UpdateTaskProgressData>>;
   listTasks(req: ListTasksRequest): MaybePromise<AgentResult<ListTasksData>>;
+
+  // V2 liveness, notifications & wake (Phase 3; Req 3.1–3.3). `wake` is a
+  // mutation (OFFLINE_QUEUED while offline); the reads succeed offline.
+  getLiveness(
+    req: GetLivenessRequest,
+  ): MaybePromise<AgentResult<GetLivenessData>>;
+  wake(req: WakeRequest): MaybePromise<AgentResult<WakeData>>;
+  getNotifications(
+    req: GetNotificationsRequest,
+  ): MaybePromise<AgentResult<GetNotificationsData>>;
 }

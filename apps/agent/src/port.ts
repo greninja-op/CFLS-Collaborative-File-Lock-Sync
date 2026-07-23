@@ -22,8 +22,10 @@ import type {
   CoordinationUpdate,
   DependencyEdge,
   DependencyGraph,
+  LivenessState,
   MemberRef,
   MessageDto,
+  NotificationDto,
   RiskMapEntry,
   SessionId,
   TaskDto,
@@ -50,6 +52,10 @@ import type {
   GetTeamStatusRequest,
   AssignTaskData,
   AssignTaskRequest,
+  GetLivenessData,
+  GetLivenessRequest,
+  GetNotificationsData,
+  GetNotificationsRequest,
   ListMessagesData,
   ListMessagesRequest,
   ListOpenQuestionsData,
@@ -63,6 +69,8 @@ import type {
   RespondTaskRequest,
   UpdateTaskProgressData,
   UpdateTaskProgressRequest,
+  WakeData,
+  WakeRequest,
   ReleaseLockData,
   ReleaseLockRequest,
   RiskPathEntry,
@@ -147,6 +155,17 @@ export class AgentCoordinationPort implements AgentPort {
   }): void => {
     this.view.applyTask(this.session, payload.task);
   };
+  private readonly onGatewayLiveness = (payload: {
+    memberId: string;
+    state: LivenessState;
+  }): void => {
+    this.view.applyLiveness(this.session, payload.memberId, payload.state);
+  };
+  private readonly onGatewayNotification = (
+    payload: NotificationDto,
+  ): void => {
+    this.view.applyNotification(this.session, payload);
+  };
 
   constructor(options: AgentPortOptions) {
     this.session = options.session;
@@ -166,6 +185,9 @@ export class AgentCoordinationPort implements AgentPort {
     this.gateway.on("message", this.onGatewayMessage);
     // V2 tasks (Phase 2): converge the task view from host deliveries.
     this.gateway.on("task", this.onGatewayTask);
+    // V2 liveness + notifications (Phase 3): converge those views.
+    this.gateway.on("liveness", this.onGatewayLiveness);
+    this.gateway.on("notification", this.onGatewayNotification);
   }
 
   // ---- Envelope inputs ------------------------------------------------------
@@ -718,11 +740,65 @@ export class AgentCoordinationPort implements AgentPort {
     };
   }
 
+  // ---- V2 liveness, notifications & wake (Phase 3; Req 3.1–3.3) ------------
+
+  getLiveness(req: GetLivenessRequest): AgentResult<GetLivenessData> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    return { ok: true, data: { members: this.view.livenessStates(this.session) } };
+  }
+
+  async wake(req: WakeRequest): Promise<AgentResult<WakeData>> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    const result = await this.gateway.transmit({
+      type: "wake.request",
+      payload: {
+        targetMemberId: req.targetMemberId,
+        ...(req.reason !== undefined ? { reason: req.reason } : {}),
+      },
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+    return { ok: true, data: { targetMemberId: req.targetMemberId } };
+  }
+
+  getNotifications(
+    req: GetNotificationsRequest,
+  ): AgentResult<GetNotificationsData> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    return {
+      ok: true,
+      data: {
+        notifications: this.view.notificationsForMember(
+          this.session,
+          this.self.memberId,
+        ),
+      },
+    };
+  }
+
   /** Release all gateway listeners owned by this port during agent shutdown. */
   dispose(): void {
     this.gateway.off("update", this.onGatewayUpdate);
     this.gateway.off("message", this.onGatewayMessage);
     this.gateway.off("task", this.onGatewayTask);
+    this.gateway.off("liveness", this.onGatewayLiveness);
+    this.gateway.off("notification", this.onGatewayNotification);
     for (const subscriptionId of this.subscriptions.keys()) {
       this.unsubscribeFromCoordinationUpdates(subscriptionId);
     }

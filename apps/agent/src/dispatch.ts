@@ -42,6 +42,9 @@ export const LOCAL_API_METHODS = [
   "respond_to_task",
   "update_task_progress",
   "list_tasks",
+  "get_liveness",
+  "wake_member",
+  "get_notifications",
 ] as const;
 
 export type LocalApiMethod = (typeof LOCAL_API_METHODS)[number];
@@ -202,6 +205,18 @@ export async function dispatchLocalRequest(
       );
     case "list_tasks":
       return wrap(port.listTasks({ session: p.session as SessionId }));
+    case "get_liveness":
+      return wrap(port.getLiveness({ session: p.session as SessionId }));
+    case "wake_member":
+      return wrap(
+        port.wake({
+          session: p.session as SessionId,
+          targetMemberId: (p.targetMemberId as string) ?? "",
+          ...(p.reason !== undefined ? { reason: p.reason as string } : {}),
+        }),
+      );
+    case "get_notifications":
+      return wrap(port.getNotifications({ session: p.session as SessionId }));
     default:
       return wrap({
         ok: false,

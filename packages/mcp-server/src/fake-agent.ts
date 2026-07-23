@@ -26,9 +26,12 @@ import type {
 import {
   ALL_SOFT_CONFIG,
   buildRiskMap,
+  buildNotification,
   IntentRegistry,
+  LivenessTracker,
   LockRegistry,
   MessageRegistry,
+  NotificationRegistry,
   normalizePath,
   normalizePathKey,
   PresenceRegistry,
@@ -65,6 +68,10 @@ import type {
   GetTeamStatusRequest,
   AssignTaskData,
   AssignTaskRequest,
+  GetLivenessData,
+  GetLivenessRequest,
+  GetNotificationsData,
+  GetNotificationsRequest,
   ListMessagesData,
   ListMessagesRequest,
   ListOpenQuestionsData,
@@ -74,6 +81,8 @@ import type {
   MarkMessageReadData,
   MarkMessageReadRequest,
   ProjectSessionStatusData,
+  WakeData,
+  WakeRequest,
   RespondTaskData,
   RespondTaskRequest,
   UpdateTaskProgressData,
@@ -165,12 +174,15 @@ export class CoreStateAgentPort implements AgentPort {
   private readonly presence = new PresenceRegistry();
   private readonly messages = new MessageRegistry();
   private readonly tasks = new TaskRegistry();
+  private readonly liveness = new LivenessTracker();
+  private readonly notificationsRegistry = new NotificationRegistry();
   private readonly revisions = new RevisionCounter();
 
   private lockSeq = 0;
   private intentSeq = 0;
   private messageSeq = 0;
   private taskSeq = 0;
+  private notificationSeq = 0;
   private subscriptionSeq = 0;
   private readonly subscribers = new Map<
     string,
@@ -877,6 +889,73 @@ export class CoreStateAgentPort implements AgentPort {
         tasks: this.tasks.allTasks(this.session),
         myTaskList: this.tasks.taskListFor(this.session, this.self.memberId),
         incomingProposals: this.tasks.incomingProposalsFor(
+          this.session,
+          this.self.memberId,
+        ),
+      },
+    };
+  }
+
+  // ---- V2 liveness, notifications & wake (Phase 3; Req 3.1–3.3) ------------
+
+  getLiveness(req: GetLivenessRequest): AgentResult<GetLivenessData> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    const now = this.now();
+    // Seed the tracker from the simulated roster; treat self as recently active.
+    this.liveness.setConnected(this.session, [
+      ...this.connectedMembers,
+      this.self.memberId,
+    ]);
+    this.liveness.recordActivity(this.session, this.self.memberId, now);
+    return { ok: true, data: { members: this.liveness.states(this.session, now) } };
+  }
+
+  wake(req: WakeRequest): AgentResult<WakeData> {
+    if (!this.online) {
+      return offlineQueuedResult("wake_member");
+    }
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    const eventRevision = this.revisions.next(this.session);
+    this.notificationsRegistry.add(
+      this.session,
+      buildNotification({
+        notificationId: `notif-${(this.notificationSeq += 1)}`,
+        toMemberId: req.targetMemberId,
+        source: "wake",
+        refId: req.targetMemberId,
+        summary:
+          req.reason !== undefined && req.reason.length > 0
+            ? `${this.self.memberId}: ${req.reason}`
+            : `${this.self.memberId} asked you to resume`,
+        eventRevision,
+      }),
+    );
+    return { ok: true, data: { targetMemberId: req.targetMemberId } };
+  }
+
+  getNotifications(
+    req: GetNotificationsRequest,
+  ): AgentResult<GetNotificationsData> {
+    if (!this.sameSession(req.session)) {
+      return this.sessionNotFound();
+    }
+    if (!this.authorized) {
+      return this.notAuthorized();
+    }
+    return {
+      ok: true,
+      data: {
+        notifications: this.notificationsRegistry.forMember(
           this.session,
           this.self.memberId,
         ),

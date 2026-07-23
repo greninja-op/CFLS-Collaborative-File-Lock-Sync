@@ -20,6 +20,7 @@ import {
   AgentSyncCache,
   buildRiskMap,
   MessageRegistry,
+  NotificationRegistry,
   normalizePath,
   resolveMode,
   TaskRegistry,
@@ -30,9 +31,11 @@ import type {
   CoordinationUpdate,
   DeclaredIntent,
   DependencyGraph,
+  LivenessState,
   Lock,
   MemberRef,
   MessageDto,
+  NotificationDto,
   Presence,
   RiskMapEntry,
   SessionId,
@@ -79,6 +82,10 @@ export class AgentView {
   private readonly messages = new MessageRegistry();
   /** V2 task view (Phase 2), fed by host `task.update` broadcasts. */
   private readonly tasks = new TaskRegistry();
+  /** V2 notification view (Phase 3), fed by host `notify.push`. */
+  private readonly notifications = new NotificationRegistry();
+  /** V2 liveness view (Phase 3): `session_key` → memberId → state. */
+  private readonly liveness = new Map<string, Map<string, LivenessState>>();
 
   /** Apply a single host broadcast to the view (idempotent by revision). */
   applyUpdate(session: SessionId, update: CoordinationUpdate): void {
@@ -149,6 +156,50 @@ export class AgentView {
     return this.tasks.incomingProposalsFor(session, memberId);
   }
 
+  // ---- V2 liveness & notifications (Phase 3; Req 3.1–3.3) ------------------
+
+  /** Apply a host `liveness.update` to the liveness view. */
+  applyLiveness(
+    session: SessionId,
+    memberId: string,
+    state: LivenessState,
+  ): void {
+    const key = `${session.repoId}\u0000${session.teamId}\u0000${session.branch}`;
+    let states = this.liveness.get(key);
+    if (states === undefined) {
+      states = new Map();
+      this.liveness.set(key, states);
+    }
+    states.set(memberId, state);
+  }
+
+  /** Current liveness states for a session (sorted by memberId). */
+  livenessStates(
+    session: SessionId,
+  ): { memberId: string; state: LivenessState }[] {
+    const key = `${session.repoId}\u0000${session.teamId}\u0000${session.branch}`;
+    const states = this.liveness.get(key);
+    if (states === undefined) {
+      return [];
+    }
+    return [...states.entries()]
+      .map(([memberId, state]) => ({ memberId, state }))
+      .sort((a, b) => a.memberId.localeCompare(b.memberId));
+  }
+
+  /** Apply a host `notify.push` to the notification view. */
+  applyNotification(session: SessionId, notification: NotificationDto): void {
+    this.notifications.add(session, notification);
+  }
+
+  /** Notifications addressed to `memberId` (Req 3.2). */
+  notificationsForMember(
+    session: SessionId,
+    memberId: string,
+  ): NotificationDto[] {
+    return this.notifications.forMember(session, memberId);
+  }
+
   /** Apply a batch of host broadcasts to the view. */
   applyUpdates(
     session: SessionId,
@@ -166,6 +217,7 @@ export class AgentView {
     if (response.kind === "snapshot") {
       this.messages.restore(session, response.snapshot.messages ?? []);
       this.tasks.restore(session, response.snapshot.tasks ?? []);
+      this.notifications.restore(session, response.snapshot.notifications ?? []);
     }
   }
 
@@ -174,6 +226,7 @@ export class AgentView {
     this.cache.applySnapshot(session, snapshot);
     this.messages.restore(session, snapshot.messages ?? []);
     this.tasks.restore(session, snapshot.tasks ?? []);
+    this.notifications.restore(session, snapshot.notifications ?? []);
   }
 
   /** Mark the view stale on connectivity loss (Req 33.2). */

@@ -40,6 +40,7 @@ import type {
   TaskAssignPayload,
   TaskProgressPayload,
   TaskRespondPayload,
+  WakeRequestPayload,
 } from "@cfls/protocol";
 import type {
   ConnectionSnapshot,
@@ -60,7 +61,8 @@ export type MutationEvent =
   | { type: "message.read"; payload: MessageReadPayload }
   | { type: "task.assign"; payload: TaskAssignPayload }
   | { type: "task.respond"; payload: TaskRespondPayload }
-  | { type: "task.progress"; payload: TaskProgressPayload };
+  | { type: "task.progress"; payload: TaskProgressPayload }
+  | { type: "wake.request"; payload: WakeRequestPayload };
 
 /** Outcome of transmitting a mutation to the host authority. */
 export type TransmitResult =
@@ -117,6 +119,11 @@ export class RealHostGateway extends EventEmitter implements HostGateway {
     this.connection.on("message", (m: unknown) => this.emit("message", m));
     // Relay V2 task updates (Phase 2) to the port's task view.
     this.connection.on("task", (t: unknown) => this.emit("task", t));
+    // Relay V2 liveness + notifications (Phase 3) to the port's views.
+    this.connection.on("liveness", (l: unknown) => this.emit("liveness", l));
+    this.connection.on("notification", (n: unknown) =>
+      this.emit("notification", n),
+    );
   }
 
   getConnection(): ConnectionSnapshot {
@@ -402,9 +409,10 @@ export class LocalHostGateway extends EventEmitter implements HostGateway {
       case "task.assign":
       case "task.respond":
       case "task.progress":
-        // Messaging and tasks are delivered over the host's separate channels,
-        // not as CoordinationUpdates. The in-process gateway (used only by
-        // fan-in unit tests) records no coordination updates for these.
+      case "wake.request":
+        // Messaging, tasks, and wakes are delivered over the host's separate
+        // channels, not as CoordinationUpdates. The in-process gateway (used
+        // only by fan-in unit tests) records no coordination updates for these.
         return { updates: [] };
     }
   }

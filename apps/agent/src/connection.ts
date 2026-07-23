@@ -24,6 +24,7 @@ import {
   EventMessageType,
   MessagingMessageType,
   TaskMessageType,
+  PresenceLivenessMessageType,
   MESSAGE_FORMAT_VERSION,
   type CoordinationUpdate,
   type ErrorPayload,
@@ -406,6 +407,29 @@ export class HostConnection extends EventEmitter {
         payload.task !== null
       ) {
         this.emit("task", payload);
+      }
+      return;
+    }
+    if (message?.type === PresenceLivenessMessageType.LIVENESS_UPDATE) {
+      const payload = message.payload;
+      if (
+        payload !== null &&
+        typeof payload === "object" &&
+        typeof payload.memberId === "string" &&
+        typeof payload.state === "string"
+      ) {
+        this.emit("liveness", payload);
+      }
+      return;
+    }
+    if (message?.type === PresenceLivenessMessageType.NOTIFY_PUSH) {
+      const payload = message.payload;
+      if (
+        payload !== null &&
+        typeof payload === "object" &&
+        typeof payload.notificationId === "string"
+      ) {
+        this.emit("notification", payload);
       }
       return;
     }

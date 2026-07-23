@@ -99,6 +99,12 @@ export type {
   UpdateTaskProgressData,
   ListTasksRequest,
   ListTasksData,
+  GetLivenessRequest,
+  GetLivenessData,
+  WakeRequest,
+  WakeData,
+  GetNotificationsRequest,
+  GetNotificationsData,
 } from "./port";
 
 // ---- Reference in-memory port backed by core-state (tests) ----
