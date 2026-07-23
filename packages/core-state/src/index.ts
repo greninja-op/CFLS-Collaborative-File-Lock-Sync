@@ -178,6 +178,17 @@ export {
 export type { BuildNotificationInput } from "./liveness";
 export { NotificationRegistry } from "./notifications";
 
+// ---- V2 Phase 4 — Luna orchestrator (Req 4.1–4.4; idea.md §5) ----
+export { RulesLunaBrain, LlmLunaBrain } from "./orchestrator";
+export type {
+  LunaBrain,
+  LunaContext,
+  LunaDecision,
+  LunaAssignment,
+  LunaMessagePlan,
+  LlmCompletion,
+} from "./orchestrator";
+
 // ---- Coalescing & deduplication within the burst window (task 4.22; Req 34; §8.5) ----
 export {
   Coalescer,
