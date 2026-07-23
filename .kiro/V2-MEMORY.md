@@ -113,6 +113,7 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
 - [x] Spec authored (requirements / design / tasks) — DONE
 - [x] Phase 1 — Messaging (COMPLETE: tasks 1.1–1.12; changed packages all green)
 - [x] Phase 2 — Tasks & approvals (COMPLETE: tasks 2.1–2.11; changed packages green)
+- [x] Phase 3 — Notifications, liveness & wake (COMPLETE: tasks 3.1–3.9; changed packages green)
 - [ ] Phase 3 — Notifications, liveness & wake
 - [ ] Phase 4 — Luna orchestrator
 - [ ] Phase 5 — Live diffs (opt-in)
@@ -156,6 +157,15 @@ New protocol message categories: `message.*`, `task.*`, `notify.*`, `luna.*`,
   view-model has myTasks/incomingTasks/allTasks. TaskDto.assignee.deviceId is "" (a task
   targets a member, not a device). core-state 323, host 68, mcp 31, extension 63.
   NEXT: Phase 3 — Notifications, liveness & wake (task 3.1).
+- PHASE 3 COMPLETE (tasks 3.1–3.9). Liveness active/idle/gone: derived by
+  LivenessTracker from live roster + activity window (60s); host broadcasts
+  liveness.update on connect/disconnect/heartbeat/sweep (advisory revision, applied
+  by memberId). Notifications: NotificationRegistry (persisted via snapshot); host
+  emits notify.push to target on incoming task (warn), question (warn), urgent direct
+  message (urgent), and wake (urgent); never for own actions. Wake = a source="wake"
+  notification. 3 MCP tools (get_liveness/wake_member/get_notifications). Extension
+  view-model has notifications + urgentNotificationCount + per-member liveness.
+  protocol 81, core-state 335, host 72, mcp 34, extension 66. NEXT: Phase 4 — Luna.
 - KEY DECISION: message `body` is allowed TEAM TEXT (idea.md §6 Safety). The host
   value-scans the body for secrets/absolute/excluded paths (Req 1.4) but does NOT
   name-block it. Do the same for future free-text fields (task descriptions, luna

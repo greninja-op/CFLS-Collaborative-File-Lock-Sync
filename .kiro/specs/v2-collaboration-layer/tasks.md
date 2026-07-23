@@ -89,7 +89,7 @@ Execution waves (each wave depends on the previous one completing):
       rules + Task_List projection). _Requirements: 2.1–2.3_
 - [ ] 2.4 core-state: `tasks.property.test.ts` + `tasks.test.ts` (legal transitions,
       assignee-only approval, withdraw rules). _Requirements: 2.2_
-- [ ] 2.5 core-state: snapshot + sync integration for tasks; tests. _Requirements: X.2_
+- [x] 2.5 core-state: snapshot + sync integration for tasks; tests. _Requirements: X.2_
 - [x] 2.6 host: tasks persisted via snapshot (no separate table); `authority.ts`
       apply-branches with audit + broadcast + reconnect resend. _Requirements: 2.2, 2.3, X.1_
 - [x] 2.7 host: integration test — assign→approve/reject→progress + reconnect. _Requirements: 2.2, X.2_
@@ -104,25 +104,26 @@ Execution waves (each wave depends on the previous one completing):
 
 ### Phase 3 — Notifications, liveness & wake
 
-- [ ] 3.1 protocol: `liveness.update`, `wake.request`, `notify.push` +
+- [x] 3.1 protocol: `liveness.update`, `wake.request`, `notify.push` +
       `LivenessState`/`NotificationDto`/`NotifySeverity`; exports + validation.
       _Requirements: 3.1–3.3_
-- [ ] 3.2 core-state: `liveness.ts` `LivenessTracker` (active/idle/gone derivation)
+- [x] 3.2 core-state: `liveness.ts` `LivenessTracker` (active/idle/gone derivation)
       + notification-severity builder; property/unit tests. _Requirements: 3.1, 3.2_
-- [ ] 3.3 host: liveness sweep + notification emission wired to the expiry sweep and
+- [x] 3.3 host: liveness sweep + notification emission wired to the expiry sweep and
       message/task/question/conflict events; `notifications` table.
       _Requirements: 3.1–3.3_
-- [ ] 3.4 host: wake handling (record + deliver at target's next action).
+- [x] 3.4 host: wake handling (record + deliver at target's next action).
       _Requirements: 3.3_
-- [ ] 3.5 host: integration test — liveness transitions, urgent notification, wake
+- [x] 3.5 host: integration test — liveness transitions, urgent notification, wake
       delivery. _Requirements: 3.1–3.3_
-- [ ] 3.6 agent: port methods `getLiveness`/`wake`/`getNotifications`; dispatch.
+- [x] 3.6 agent: port methods `getLiveness`/`wake`/`getNotifications`; dispatch.
       _Requirements: X.3_
-- [ ] 3.7 mcp: tools `get_liveness`, `wake_member`, `get_notifications`; tests.
+- [x] 3.7 mcp: tools `get_liveness`, `wake_member`, `get_notifications`; tests.
       _Requirements: X.3_
-- [ ] 3.8 extension: liveness dots, wake action, severity notifications (+ sound on
+- [x] 3.8 extension: liveness dots, wake action, severity notifications (+ sound on
       urgent). _Requirements: 3.2, 3.3_
-- [ ] 3.9 phase gate: green typecheck/tests; update memory; merge `V2`→`main`.
+- [x] 3.9 phase gate: changed packages green (protocol 81, core-state 335, host 72,
+      mcp 34, extension 66). Merge to main deferred to the end.
 
 ### Phase 4 — Orchestration (Luna)
 
